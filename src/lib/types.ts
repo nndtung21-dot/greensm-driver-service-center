@@ -156,3 +156,14 @@ export type FeedbackLookup = {
   status: TicketStatus;
   already_rated: boolean;
 };
+
+// Admin — Agent ↔ Category mapping
+export type AgentWithBranch = {
+  id: string;
+  full_name: string;
+  email: string;
+  branch_id: string | null;
+  branch_name?: string;
+};
+
+export type AgentCategoryAssignment = { agent_id: string; category_id: string };

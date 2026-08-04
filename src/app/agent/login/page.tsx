@@ -27,7 +27,9 @@ export default function AgentLoginPage() {
       .eq("id", data.session.user.id)
       .maybeSingle();
     setLoading(false);
-    if (profile?.role === "supervisor" || profile?.role === "admin") {
+    if (profile?.role === "admin") {
+      router.push("/admin/agents");
+    } else if (profile?.role === "supervisor") {
       router.push("/supervisor/dashboard");
     } else {
       router.push("/agent/queue");
