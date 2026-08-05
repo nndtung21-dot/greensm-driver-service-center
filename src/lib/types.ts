@@ -167,3 +167,25 @@ export type AgentWithBranch = {
 };
 
 export type AgentCategoryAssignment = { agent_id: string; category_id: string };
+
+// Admin CRUD
+export type SlaRule = {
+  id: string;
+  branch_id: string | null;
+  category_id: string | null;
+  subcategory_id: string | null;
+  sla_minutes: number;
+  status: "ACTIVE" | "INACTIVE";
+};
+
+export type PendingUser = { id: string; email: string; created_at: string };
+
+export type AdminProfileRow = {
+  id: string;
+  full_name: string;
+  email: string;
+  role: UserRole;
+  branch_id: string | null;
+  department_id: string | null;
+  status: "ACTIVE" | "INACTIVE";
+};

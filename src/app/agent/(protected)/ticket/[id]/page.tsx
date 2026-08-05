@@ -98,6 +98,7 @@ export default function TicketDetailPage() {
   }
 
   const handleStartProcessing = () => runRpc("start_processing", { p_case_id: params.id });
+  const handleNoShow = () => runRpc("mark_no_show", { p_case_id: params.id });
   const handleResolve = () => {
     if (!resolution.trim()) {
       setErrorMessage("Vui lòng nhập kết quả xử lý.");
@@ -229,9 +230,16 @@ export default function TicketDetailPage() {
 
       {(detail.status === "CALLED" || detail.status === "TRANSFERRED") && canAct && (
         <Panel>
-          <PrimaryButton onClick={handleStartProcessing} disabled={busy}>
-            BẮT ĐẦU XỬ LÝ
-          </PrimaryButton>
+          <div className="flex flex-wrap gap-3">
+            <PrimaryButton onClick={handleStartProcessing} disabled={busy}>
+              BẮT ĐẦU XỬ LÝ
+            </PrimaryButton>
+            {detail.status === "CALLED" && (
+              <SecondaryButton onClick={handleNoShow} disabled={busy}>
+                Tài xế không đến (NO_SHOW)
+              </SecondaryButton>
+            )}
+          </div>
         </Panel>
       )}
 
@@ -396,6 +404,14 @@ export default function TicketDetailPage() {
           <p className="font-body text-sm text-ink/80">{detail.resolution}</p>
           <p className="mt-2 font-body text-xs text-ink/40">
             Đã đóng lúc {fmt(detail.closed_at)}
+          </p>
+        </Panel>
+      )}
+
+      {detail.status === "NO_SHOW" && (
+        <Panel title="Tài xế không đến">
+          <p className="font-body text-sm text-ink/70">
+            Ticket đã được gọi nhưng tài xế không có mặt tại quầy.
           </p>
         </Panel>
       )}

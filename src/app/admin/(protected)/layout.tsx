@@ -9,6 +9,11 @@ import { Profile } from "@/lib/types";
 
 const NAV_ITEMS = [
   { href: "/admin/agents", label: "Agent ↔ Chủ đề" },
+  { href: "/admin/categories", label: "Danh mục dịch vụ" },
+  { href: "/admin/branches", label: "Văn phòng & Quầy" },
+  { href: "/admin/sla", label: "Cấu hình SLA" },
+  { href: "/admin/users", label: "Người dùng" },
+  { href: "/admin/export", label: "Xuất dữ liệu" },
   { href: "/supervisor/dashboard", label: "Dashboard (toàn hệ thống)" },
 ];
 

@@ -183,3 +183,33 @@ Password Protection"** (kiểm tra mật khẩu qua HaveIBeenPwned) — advisor 
 ## Nhật ký lỗi đã sửa
 Xem `docs/security-fixes-log.md` — toàn bộ lỗi RLS/quyền đã phát hiện và sửa
 trong quá trình build, để minh bạch và tránh lặp lại khi bạn tự mở rộng thêm.
+
+## Phase 9 — Admin UI (bổ sung ngoài 8 Phase gốc)
+Truy cập qua `/agent/login` với tài khoản vai trò `admin` (demo:
+`admin.demo@greensm.internal` / `GreenSM#Demo2026`).
+
+- **`/admin/agents`** — gán Agent phụ trách chủ đề (category) nào (many-to-many,
+  hiện chỉ mang tính tổ chức, chưa dùng để giới hạn "Gọi tiếp theo").
+- **`/admin/categories`** — thêm/tắt category và subcategory.
+- **`/admin/branches`** — thêm VP mới, thêm quầy cho từng VP.
+- **`/admin/sla`** — thêm/tắt rule SLA theo VP/category/subcategory.
+- **`/admin/users`** — sửa vai trò/VP/bộ phận của nhân viên hiện có, và gán vai
+  trò cho tài khoản vừa tạo bên Supabase Dashboard (Authentication → Users)
+  nhưng chưa có profile.
+- **`/admin/export`** — xuất 5 dataset báo cáo ra file CSV trực tiếp từ trình
+  duyệt (mở được bằng Excel/Google Sheets), không cần chờ tích hợp Google
+  Sheets tự động ở Phase 8.
+
+Toàn bộ CRUD này dùng RLS `admin`-only trực tiếp trên bảng (không qua RPC) vì
+là thao tác đơn giản, đã test bằng role `authenticated` thật để đảm bảo Agent/
+Supervisor không tự ý sửa được.
+
+## Phase 9b — NO_SHOW & FCR
+- Agent có thêm nút **"Tài xế không đến (NO_SHOW)"** khi ticket đang ở trạng
+  thái CALLED (Section 19 đã liệt kê trạng thái này nhưng trước đó chưa có
+  thao tác).
+- **FCR (First Contact Resolution)** được định nghĩa là: tỉ lệ ticket hoàn
+  thành mà KHÔNG từng bị Transfer sang bộ phận/agent khác. Hiển thị ở trang
+  Hiệu suất của Agent và Supervisor Dashboard. Đây là định nghĩa mặc định hợp
+  lý — nếu công ty có định nghĩa FCR khác, cần chỉnh lại view
+  `v_report_agent_performance`.

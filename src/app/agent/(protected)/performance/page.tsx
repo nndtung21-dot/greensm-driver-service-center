@@ -13,20 +13,43 @@ type CaseRow = {
   created_at: string;
 };
 
+type PerfRow = {
+  sla_compliance_pct: number | null;
+  fcr_pct: number | null;
+};
+
 export default function AgentPerformancePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [cases, setCases] = useState<CaseRow[]>([]);
+  const [perf, setPerf] = useState<PerfRow | null>(null);
+  const [avgCsat, setAvgCsat] = useState<string>("—");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     getCurrentProfile().then(async (p) => {
       setProfile(p);
       if (!p) return;
-      const { data } = await supabase
-        .from("service_cases")
-        .select("status, started_at, resolved_at, created_at")
-        .eq("assigned_agent_id", p.id);
-      setCases((data as CaseRow[]) ?? []);
+      const [{ data: caseData }, { data: perfData }] = await Promise.all([
+        supabase
+          .from("service_cases")
+          .select("status, started_at, resolved_at, created_at")
+          .eq("assigned_agent_id", p.id),
+        supabase
+          .from("v_report_agent_performance")
+          .select("sla_compliance_pct, fcr_pct")
+          .eq("agent", p.full_name)
+          .maybeSingle(),
+      ]);
+      setCases((caseData as CaseRow[]) ?? []);
+      setPerf((perfData as PerfRow) ?? null);
+
+      // CSAT thật: rating của các case do agent này xử lý
+      const { data: myCsat } = await supabase
+        .from("feedback")
+        .select("rating, service_cases!inner(assigned_agent_id)")
+        .eq("service_cases.assigned_agent_id", p.id);
+      const ratings = ((myCsat as { rating: number }[]) ?? []).map((r) => r.rating);
+      setAvgCsat(ratings.length > 0 ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : "—");
       setLoading(false);
     });
   }, []);
@@ -56,12 +79,21 @@ export default function AgentPerformancePage() {
               label="Avg. Handling Time"
               value={avgHandlingMin !== null ? `${avgHandlingMin}p` : "—"}
             />
+            <StatCard
+              label="SLA Compliance"
+              value={perf?.sla_compliance_pct != null ? `${perf.sla_compliance_pct}%` : "—"}
+            />
+            <StatCard
+              label="FCR"
+              value={perf?.fcr_pct != null ? `${perf.fcr_pct}%` : "—"}
+            />
+            <StatCard label="CSAT" value={avgCsat} />
           </div>
-          <Panel title="Chưa có dữ liệu">
+          <Panel title="Ghi chú">
             <p className="font-body text-sm text-ink/60">
-              SLA Compliance, FCR và CSAT sẽ hiển thị ở đây sau khi hoàn thành Phase 5
-              (SLA) và Phase 7 (Feedback) — hiện schema đã có sẵn (`sla_due_at`,
-              bảng `feedback`), chỉ cần bật tính năng thu thập dữ liệu.
+              FCR (First Contact Resolution) = tỉ lệ ticket hoàn thành mà KHÔNG
+              từng bị Transfer sang bộ phận/agent khác. SLA Compliance chỉ tính
+              trên ticket đã hoàn thành và có cấu hình SLA áp dụng.
             </p>
           </Panel>
         </>

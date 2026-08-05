@@ -18,12 +18,14 @@ type DailySummary = {
 };
 
 type FeedbackRow = { rating: number };
+type AgentPerfRow = { fcr_pct: number | null; completed_cases: number };
 
 export default function SupervisorDashboardPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [rows, setRows] = useState<AgentQueueRow[]>([]);
   const [summary, setSummary] = useState<DailySummary | null>(null);
   const [feedback, setFeedback] = useState<FeedbackRow[]>([]);
+  const [agentPerf, setAgentPerf] = useState<AgentPerfRow[]>([]);
   const [counters, setCounters] = useState<Counter[]>([]);
   const [colleagues, setColleagues] = useState<AgentOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,19 +35,21 @@ export default function SupervisorDashboardPage() {
 
   const load = useCallback(async () => {
     const today = new Date().toISOString().slice(0, 10);
-    const [{ data: queueData }, { data: summaryData }, { data: feedbackData }, { data: counterData }, { data: colleagueData }] =
+    const [{ data: queueData }, { data: summaryData }, { data: feedbackData }, { data: counterData }, { data: colleagueData }, { data: perfData }] =
       await Promise.all([
         supabase.from("v_agent_queue").select("*").order("created_at", { ascending: true }),
         supabase.from("v_report_daily_summary").select("*").eq("business_date", today),
         supabase.from("v_report_feedback").select("rating"),
         supabase.from("counters").select("id, counter_code, counter_name, status, branch_id"),
         supabase.from("profiles").select("id, full_name, email, role").eq("role", "agent"),
+        supabase.from("v_report_agent_performance").select("fcr_pct, completed_cases"),
       ]);
     setRows((queueData as AgentQueueRow[]) ?? []);
     setSummary(((summaryData as DailySummary[]) ?? [])[0] ?? null);
     setFeedback((feedbackData as FeedbackRow[]) ?? []);
     setCounters((counterData as Counter[]) ?? []);
     setColleagues((colleagueData as AgentOption[]) ?? []);
+    setAgentPerf((perfData as AgentPerfRow[]) ?? []);
     setLoading(false);
   }, []);
 
@@ -102,6 +106,16 @@ export default function SupervisorDashboardPage() {
       ? (feedback.reduce((a, b) => a + b.rating, 0) / feedback.length).toFixed(1)
       : "—";
 
+  const fcrEligible = agentPerf.filter((a) => a.fcr_pct != null && a.completed_cases > 0);
+  const totalCompletedForFcr = fcrEligible.reduce((sum, a) => sum + a.completed_cases, 0);
+  const avgFcr =
+    totalCompletedForFcr > 0
+      ? Math.round(
+          fcrEligible.reduce((sum, a) => sum + (a.fcr_pct ?? 0) * a.completed_cases, 0) /
+            totalCompletedForFcr
+        )
+      : null;
+
   return (
     <div className="space-y-8">
       <h1 className="font-display text-2xl font-bold text-brand-900">
@@ -124,7 +138,7 @@ export default function SupervisorDashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <StatCard
           label="Avg Waiting Time"
           value={summary?.avg_waiting_time_min != null ? `${summary.avg_waiting_time_min}p` : "—"}
@@ -142,6 +156,7 @@ export default function SupervisorDashboardPage() {
           }
         />
         <StatCard label="CSAT" value={avgCsat} />
+        <StatCard label="FCR" value={avgFcr !== null ? `${avgFcr}%` : "—"} />
       </div>
 
       <div>
