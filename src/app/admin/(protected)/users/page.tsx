@@ -5,6 +5,22 @@ import { supabase } from "@/lib/supabase/client";
 import { AdminProfileRow, Branch, Department, PendingUser, UserRole } from "@/lib/types";
 import { Panel, PrimaryButton, SecondaryButton } from "@/components/agent/ui";
 
+async function callAdminApi(path: string, body: Record<string, unknown>) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  const res = await fetch(path, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Có lỗi xảy ra.");
+  return json;
+}
+
 export default function AdminUsersPage() {
   const [profiles, setProfiles] = useState<AdminProfileRow[]>([]);
   const [pending, setPending] = useState<PendingUser[]>([]);
@@ -12,12 +28,21 @@ export default function AdminUsersPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   // form state for onboarding a pending user
   const [onboardName, setOnboardName] = useState<Record<string, string>>({});
   const [onboardRole, setOnboardRole] = useState<Record<string, UserRole>>({});
   const [onboardBranch, setOnboardBranch] = useState<Record<string, string>>({});
   const [onboardDept, setOnboardDept] = useState<Record<string, string>>({});
+
+  // form state for creating a brand new account
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newRole, setNewRole] = useState<UserRole>("agent");
+  const [newBranch, setNewBranch] = useState("");
+  const [newDept, setNewDept] = useState("");
 
   const load = useCallback(async () => {
     const [{ data: p }, { data: pu }, { data: b }, { data: d }] = await Promise.all([
@@ -62,6 +87,51 @@ export default function AdminUsersPage() {
     else load();
   }
 
+  async function handleCreateUser(e: FormEvent) {
+    e.preventDefault();
+    if (!newEmail.trim() || !newPassword || !newName.trim()) {
+      setErrorMessage("Vui lòng nhập đủ Email, Mật khẩu, Họ tên.");
+      return;
+    }
+    setBusy(true);
+    setErrorMessage(null);
+    try {
+      await callAdminApi("/api/admin/create-user", {
+        email: newEmail.trim(),
+        password: newPassword,
+        full_name: newName.trim(),
+        role: newRole,
+        branch_id: newBranch || null,
+        department_id: newDept || null,
+      });
+      setNewEmail("");
+      setNewPassword("");
+      setNewName("");
+      setNewRole("agent");
+      setNewBranch("");
+      setNewDept("");
+      load();
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Có lỗi xảy ra.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteUser(id: string, name: string) {
+    if (!confirm(`Xoá vĩnh viễn tài khoản "${name}"? Không thể hoàn tác.`)) return;
+    setBusy(true);
+    setErrorMessage(null);
+    try {
+      await callAdminApi("/api/admin/delete-user", { user_id: id });
+      load();
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Có lỗi xảy ra.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (loading) return <p className="font-body text-ink/50">Đang tải...</p>;
 
   return (
@@ -71,11 +141,88 @@ export default function AdminUsersPage() {
         <p className="rounded-lg bg-red-50 px-4 py-2 font-body text-sm text-danger">{errorMessage}</p>
       )}
 
+      <Panel title="Tạo tài khoản mới">
+        <form onSubmit={handleCreateUser} className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="mb-1 block font-body text-xs text-ink/60">Email</label>
+            <input
+              type="email"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              className="w-48 rounded-lg border-2 border-line px-3 py-2 font-body text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block font-body text-xs text-ink/60">Mật khẩu</label>
+            <input
+              type="text"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Tối thiểu 6 ký tự"
+              className="w-40 rounded-lg border-2 border-line px-3 py-2 font-body text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block font-body text-xs text-ink/60">Họ tên</label>
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              className="w-40 rounded-lg border-2 border-line px-3 py-2 font-body text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block font-body text-xs text-ink/60">Vai trò</label>
+            <select
+              value={newRole}
+              onChange={(e) => setNewRole(e.target.value as UserRole)}
+              className="rounded-lg border-2 border-line px-3 py-2 font-body text-sm"
+            >
+              <option value="agent">Agent</option>
+              <option value="supervisor">Supervisor</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block font-body text-xs text-ink/60">VP</label>
+            <select
+              value={newBranch}
+              onChange={(e) => setNewBranch(e.target.value)}
+              className="rounded-lg border-2 border-line px-3 py-2 font-body text-sm"
+            >
+              <option value="">—</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.branch_name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block font-body text-xs text-ink/60">Bộ phận</label>
+            <select
+              value={newDept}
+              onChange={(e) => setNewDept(e.target.value)}
+              className="rounded-lg border-2 border-line px-3 py-2 font-body text-sm"
+            >
+              <option value="">—</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <PrimaryButton type="submit" disabled={busy} className="px-4 py-2 text-sm">
+            {busy ? "Đang tạo..." : "+ Tạo tài khoản"}
+          </PrimaryButton>
+        </form>
+      </Panel>
+
       {pending.length > 0 && (
-        <Panel title="Tài khoản mới tạo, chưa gán vai trò">
+        <Panel title="Tài khoản tạo qua Supabase Dashboard, chưa gán vai trò">
           <p className="mb-3 font-body text-xs text-ink/50">
-            Đây là các tài khoản bạn vừa tạo bên Supabase Dashboard (Authentication →
-            Users) nhưng chưa gán vai trò/VP. Điền thông tin rồi bấm Thêm.
+            Nếu bạn tự tạo tài khoản bên Supabase Dashboard (thay vì dùng form phía
+            trên), gán vai trò cho tài khoản đó ở đây.
           </p>
           <div className="space-y-4">
             {pending.map((u) => (
@@ -145,6 +292,7 @@ export default function AdminUsersPage() {
                 <th className="py-2 pr-3">VP</th>
                 <th className="py-2 pr-3">Bộ phận</th>
                 <th className="py-2 pr-3">Trạng thái</th>
+                <th className="py-2 pr-3"></th>
               </tr>
             </thead>
             <tbody>
@@ -205,17 +353,21 @@ export default function AdminUsersPage() {
                       {p.status}
                     </button>
                   </td>
+                  <td className="py-2 pr-3">
+                    <button
+                      onClick={() => handleDeleteUser(p.id, p.full_name)}
+                      disabled={busy}
+                      className="font-body text-xs text-danger underline disabled:opacity-40"
+                    >
+                      Xoá
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </Panel>
-
-      <p className="font-body text-xs text-ink/40">
-        Muốn xoá hẳn 1 tài khoản: vào Supabase Dashboard → Authentication → Users
-        → xoá ở đó (không xoá qua trang này) để tránh mồ côi dữ liệu đăng nhập.
-      </p>
     </div>
   );
 }

@@ -193,9 +193,19 @@ Truy cập qua `/agent/login` với tài khoản vai trò `admin` (demo:
 - **`/admin/categories`** — thêm/tắt category và subcategory.
 - **`/admin/branches`** — thêm VP mới, thêm quầy cho từng VP.
 - **`/admin/sla`** — thêm/tắt rule SLA theo VP/category/subcategory.
-- **`/admin/users`** — sửa vai trò/VP/bộ phận của nhân viên hiện có, và gán vai
-  trò cho tài khoản vừa tạo bên Supabase Dashboard (Authentication → Users)
-  nhưng chưa có profile.
+- **`/admin/users`** — sửa vai trò/VP/bộ phận của nhân viên hiện có; **tạo tài
+  khoản đăng nhập mới hoàn toàn** (email+mật khẩu) và **xoá vĩnh viễn** tài
+  khoản, ngay tại trang này (không cần qua Supabase Dashboard nữa).
+
+  ⚠️ Tính năng tạo/xoá cần thêm 1 biến môi trường **chỉ chạy phía server**
+  (không lộ ra trình duyệt): vào **Vercel → Settings → Environment Variables**,
+  thêm:
+  - Name: `SUPABASE_SERVICE_ROLE_KEY`
+  - Value: lấy tại Supabase Dashboard → Settings → API → mục **service_role**
+    (khác với anon key đang dùng — đây là khoá cấp cao nhất, giữ kín)
+
+  Thêm xong bấm **Save** rồi vào tab **Deployments** → **Redeploy** để biến môi
+  trường mới có hiệu lực (biến môi trường chỉ áp dụng cho lần build tiếp theo).
 - **`/admin/export`** — xuất 5 dataset báo cáo ra file CSV trực tiếp từ trình
   duyệt (mở được bằng Excel/Google Sheets), không cần chờ tích hợp Google
   Sheets tự động ở Phase 8.
