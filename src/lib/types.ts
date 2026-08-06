@@ -55,6 +55,7 @@ export type Profile = {
   role: UserRole;
   branch_id: string | null;
   department_id: string | null;
+  status: "ACTIVE" | "INACTIVE";
 };
 
 export type TicketStatus =

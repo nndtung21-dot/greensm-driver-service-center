@@ -23,10 +23,17 @@ export default function AgentLoginPage() {
     }
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role, status")
       .eq("id", data.session.user.id)
       .maybeSingle();
     setLoading(false);
+
+    if (!profile || profile.status === "INACTIVE") {
+      await supabase.auth.signOut();
+      setError("Tài khoản này đã bị khoá. Liên hệ Admin để được hỗ trợ.");
+      return;
+    }
+
     if (profile?.role === "admin") {
       router.push("/admin/agents");
     } else if (profile?.role === "supervisor") {

@@ -5,12 +5,35 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { NowServingRow } from "@/lib/types";
 
+function getVietnameseVoice(): SpeechSynthesisVoice | null {
+  const voices = window.speechSynthesis.getVoices();
+  return (
+    voices.find((v) => v.lang.toLowerCase() === "vi-vn") ??
+    voices.find((v) => v.lang.toLowerCase().startsWith("vi")) ??
+    null
+  );
+}
+
 function speak(text: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-  const utter = new SpeechSynthesisUtterance(text);
-  utter.lang = "vi-VN";
-  utter.rate = 0.95;
-  window.speechSynthesis.speak(utter);
+
+  const doSpeak = () => {
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "vi-VN";
+    utter.rate = 0.95;
+    const viVoice = getVietnameseVoice();
+    if (viVoice) utter.voice = viVoice;
+    window.speechSynthesis.cancel(); // tránh chồng câu nếu số mới gọi dồn dập
+    window.speechSynthesis.speak(utter);
+  };
+
+  // Một số trình duyệt (đặc biệt Chrome) tải danh sách giọng đọc bất đồng bộ —
+  // lần gọi đầu getVoices() có thể trả về mảng rỗng.
+  if (window.speechSynthesis.getVoices().length === 0) {
+    window.speechSynthesis.onvoiceschanged = () => doSpeak();
+  } else {
+    doSpeak();
+  }
 }
 
 export default function TvDisplayPage() {
