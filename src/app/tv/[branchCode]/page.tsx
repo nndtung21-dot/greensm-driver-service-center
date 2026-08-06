@@ -5,35 +5,53 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { NowServingRow } from "@/lib/types";
 
-function getVietnameseVoice(): SpeechSynthesisVoice | null {
-  const voices = window.speechSynthesis.getVoices();
-  return (
-    voices.find((v) => v.lang.toLowerCase() === "vi-vn") ??
-    voices.find((v) => v.lang.toLowerCase().startsWith("vi")) ??
-    null
-  );
+// Thu sẵn từng từ bằng espeak-ng (giọng tiếng Việt Miền Nam) — phát ghép lại
+// khi có số mới, không phụ thuộc giọng đọc cài sẵn trên máy/trình duyệt.
+const CLIP_BASE = "/audio/tv/";
+const DIGIT_CLIP: Record<string, string> = {
+  "0": "so_0",
+  "1": "so_1",
+  "2": "so_2",
+  "3": "so_3",
+  "4": "so_4",
+  "5": "so_5",
+  "6": "so_6",
+  "7": "so_7",
+  "8": "so_8",
+  "9": "so_9",
+  A: "chu_a",
+};
+
+function buildAnnouncementClips(queueNumber: string, counterCode: string | null): string[] {
+  const clips: string[] = ["intro"];
+  for (const ch of queueNumber.toUpperCase()) {
+    if (DIGIT_CLIP[ch]) clips.push(DIGIT_CLIP[ch]);
+  }
+  if (counterCode) {
+    clips.push("den_quay_so");
+    for (const ch of counterCode) {
+      if (DIGIT_CLIP[ch]) clips.push(DIGIT_CLIP[ch]);
+    }
+  } else {
+    clips.push("quay_phuc_vu");
+  }
+  return clips;
 }
 
-function speak(text: string) {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-
-  const doSpeak = () => {
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = "vi-VN";
-    utter.rate = 0.95;
-    const viVoice = getVietnameseVoice();
-    if (viVoice) utter.voice = viVoice;
-    window.speechSynthesis.cancel(); // tránh chồng câu nếu số mới gọi dồn dập
-    window.speechSynthesis.speak(utter);
+function playSequence(clipNames: string[]) {
+  if (typeof window === "undefined" || clipNames.length === 0) return;
+  let i = 0;
+  const audio = new Audio();
+  const playNext = () => {
+    if (i >= clipNames.length) return;
+    audio.src = `${CLIP_BASE}${clipNames[i]}.mp3`;
+    i += 1;
+    audio.play().catch(() => {
+      /* trình duyệt chặn autoplay tới khi có tương tác đầu tiên trên trang */
+    });
   };
-
-  // Một số trình duyệt (đặc biệt Chrome) tải danh sách giọng đọc bất đồng bộ —
-  // lần gọi đầu getVoices() có thể trả về mảng rỗng.
-  if (window.speechSynthesis.getVoices().length === 0) {
-    window.speechSynthesis.onvoiceschanged = () => doSpeak();
-  } else {
-    doSpeak();
-  }
+  audio.addEventListener("ended", playNext);
+  playNext();
 }
 
 export default function TvDisplayPage() {
@@ -54,8 +72,7 @@ export default function TvDisplayPage() {
     const top = list[0];
     if (top && top.queue_number !== lastAnnounced.current) {
       lastAnnounced.current = top.queue_number;
-      const counterText = top.counter_code ? `quầy số ${top.counter_code}` : "quầy phục vụ";
-      speak(`Kính mời tài xế có số ${top.queue_number.split("").join(" ")} đến ${counterText}.`);
+      playSequence(buildAnnouncementClips(top.queue_number, top.counter_code));
     }
   }, [params.branchCode]);
 
