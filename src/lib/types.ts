@@ -140,6 +140,7 @@ export type Counter = {
   counter_name: string;
   status: "OPEN" | "CLOSED" | "AVAILABLE" | "BUSY" | "OFFLINE";
   branch_id: string;
+  default_agent_id: string | null;
 };
 
 // TV Display (tv_now_serving RPC)

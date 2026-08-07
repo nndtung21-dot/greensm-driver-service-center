@@ -2,12 +2,13 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
-import { Branch, Counter } from "@/lib/types";
+import { AgentOption, Branch, Counter } from "@/lib/types";
 import { Panel, PrimaryButton, SecondaryButton } from "@/components/agent/ui";
 
 export default function AdminBranchesPage() {
   const [branches, setBranches] = useState<(Branch & { status: string })[]>([]);
   const [counters, setCounters] = useState<Counter[]>([]);
+  const [agents, setAgents] = useState<(AgentOption & { branch_id: string | null })[]>([]);
   const [loading, setLoading] = useState(true);
   const [newBranchCode, setNewBranchCode] = useState("");
   const [newBranchName, setNewBranchName] = useState("");
@@ -16,12 +17,14 @@ export default function AdminBranchesPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [{ data: br }, { data: co }] = await Promise.all([
+    const [{ data: br }, { data: co }, { data: ag }] = await Promise.all([
       supabase.from("branches").select("*").order("branch_code"),
       supabase.from("counters").select("*").order("counter_code"),
+      supabase.from("profiles").select("id, full_name, email, role, branch_id").eq("role", "agent"),
     ]);
     setBranches(br ?? []);
     setCounters(co ?? []);
+    setAgents(ag ?? []);
     setLoading(false);
   }, []);
 
@@ -66,11 +69,25 @@ export default function AdminBranchesPage() {
     }
   }
 
+  async function setCounterAgent(counterId: string, agentId: string) {
+    const { error } = await supabase
+      .from("counters")
+      .update({ default_agent_id: agentId || null })
+      .eq("id", counterId);
+    if (error) setErrorMessage(error.message);
+    else load();
+  }
+
   if (loading) return <p className="font-body text-ink/50">Đang tải...</p>;
 
   return (
     <div className="max-w-3xl space-y-6">
       <h1 className="font-display text-2xl font-bold text-brand-900">Văn phòng & Quầy</h1>
+      <p className="font-body text-sm text-ink/60">
+        Mỗi quầy có thể gán 1 Agent &quot;chủ&quot; — khi Agent đó bấm &quot;Gọi
+        tiếp theo&quot;, hệ thống sẽ ưu tiên dùng đúng quầy này nếu đang trống,
+        và màn hình TV sẽ hiển thị hàng chờ riêng của Agent đó dưới quầy này.
+      </p>
       {errorMessage && (
         <p className="rounded-lg bg-red-50 px-4 py-2 font-body text-sm text-danger">{errorMessage}</p>
       )}
@@ -116,15 +133,32 @@ export default function AdminBranchesPage() {
                 {b.status === "ACTIVE" ? "Tắt" : "Bật lại"}
               </SecondaryButton>
             </div>
-            <div className="space-y-1 pl-2">
+            <div className="space-y-2 pl-2">
               {counters
                 .filter((c) => c.branch_id === b.id)
                 .map((c) => (
-                  <div key={c.id} className="flex items-center justify-between py-1 font-body text-sm">
-                    <span>{c.counter_name}</span>
-                    <span className="text-xs text-ink/40">{c.status}</span>
+                  <div key={c.id} className="flex items-center justify-between gap-3 py-1 font-body text-sm">
+                    <span className="w-32">{c.counter_name}</span>
+                    <span className="w-20 text-xs text-ink/40">{c.status}</span>
+                    <select
+                      value={c.default_agent_id ?? ""}
+                      onChange={(e) => setCounterAgent(c.id, e.target.value)}
+                      className="flex-1 rounded-lg border-2 border-line px-2 py-1 text-xs"
+                    >
+                      <option value="">— Chưa gán Agent —</option>
+                      {agents
+                        .filter((a) => a.branch_id === b.id)
+                        .map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.full_name}
+                          </option>
+                        ))}
+                    </select>
                   </div>
                 ))}
+              {counters.filter((c) => c.branch_id === b.id).length === 0 && (
+                <p className="font-body text-xs text-ink/40">Chưa có quầy nào.</p>
+              )}
             </div>
             <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-line pt-3">
               <input

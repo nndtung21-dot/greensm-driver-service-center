@@ -8,13 +8,17 @@ type CounterStatusRow = {
   counter_code: string;
   counter_name: string;
   counter_status: "OPEN" | "CLOSED" | "AVAILABLE" | "BUSY" | "OFFLINE";
+  agent_id: string | null;
+  agent_name: string | null;
   queue_number: string | null;
   called_at: string | null;
 };
 
-type QueueListRow = {
+type AgentQueueRow = {
+  agent_id: string | null;
+  ticket_code: string;
   queue_number: string;
-  status: "WAITING" | "PROCESSING";
+  driver_name: string;
   created_at: string;
 };
 
@@ -40,8 +44,6 @@ function buildAnnouncementClips(queueNumber: string, counterCode: string): strin
   return clips;
 }
 
-// Hàng đợi phát audio toàn cục — nhiều lượt gọi số dồn dập vẫn phát tuần tự,
-// không chồng tiếng lên nhau.
 function useAudioQueue() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const queueRef = useRef<string[]>([]);
@@ -76,20 +78,19 @@ function useAudioQueue() {
 export default function TvDisplayPage() {
   const params = useParams<{ branchCode: string }>();
   const [counters, setCounters] = useState<CounterStatusRow[]>([]);
-  const [queueList, setQueueList] = useState<QueueListRow[]>([]);
+  const [agentQueue, setAgentQueue] = useState<AgentQueueRow[]>([]);
   const lastAnnouncedAt = useRef<string | null>(null);
   const enqueueAudio = useAudioQueue();
 
   const load = useCallback(async () => {
     const [{ data: counterData }, { data: queueData }] = await Promise.all([
       supabase.rpc("tv_counters_status", { p_branch_code: params.branchCode }),
-      supabase.rpc("tv_queue_list", { p_branch_code: params.branchCode }),
+      supabase.rpc("tv_agent_queue_list", { p_branch_code: params.branchCode }),
     ]);
     const counterList = (counterData as CounterStatusRow[]) ?? [];
     setCounters(counterList);
-    setQueueList((queueData as QueueListRow[]) ?? []);
+    setAgentQueue((queueData as AgentQueueRow[]) ?? []);
 
-    // Thông báo mọi quầy vừa gọi số mới kể từ lần load trước, theo đúng thứ tự thời gian
     const newlyCalled = counterList
       .filter((c) => c.queue_number && c.called_at)
       .filter((c) => !lastAnnouncedAt.current || c.called_at! > lastAnnouncedAt.current!)
@@ -109,6 +110,7 @@ export default function TvDisplayPage() {
       .channel(`tv-${params.branchCode}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "queue_tickets" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "counters" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "service_cases" }, load)
       .subscribe();
     const interval = setInterval(load, 15000);
     return () => {
@@ -117,9 +119,8 @@ export default function TvDisplayPage() {
     };
   }, [params.branchCode, load]);
 
-  const waitingCount = queueList.filter((q) => q.status === "WAITING").length;
-  const waitingList = queueList.filter((q) => q.status === "WAITING");
-  const processingList = queueList.filter((q) => q.status === "PROCESSING");
+  const unassigned = agentQueue.filter((q) => !q.agent_id);
+  const totalWaiting = agentQueue.length;
 
   return (
     <div className="flex min-h-screen flex-col bg-brand-900 px-10 py-8 text-white">
@@ -128,30 +129,59 @@ export default function TvDisplayPage() {
           GREEN SM DRIVER SERVICE CENTER
         </p>
         <p className="font-body text-xl text-white/70">
-          Đang chờ: <span className="font-bold text-white">{waitingCount}</span>
+          Đang chờ: <span className="font-bold text-white">{totalWaiting}</span>
         </p>
       </div>
 
-      {/* Theo từng quầy */}
-      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+      {/* Theo từng quầy: đang phục vụ số mấy + hàng chờ riêng của quầy đó */}
+      <div className="grid flex-1 grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {counters.map((c) => {
           const busy = c.counter_status === "BUSY" && c.queue_number;
+          const myWaiting = c.agent_id
+            ? agentQueue.filter((q) => q.agent_id === c.agent_id)
+            : [];
           return (
-            <div
-              key={c.counter_code}
-              className={`rounded-2xl px-6 py-6 text-center ${
-                busy ? "bg-brand-100 text-brand-900" : "bg-white/10 text-white/50"
-              }`}
-            >
-              <p className="font-body text-lg uppercase tracking-wide">{c.counter_name}</p>
-              <p className="mt-2 font-display text-6xl font-extrabold">
-                {busy ? c.queue_number : "—"}
-              </p>
-              {!busy && (
-                <p className="mt-1 font-body text-sm">
-                  {c.counter_status === "AVAILABLE" ? "Sẵn sàng" : c.counter_status === "OFFLINE" ? "Offline" : "Đã đóng"}
+            <div key={c.counter_code} className="flex flex-col rounded-2xl bg-white/5 p-5">
+              <div
+                className={`mb-4 rounded-xl px-4 py-5 text-center ${
+                  busy ? "bg-brand-100 text-brand-900" : "bg-white/10 text-white/50"
+                }`}
+              >
+                <p className="font-body text-sm uppercase tracking-wide">
+                  {c.counter_name}
+                  {c.agent_name ? ` · ${c.agent_name}` : ""}
                 </p>
-              )}
+                <p className="mt-1 font-display text-5xl font-extrabold">
+                  {busy ? c.queue_number : "—"}
+                </p>
+                {!busy && (
+                  <p className="mt-1 font-body text-xs">
+                    {c.counter_status === "AVAILABLE"
+                      ? "Sẵn sàng"
+                      : c.counter_status === "OFFLINE"
+                      ? "Offline"
+                      : "Đã đóng"}
+                  </p>
+                )}
+              </div>
+
+              <p className="mb-2 font-body text-xs uppercase tracking-wide text-white/50">
+                Đang chờ ({myWaiting.length})
+              </p>
+              <div className="flex-1 space-y-1 overflow-y-auto">
+                {myWaiting.map((q) => (
+                  <p key={q.ticket_code} className="font-body text-sm">
+                    <span className="font-semibold">{q.queue_number}</span>
+                    <span className="text-white/60"> — {q.driver_name}</span>
+                  </p>
+                ))}
+                {c.agent_id && myWaiting.length === 0 && (
+                  <p className="font-body text-xs text-white/30">Không có ai chờ.</p>
+                )}
+                {!c.agent_id && (
+                  <p className="font-body text-xs text-white/30">Quầy chưa gán Agent.</p>
+                )}
+              </div>
             </div>
           );
         })}
@@ -160,46 +190,21 @@ export default function TvDisplayPage() {
         )}
       </div>
 
-      {/* Danh sách chờ / đang xử lý */}
-      <div className="grid flex-1 grid-cols-1 gap-6 sm:grid-cols-2">
-        <div className="rounded-2xl bg-white/5 p-6">
-          <p className="mb-4 font-body text-lg uppercase tracking-wide text-white/60">
-            Đang chờ ({waitingList.length})
+      {unassigned.length > 0 && (
+        <div className="mt-5 rounded-2xl bg-white/5 p-5">
+          <p className="mb-2 font-body text-xs uppercase tracking-wide text-white/50">
+            Chưa phân bổ Agent ({unassigned.length})
           </p>
-          <div className="flex flex-wrap gap-3">
-            {waitingList.map((q) => (
-              <span
-                key={q.queue_number}
-                className="rounded-xl bg-white/10 px-5 py-3 font-display text-3xl font-bold"
-              >
-                {q.queue_number}
-              </span>
+          <div className="flex flex-wrap gap-x-6 gap-y-1">
+            {unassigned.map((q) => (
+              <p key={q.ticket_code} className="font-body text-sm">
+                <span className="font-semibold">{q.queue_number}</span>
+                <span className="text-white/60"> — {q.driver_name}</span>
+              </p>
             ))}
-            {waitingList.length === 0 && (
-              <p className="font-body text-white/40">Không có ai đang chờ.</p>
-            )}
           </div>
         </div>
-
-        <div className="rounded-2xl bg-white/5 p-6">
-          <p className="mb-4 font-body text-lg uppercase tracking-wide text-white/60">
-            Đang xử lý ({processingList.length})
-          </p>
-          <div className="flex flex-wrap gap-3">
-            {processingList.map((q) => (
-              <span
-                key={q.queue_number}
-                className="rounded-xl bg-brand-100 px-5 py-3 font-display text-3xl font-bold text-brand-900"
-              >
-                {q.queue_number}
-              </span>
-            ))}
-            {processingList.length === 0 && (
-              <p className="font-body text-white/40">Chưa có ticket nào đang xử lý.</p>
-            )}
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
