@@ -44,35 +44,105 @@ function buildAnnouncementClips(queueNumber: string, counterCode: string): strin
   return clips;
 }
 
-function useAudioQueue() {
+const DIGIT_WORD: Record<string, string> = {
+  "0": "không", "1": "một", "2": "hai", "3": "ba", "4": "bốn",
+  "5": "năm", "6": "sáu", "7": "bảy", "8": "tám", "9": "chín", A: "a",
+};
+
+function buildAnnouncementText(queueNumber: string, counterCode: string): string {
+  const qWords = [...queueNumber.toUpperCase()].map((ch) => DIGIT_WORD[ch] ?? ch).join(" ");
+  const cWords = [...counterCode].map((ch) => DIGIT_WORD[ch] ?? ch).join(" ");
+  return `Kính mời tài xế có số ${qWords} đến quầy số ${cWords}`;
+}
+
+// Hàng đợi thông báo: mỗi lượt gọi số ưu tiên thử giọng Google (tự nhiên hơn)
+// trước, nếu lỗi/bị chặn thì tự chuyển sang giọng thu sẵn (espeak). Xử lý
+// tuần tự nên nhiều số gọi dồn dập vẫn không chồng tiếng nhau.
+function useAnnouncer() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const queueRef = useRef<string[]>([]);
+  const queueRef = useRef<(() => Promise<void>)[]>([]);
   const playingRef = useRef(false);
 
-  const playNextClip = useCallback(() => {
-    const next = queueRef.current.shift();
-    if (!next) {
-      playingRef.current = false;
-      return;
-    }
-    playingRef.current = true;
-    if (!audioRef.current) audioRef.current = new Audio();
-    audioRef.current.src = `${CLIP_BASE}${next}.mp3`;
-    audioRef.current.onended = playNextClip;
-    audioRef.current.play().catch(() => {
-      playingRef.current = false;
+  const playLocalClips = useCallback((clipNames: string[]) => {
+    return new Promise<void>((resolve) => {
+      if (!audioRef.current) audioRef.current = new Audio();
+      const audio = audioRef.current;
+      let i = 0;
+      const playNext = () => {
+        if (i >= clipNames.length) {
+          resolve();
+          return;
+        }
+        audio.src = `${CLIP_BASE}${clipNames[i]}.mp3`;
+        i += 1;
+        audio.onended = playNext;
+        audio.play().catch(() => resolve());
+      };
+      playNext();
     });
   }, []);
 
+  const playRemote = useCallback((url: string) => {
+    return new Promise<void>((resolve, reject) => {
+      if (!audioRef.current) audioRef.current = new Audio();
+      const audio = audioRef.current;
+      audio.src = url;
+      audio.onended = () => resolve();
+      audio.onerror = () => reject(new Error("playback error"));
+      audio.play().catch(reject);
+    });
+  }, []);
+
+  const processQueue = useCallback(async () => {
+    if (playingRef.current) return;
+    playingRef.current = true;
+    while (queueRef.current.length > 0) {
+      const job = queueRef.current.shift();
+      if (job) {
+        try {
+          await job();
+        } catch {
+          /* bỏ qua, chuyển sang lượt tiếp theo */
+        }
+      }
+    }
+    playingRef.current = false;
+  }, []);
+
   const enqueue = useCallback(
-    (clipNames: string[]) => {
-      queueRef.current.push(...clipNames);
-      if (!playingRef.current) playNextClip();
+    (queueNumber: string, counterCode: string) => {
+      queueRef.current.push(async () => {
+        try {
+          const text = buildAnnouncementText(queueNumber, counterCode);
+          const res = await fetch(`/api/tts?text=${encodeURIComponent(text)}`);
+          if (!res.ok) throw new Error("tts route failed");
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          try {
+            await playRemote(url);
+          } finally {
+            URL.revokeObjectURL(url);
+          }
+        } catch {
+          await playLocalClips(buildAnnouncementClips(queueNumber, counterCode));
+        }
+      });
+      processQueue();
     },
-    [playNextClip]
+    [playRemote, playLocalClips, processQueue]
   );
 
   return enqueue;
+}
+
+function useClock() {
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    setNow(new Date());
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return now;
 }
 
 export default function TvDisplayPage() {
@@ -80,7 +150,8 @@ export default function TvDisplayPage() {
   const [counters, setCounters] = useState<CounterStatusRow[]>([]);
   const [agentQueue, setAgentQueue] = useState<AgentQueueRow[]>([]);
   const lastAnnouncedAt = useRef<string | null>(null);
-  const enqueueAudio = useAudioQueue();
+  const enqueueAudio = useAnnouncer();
+  const clock = useClock();
 
   const load = useCallback(async () => {
     const [{ data: counterData }, { data: queueData }] = await Promise.all([
@@ -97,7 +168,7 @@ export default function TvDisplayPage() {
       .sort((a, b) => (a.called_at! < b.called_at! ? -1 : 1));
 
     for (const c of newlyCalled) {
-      enqueueAudio(buildAnnouncementClips(c.queue_number!, c.counter_code));
+      enqueueAudio(c.queue_number!, c.counter_code);
     }
     if (newlyCalled.length > 0) {
       lastAnnouncedAt.current = newlyCalled[newlyCalled.length - 1].called_at;
@@ -128,9 +199,19 @@ export default function TvDisplayPage() {
         <p className="font-display text-2xl font-bold tracking-wide">
           GREEN SM DRIVER SERVICE CENTER
         </p>
-        <p className="font-body text-xl text-white/70">
-          Đang chờ: <span className="font-bold text-white">{totalWaiting}</span>
-        </p>
+        <div className="flex items-center gap-6">
+          {clock && (
+            <p className="font-display text-2xl font-semibold tabular-nums text-white/90">
+              {clock.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              <span className="ml-3 font-body text-base font-normal text-white/50">
+                {clock.toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" })}
+              </span>
+            </p>
+          )}
+          <p className="font-body text-xl text-white/70">
+            Đang chờ: <span className="font-bold text-white">{totalWaiting}</span>
+          </p>
+        </div>
       </div>
 
       {/* Theo từng quầy: đang phục vụ số mấy + hàng chờ riêng của quầy đó */}

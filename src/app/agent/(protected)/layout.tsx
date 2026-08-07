@@ -8,6 +8,7 @@ import { Profile } from "@/lib/types";
 
 const NAV_ITEMS = [
   { href: "/agent/queue", label: "Queue của tôi" },
+  { href: "/agent/history", label: "Lịch sử" },
   { href: "/agent/performance", label: "Hiệu suất" },
 ];
 

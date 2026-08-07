@@ -53,6 +53,20 @@ export default function AdminCategoriesPage() {
     load();
   }
 
+  async function deleteCategory(id: string, name: string) {
+    if (!confirm(`Xoá vĩnh viễn danh mục "${name}"? Không thể hoàn tác.`)) return;
+    const { error } = await supabase.from("service_categories").delete().eq("id", id);
+    if (error) {
+      setErrorMessage(
+        error.code === "23503"
+          ? `Không xoá được "${name}" vì đã có danh mục con hoặc ticket dùng danh mục này. Dùng nút "Tắt" thay vì xoá.`
+          : error.message
+      );
+    } else {
+      load();
+    }
+  }
+
   async function addSubcategory(categoryId: string) {
     const name = newSubName[categoryId]?.trim();
     const code = newSubCode[categoryId]?.trim();
@@ -78,6 +92,20 @@ export default function AdminCategoriesPage() {
       .update({ status: status === "ACTIVE" ? "INACTIVE" : "ACTIVE" })
       .eq("id", id);
     load();
+  }
+
+  async function deleteSubcategory(id: string, name: string) {
+    if (!confirm(`Xoá vĩnh viễn "${name}"? Không thể hoàn tác.`)) return;
+    const { error } = await supabase.from("service_subcategories").delete().eq("id", id);
+    if (error) {
+      setErrorMessage(
+        error.code === "23503"
+          ? `Không xoá được "${name}" vì đã có ticket dùng danh mục con này. Dùng nút "Tắt" thay vì xoá.`
+          : error.message
+      );
+    } else {
+      load();
+    }
   }
 
   if (loading) return <p className="font-body text-ink/50">Đang tải...</p>;
@@ -129,6 +157,12 @@ export default function AdminCategoriesPage() {
               >
                 {cat.status === "ACTIVE" ? "Tắt" : "Bật lại"}
               </SecondaryButton>
+              <button
+                onClick={() => deleteCategory(cat.id, cat.name)}
+                className="ml-2 font-body text-xs text-danger underline"
+              >
+                Xoá
+              </button>
             </div>
             <div className="space-y-1 pl-2">
               {subcategories
@@ -141,12 +175,20 @@ export default function AdminCategoriesPage() {
                         ({s.status === "ACTIVE" ? "đang bật" : "đã tắt"})
                       </span>
                     </span>
-                    <button
-                      onClick={() => toggleSubcategory(s.id, s.status)}
-                      className="font-body text-xs text-brand-700 underline"
-                    >
-                      {s.status === "ACTIVE" ? "Tắt" : "Bật lại"}
-                    </button>
+                    <span className="flex gap-3">
+                      <button
+                        onClick={() => toggleSubcategory(s.id, s.status)}
+                        className="font-body text-xs text-brand-700 underline"
+                      >
+                        {s.status === "ACTIVE" ? "Tắt" : "Bật lại"}
+                      </button>
+                      <button
+                        onClick={() => deleteSubcategory(s.id, s.name)}
+                        className="font-body text-xs text-danger underline"
+                      >
+                        Xoá
+                      </button>
+                    </span>
                   </div>
                 ))}
             </div>
