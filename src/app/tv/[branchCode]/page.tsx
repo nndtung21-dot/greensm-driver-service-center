@@ -194,98 +194,121 @@ export default function TvDisplayPage() {
   const totalWaiting = agentQueue.length;
 
   return (
-    <div className="flex min-h-screen flex-col bg-brand-900 px-10 py-8 text-white">
-      <div className="mb-6 flex items-center justify-between">
-        <p className="font-display text-2xl font-bold tracking-wide">
-          GREEN SM DRIVER SERVICE CENTER
-        </p>
-        <div className="flex items-center gap-6">
-          {clock && (
-            <p className="font-display text-2xl font-semibold tabular-nums text-white/90">
-              {clock.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-              <span className="ml-3 font-body text-base font-normal text-white/50">
-                {clock.toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" })}
-              </span>
-            </p>
-          )}
-          <p className="font-body text-xl text-white/70">
-            Đang chờ: <span className="font-bold text-white">{totalWaiting}</span>
+    <div className="flex min-h-screen flex-col bg-paper">
+      {/* Thanh trên: kiểu bảng điện tử ngân hàng — nền trắng, viền dưới, logo bên trái */}
+      <div className="flex items-center justify-between border-b border-line bg-white px-10 py-5 shadow-sm">
+        <div>
+          <p className="font-body text-xs font-semibold uppercase tracking-widest text-brand-500">
+            Green SM
+          </p>
+          <p className="font-display text-2xl font-bold text-brand-900">
+            Driver Service Center
           </p>
         </div>
-      </div>
-
-      {/* Theo từng quầy: đang phục vụ số mấy + hàng chờ riêng của quầy đó */}
-      <div className="grid flex-1 grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {counters.map((c) => {
-          const busy = c.counter_status === "BUSY" && c.queue_number;
-          const myWaiting = c.agent_id
-            ? agentQueue.filter((q) => q.agent_id === c.agent_id)
-            : [];
-          return (
-            <div key={c.counter_code} className="flex flex-col rounded-2xl bg-white/5 p-5">
-              <div
-                className={`mb-4 rounded-xl px-4 py-5 text-center ${
-                  busy ? "bg-brand-100 text-brand-900" : "bg-white/10 text-white/50"
-                }`}
-              >
-                <p className="font-body text-sm uppercase tracking-wide">
-                  {c.counter_name}
-                  {c.agent_name ? ` · ${c.agent_name}` : ""}
-                </p>
-                <p className="mt-1 font-display text-5xl font-extrabold">
-                  {busy ? c.queue_number : "—"}
-                </p>
-                {!busy && (
-                  <p className="mt-1 font-body text-xs">
-                    {c.counter_status === "AVAILABLE"
-                      ? "Sẵn sàng"
-                      : c.counter_status === "OFFLINE"
-                      ? "Offline"
-                      : "Đã đóng"}
-                  </p>
-                )}
-              </div>
-
-              <p className="mb-2 font-body text-xs uppercase tracking-wide text-white/50">
-                Đang chờ ({myWaiting.length})
+        <div className="flex items-center gap-8">
+          {clock && (
+            <div className="text-right">
+              <p className="font-display text-3xl font-bold tabular-nums text-brand-900">
+                {clock.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </p>
-              <div className="flex-1 space-y-1 overflow-y-auto">
-                {myWaiting.map((q) => (
-                  <p key={q.ticket_code} className="font-body text-sm">
-                    <span className="font-semibold">{q.queue_number}</span>
-                    <span className="text-white/60"> — {q.driver_name}</span>
-                  </p>
-                ))}
-                {c.agent_id && myWaiting.length === 0 && (
-                  <p className="font-body text-xs text-white/30">Không có ai chờ.</p>
-                )}
-                {!c.agent_id && (
-                  <p className="font-body text-xs text-white/30">Quầy chưa gán Agent.</p>
-                )}
-              </div>
+              <p className="font-body text-sm capitalize text-ink/50">
+                {clock.toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" })}
+              </p>
             </div>
-          );
-        })}
-        {counters.length === 0 && (
-          <p className="col-span-full font-body text-white/50">Chưa có quầy nào được cấu hình.</p>
-        )}
-      </div>
-
-      {unassigned.length > 0 && (
-        <div className="mt-5 rounded-2xl bg-white/5 p-5">
-          <p className="mb-2 font-body text-xs uppercase tracking-wide text-white/50">
-            Chưa phân bổ Agent ({unassigned.length})
-          </p>
-          <div className="flex flex-wrap gap-x-6 gap-y-1">
-            {unassigned.map((q) => (
-              <p key={q.ticket_code} className="font-body text-sm">
-                <span className="font-semibold">{q.queue_number}</span>
-                <span className="text-white/60"> — {q.driver_name}</span>
-              </p>
-            ))}
+          )}
+          <div className="rounded-xl bg-brand-100 px-5 py-3 text-center">
+            <p className="font-body text-xs uppercase tracking-wide text-brand-700">Đang chờ</p>
+            <p className="font-display text-3xl font-bold text-brand-900">{totalWaiting}</p>
           </div>
         </div>
-      )}
+      </div>
+
+      <div className="flex-1 px-10 py-8">
+        {/* Theo từng quầy: đang phục vụ số mấy + hàng chờ riêng của quầy đó */}
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {counters.map((c) => {
+            const busy = c.counter_status === "BUSY" && c.queue_number;
+            const myWaiting = c.agent_id
+              ? agentQueue.filter((q) => q.agent_id === c.agent_id)
+              : [];
+            return (
+              <div
+                key={c.counter_code}
+                className="flex flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-sm"
+              >
+                <div className="bg-brand-700 px-5 py-2.5">
+                  <p className="font-body text-sm font-semibold uppercase tracking-wide text-white">
+                    {c.counter_name}
+                    {c.agent_name ? ` · ${c.agent_name}` : ""}
+                  </p>
+                </div>
+                <div className={`px-5 py-7 text-center ${busy ? "bg-brand-100" : "bg-paper"}`}>
+                  <p className={`font-display text-6xl font-extrabold ${busy ? "text-brand-900" : "text-ink/25"}`}>
+                    {busy ? c.queue_number : "—"}
+                  </p>
+                  {!busy && (
+                    <p className="mt-1 font-body text-xs uppercase tracking-wide text-ink/40">
+                      {c.counter_status === "AVAILABLE"
+                        ? "Sẵn sàng"
+                        : c.counter_status === "OFFLINE"
+                        ? "Offline"
+                        : "Đã đóng"}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex-1 border-t border-line px-5 py-4">
+                  <p className="mb-2 font-body text-xs font-semibold uppercase tracking-wide text-ink/40">
+                    Đang chờ ({myWaiting.length})
+                  </p>
+                  <div className="space-y-1.5">
+                    {myWaiting.map((q) => (
+                      <div
+                        key={q.ticket_code}
+                        className="flex items-baseline justify-between border-b border-line/60 pb-1 last:border-0"
+                      >
+                        <span className="font-display text-lg font-bold text-brand-900">
+                          {q.queue_number}
+                        </span>
+                        <span className="font-body text-sm text-ink/70">{q.driver_name}</span>
+                      </div>
+                    ))}
+                    {c.agent_id && myWaiting.length === 0 && (
+                      <p className="font-body text-sm text-ink/30">Không có ai chờ.</p>
+                    )}
+                    {!c.agent_id && (
+                      <p className="font-body text-sm text-ink/30">Quầy chưa gán Agent.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {counters.length === 0 && (
+            <p className="col-span-full font-body text-ink/40">Chưa có quầy nào được cấu hình.</p>
+          )}
+        </div>
+
+        {unassigned.length > 0 && (
+          <div className="mt-6 overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+            <div className="bg-warn/90 px-5 py-2.5">
+              <p className="font-body text-sm font-semibold uppercase tracking-wide text-white">
+                Chưa phân bổ Agent ({unassigned.length})
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-x-8 gap-y-2 px-5 py-4">
+              {unassigned.map((q) => (
+                <div key={q.ticket_code} className="flex items-baseline gap-2">
+                  <span className="font-display text-lg font-bold text-brand-900">
+                    {q.queue_number}
+                  </span>
+                  <span className="font-body text-sm text-ink/70">{q.driver_name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
