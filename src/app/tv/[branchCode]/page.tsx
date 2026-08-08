@@ -62,9 +62,31 @@ function useAnnouncer() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const queueRef = useRef<(() => Promise<void>)[]>([]);
   const playingRef = useRef(false);
+  const [unlocked, setUnlocked] = useState(false);
+
+  // Trình duyệt (Chrome/Edge...) chặn phát audio bằng JS cho tới khi có ít
+  // nhất 1 cú bấm/chạm của người dùng trên trang — đây là chính sách bảo mật
+  // của trình duyệt, không phải lỗi code. Với màn hình TV chạy không người
+  // trông coi, cần 1 lần bấm "mở khoá" — sau đó phát được bình thường suốt
+  // phiên mở trang (tới khi tải lại trang).
+  const unlock = useCallback(() => {
+    if (!audioRef.current) audioRef.current = new Audio();
+    const audio = audioRef.current;
+    audio.src = `${CLIP_BASE}intro.mp3`;
+    audio
+      .play()
+      .then(() => {
+        audio.pause();
+        audio.currentTime = 0;
+        setUnlocked(true);
+      })
+      .catch(() => {
+        /* vẫn đang bị chặn — nút "Bật âm thanh" sẽ tiếp tục hiện để thử lại */
+      });
+  }, []);
 
   const playLocalClips = useCallback((clipNames: string[]) => {
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
       if (!audioRef.current) audioRef.current = new Audio();
       const audio = audioRef.current;
       let i = 0;
@@ -76,7 +98,7 @@ function useAnnouncer() {
         audio.src = `${CLIP_BASE}${clipNames[i]}.mp3`;
         i += 1;
         audio.onended = playNext;
-        audio.play().catch(() => resolve());
+        audio.play().catch(reject);
       };
       playNext();
     });
@@ -101,8 +123,10 @@ function useAnnouncer() {
       if (job) {
         try {
           await job();
-        } catch {
-          /* bỏ qua, chuyển sang lượt tiếp theo */
+        } catch (err) {
+          // Nếu vẫn bị chặn autoplay (chưa bấm "Bật âm thanh"), báo ra
+          // console để dễ chẩn đoán thay vì âm thầm im lặng hoàn toàn.
+          console.warn("TV Display: không phát được âm thanh thông báo.", err);
         }
       }
     }
@@ -132,7 +156,7 @@ function useAnnouncer() {
     [playRemote, playLocalClips, processQueue]
   );
 
-  return enqueue;
+  return { enqueue, unlock, unlocked };
 }
 
 function useClock() {
@@ -150,7 +174,7 @@ export default function TvDisplayPage() {
   const [counters, setCounters] = useState<CounterStatusRow[]>([]);
   const [agentQueue, setAgentQueue] = useState<AgentQueueRow[]>([]);
   const lastAnnouncedAt = useRef<string | null>(null);
-  const enqueueAudio = useAnnouncer();
+  const { enqueue: enqueueAudio, unlock: unlockAudio, unlocked } = useAnnouncer();
   const clock = useClock();
 
   const load = useCallback(async () => {
@@ -195,6 +219,14 @@ export default function TvDisplayPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-paper">
+      {!unlocked && (
+        <button
+          onClick={unlockAudio}
+          className="w-full bg-warn px-4 py-2.5 text-center font-body text-sm font-semibold text-white hover:bg-warn/90"
+        >
+          🔊 Bấm vào đây 1 lần để bật âm thanh thông báo cho màn hình này (chỉ cần làm 1 lần mỗi khi mở trang)
+        </button>
+      )}
       {/* Thanh trên: kiểu bảng điện tử ngân hàng — nền trắng, viền dưới, logo bên trái */}
       <div className="flex items-center justify-between border-b border-line bg-white px-10 py-5 shadow-sm">
         <div>
