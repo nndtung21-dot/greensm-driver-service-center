@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/auth";
-import { AgentOption, CaseDetail, CaseHistoryEntry, Department, Profile } from "@/lib/types";
+import { AgentOption, CaseDetail, CaseHistoryEntry, Profile } from "@/lib/types";
 import { Panel, PrimaryButton, SecondaryButton, StatusBadge } from "@/components/agent/ui";
 
 const HISTORY_LABELS: Record<string, string> = {
@@ -23,7 +23,6 @@ export default function TicketDetailPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [detail, setDetail] = useState<CaseDetail | null>(null);
   const [history, setHistory] = useState<CaseHistoryEntry[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
   const [colleagues, setColleagues] = useState<AgentOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -33,7 +32,6 @@ export default function TicketDetailPage() {
   const [internalNote, setInternalNote] = useState("");
 
   const [showTransfer, setShowTransfer] = useState(false);
-  const [transferDept, setTransferDept] = useState("");
   const [transferAgent, setTransferAgent] = useState("");
   const [transferReason, setTransferReason] = useState("");
 
@@ -59,10 +57,6 @@ export default function TicketDetailPage() {
   useEffect(() => {
     getCurrentProfile().then(setProfile);
     load();
-    supabase
-      .from("departments")
-      .select("id, name")
-      .then(({ data }) => setDepartments((data as Department[]) ?? []));
     supabase
       .from("profiles")
       .select("id, full_name, email, role")
@@ -114,16 +108,15 @@ export default function TicketDetailPage() {
   const handleResume = () => runRpc("resume_case", { p_case_id: params.id });
 
   const handleTransfer = () => {
-    if (!transferDept || !transferReason.trim()) {
-      setErrorMessage("Vui lòng chọn bộ phận và nhập lý do chuyển.");
+    if (!transferAgent || !transferReason.trim()) {
+      setErrorMessage("Vui lòng chọn Agent nhận và nhập lý do chuyển.");
       return;
     }
     runRpc(
       "transfer_case",
       {
         p_case_id: params.id,
-        p_to_department_id: transferDept,
-        p_to_agent_id: transferAgent || null,
+        p_to_agent_id: transferAgent,
         p_reason: transferReason.trim(),
       },
       () => setShowTransfer(false)
@@ -334,29 +327,15 @@ export default function TicketDetailPage() {
           )}
 
           {showTransfer && (
-            <Panel title="Chuyển ticket (Section 23)">
+            <Panel title="Chuyển ticket">
               <div className="space-y-4">
-                <Field label="Chuyển sang bộ phận *">
-                  <select
-                    value={transferDept}
-                    onChange={(e) => setTransferDept(e.target.value)}
-                    className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
-                  >
-                    <option value="">-- Chọn bộ phận --</option>
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Chuyển cho Agent (tuỳ chọn)">
+                <Field label="Chuyển cho Agent *">
                   <select
                     value={transferAgent}
                     onChange={(e) => setTransferAgent(e.target.value)}
                     className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
                   >
-                    <option value="">-- Để trống, chờ ai đó nhận --</option>
+                    <option value="">-- Chọn Agent nhận --</option>
                     {colleagues.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.full_name} ({a.email})

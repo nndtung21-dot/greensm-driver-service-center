@@ -2,8 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
-import { AdminProfileRow, Branch, Department, PendingUser, UserRole } from "@/lib/types";
-import { Panel, PrimaryButton, SecondaryButton } from "@/components/agent/ui";
+import { AdminProfileRow, Branch, PendingUser, UserRole } from "@/lib/types";
+import { Panel, PrimaryButton, SecondaryButton, ToggleSwitch } from "@/components/agent/ui";
 
 async function callAdminApi(path: string, body: Record<string, unknown>) {
   const { data: sessionData } = await supabase.auth.getSession();
@@ -25,7 +25,6 @@ export default function AdminUsersPage() {
   const [profiles, setProfiles] = useState<AdminProfileRow[]>([]);
   const [pending, setPending] = useState<PendingUser[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -34,7 +33,6 @@ export default function AdminUsersPage() {
   const [onboardName, setOnboardName] = useState<Record<string, string>>({});
   const [onboardRole, setOnboardRole] = useState<Record<string, UserRole>>({});
   const [onboardBranch, setOnboardBranch] = useState<Record<string, string>>({});
-  const [onboardDept, setOnboardDept] = useState<Record<string, string>>({});
 
   // form state for creating a brand new account
   const [newEmail, setNewEmail] = useState("");
@@ -42,19 +40,16 @@ export default function AdminUsersPage() {
   const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState<UserRole>("agent");
   const [newBranch, setNewBranch] = useState("");
-  const [newDept, setNewDept] = useState("");
 
   const load = useCallback(async () => {
-    const [{ data: p }, { data: pu }, { data: b }, { data: d }] = await Promise.all([
+    const [{ data: p }, { data: pu }, { data: b }] = await Promise.all([
       supabase.from("profiles").select("id, full_name, email, role, branch_id, department_id, status"),
       supabase.rpc("admin_list_pending_users"),
       supabase.from("branches").select("id, branch_code, branch_name"),
-      supabase.from("departments").select("id, name"),
     ]);
     setProfiles((p as AdminProfileRow[]) ?? []);
     setPending((pu as PendingUser[]) ?? []);
     setBranches(b ?? []);
-    setDepartments(d ?? []);
     setLoading(false);
   }, []);
 
@@ -81,7 +76,6 @@ export default function AdminUsersPage() {
       email,
       role,
       branch_id: onboardBranch[userId] || null,
-      department_id: onboardDept[userId] || null,
     });
     if (error) setErrorMessage(error.message);
     else load();
@@ -102,14 +96,12 @@ export default function AdminUsersPage() {
         full_name: newName.trim(),
         role: newRole,
         branch_id: newBranch || null,
-        department_id: newDept || null,
       });
       setNewEmail("");
       setNewPassword("");
       setNewName("");
       setNewRole("agent");
       setNewBranch("");
-      setNewDept("");
       load();
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : "Có lỗi xảy ra.");
@@ -197,21 +189,6 @@ export default function AdminUsersPage() {
               ))}
             </select>
           </div>
-          <div>
-            <label className="mb-1 block font-body text-xs text-ink/60">Bộ phận</label>
-            <select
-              value={newDept}
-              onChange={(e) => setNewDept(e.target.value)}
-              className="rounded-lg border-2 border-line px-3 py-2 font-body text-sm"
-            >
-              <option value="">—</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          </div>
           <PrimaryButton type="submit" disabled={busy} className="px-4 py-2 text-sm">
             {busy ? "Đang tạo..." : "+ Tạo tài khoản"}
           </PrimaryButton>
@@ -257,18 +234,6 @@ export default function AdminUsersPage() {
                     </option>
                   ))}
                 </select>
-                <select
-                  value={onboardDept[u.id] ?? ""}
-                  onChange={(e) => setOnboardDept((p) => ({ ...p, [u.id]: e.target.value }))}
-                  className="rounded-lg border-2 border-line px-3 py-1.5 font-body text-sm"
-                >
-                  <option value="">Bộ phận...</option>
-                  {departments.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
                 <SecondaryButton
                   onClick={() => onboard(u.id, u.email)}
                   className="px-3 py-1.5 text-xs"
@@ -290,8 +255,7 @@ export default function AdminUsersPage() {
                 <th className="py-2 pr-3">Email</th>
                 <th className="py-2 pr-3">Vai trò</th>
                 <th className="py-2 pr-3">VP</th>
-                <th className="py-2 pr-3">Bộ phận</th>
-                <th className="py-2 pr-3">Trạng thái</th>
+                <th className="py-2 pr-3">Hoạt động</th>
                 <th className="py-2 pr-3"></th>
               </tr>
             </thead>
@@ -326,32 +290,14 @@ export default function AdminUsersPage() {
                     </select>
                   </td>
                   <td className="py-2 pr-3">
-                    <select
-                      value={p.department_id ?? ""}
-                      onChange={(e) =>
-                        updateProfile(p.id, { department_id: e.target.value || null })
-                      }
-                      className="rounded-lg border-2 border-line px-2 py-1 text-xs"
-                    >
-                      <option value="">—</option>
-                      {departments.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="py-2 pr-3">
-                    <button
-                      onClick={() =>
+                    <ToggleSwitch
+                      checked={p.status === "ACTIVE"}
+                      onChange={() =>
                         updateProfile(p.id, {
                           status: p.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
                         })
                       }
-                      className="font-body text-xs text-brand-700 underline"
-                    >
-                      {p.status}
-                    </button>
+                    />
                   </td>
                   <td className="py-2 pr-3">
                     <button

@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { AgentOption, Branch, Counter } from "@/lib/types";
-import { Panel, PrimaryButton, SecondaryButton } from "@/components/agent/ui";
+import { Panel, PrimaryButton, SecondaryButton, ToggleSwitch } from "@/components/agent/ui";
 
 export default function AdminBranchesPage() {
   const [branches, setBranches] = useState<(Branch & { status: string })[]>([]);
@@ -126,12 +126,10 @@ export default function AdminBranchesPage() {
                 <p className="font-display text-lg font-semibold text-brand-900">{b.branch_name}</p>
                 <p className="font-body text-xs text-ink/50">{b.branch_code}</p>
               </div>
-              <SecondaryButton
-                onClick={() => toggleBranch(b.id, b.status)}
-                className="px-3 py-1.5 text-xs"
-              >
-                {b.status === "ACTIVE" ? "Tắt" : "Bật lại"}
-              </SecondaryButton>
+              <ToggleSwitch
+                checked={b.status === "ACTIVE"}
+                onChange={() => toggleBranch(b.id, b.status)}
+              />
             </div>
             <div className="space-y-2 pl-2">
               {counters

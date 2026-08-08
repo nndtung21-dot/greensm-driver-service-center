@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { ServiceCategory, ServiceSubcategory } from "@/lib/types";
-import { Panel, PrimaryButton, SecondaryButton } from "@/components/agent/ui";
+import { Panel, PrimaryButton, SecondaryButton, ToggleSwitch } from "@/components/agent/ui";
 
 export default function AdminCategoriesPage() {
   const [categories, setCategories] = useState<(ServiceCategory & { status: string })[]>([]);
@@ -151,37 +151,30 @@ export default function AdminCategoriesPage() {
                 <p className="font-display text-lg font-semibold text-brand-900">{cat.name}</p>
                 <p className="font-body text-xs text-ink/50">{cat.code}</p>
               </div>
-              <SecondaryButton
-                onClick={() => toggleCategory(cat.id, cat.status)}
-                className="px-3 py-1.5 text-xs"
-              >
-                {cat.status === "ACTIVE" ? "Tắt" : "Bật lại"}
-              </SecondaryButton>
-              <button
-                onClick={() => deleteCategory(cat.id, cat.name)}
-                className="ml-2 font-body text-xs text-danger underline"
-              >
-                Xoá
-              </button>
+              <div className="flex items-center gap-3">
+                <ToggleSwitch
+                  checked={cat.status === "ACTIVE"}
+                  onChange={() => toggleCategory(cat.id, cat.status)}
+                />
+                <button
+                  onClick={() => deleteCategory(cat.id, cat.name)}
+                  className="font-body text-xs text-danger underline"
+                >
+                  Xoá
+                </button>
+              </div>
             </div>
             <div className="space-y-1 pl-2">
               {subcategories
                 .filter((s) => s.category_id === cat.id)
                 .map((s) => (
                   <div key={s.id} className="flex items-center justify-between py-1">
-                    <span className="font-body text-sm text-ink">
-                      {s.name}{" "}
-                      <span className="text-ink/40">
-                        ({s.status === "ACTIVE" ? "đang bật" : "đã tắt"})
-                      </span>
-                    </span>
-                    <span className="flex gap-3">
-                      <button
-                        onClick={() => toggleSubcategory(s.id, s.status)}
-                        className="font-body text-xs text-brand-700 underline"
-                      >
-                        {s.status === "ACTIVE" ? "Tắt" : "Bật lại"}
-                      </button>
+                    <span className="font-body text-sm text-ink">{s.name}</span>
+                    <span className="flex items-center gap-3">
+                      <ToggleSwitch
+                        checked={s.status === "ACTIVE"}
+                        onChange={() => toggleSubcategory(s.id, s.status)}
+                      />
                       <button
                         onClick={() => deleteSubcategory(s.id, s.name)}
                         className="font-body text-xs text-danger underline"
