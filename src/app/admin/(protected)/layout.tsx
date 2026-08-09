@@ -8,6 +8,7 @@ import { getCurrentProfile, signOut } from "@/lib/auth";
 import { Profile } from "@/lib/types";
 
 const NAV_ITEMS = [
+  { href: "/admin/drivers", label: "Danh sách tài xế" },
   { href: "/admin/agents", label: "Agent ↔ Chủ đề" },
   { href: "/admin/categories", label: "Danh mục dịch vụ" },
   { href: "/admin/branches", label: "Văn phòng & Quầy" },
