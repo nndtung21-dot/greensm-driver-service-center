@@ -5,11 +5,19 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Màu thương hiệu thật của Green SM (trước là Xanh SM): #28BDBF —
+        // xanh cyan/ngọc (kết hợp xanh lá + xanh dương), không phải xanh lá đậm.
         brand: {
-          900: "#06402B",
-          700: "#0B6E4F",
-          500: "#2E8B67",
-          100: "#E4F2EA",
+          900: "#0B4142", // đậm nhất — tiêu đề, chữ trên nền trắng
+          700: "#147476", // nút chính/CTA — đủ đậm để chữ trắng rõ
+          500: "#28BDBF", // ĐÚNG màu thương hiệu — điểm nhấn, badge, hover
+          100: "#E2F7F7", // nền nhạt — vùng chọn/hover
+        },
+        // Màu phụ — cam, dùng cho điểm nhấn thứ 2, tách biệt với "brand"
+        accent: {
+          700: "#C2570F",
+          500: "#F2711F",
+          100: "#FDEAD9",
         },
         ink: "#16241D",
         paper: "#F6F8F6",

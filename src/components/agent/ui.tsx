@@ -107,7 +107,7 @@ export function SecondaryButton({
 }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
-      className={`rounded-lg border-2 border-line bg-white px-5 py-2.5 font-body text-sm font-semibold text-brand-900 transition-colors hover:border-brand-500 disabled:opacity-40 ${className}`}
+      className={`rounded-lg border-2 border-line bg-white px-5 py-2.5 font-body text-sm font-semibold text-brand-900 transition-colors hover:border-accent-500 disabled:opacity-40 ${className}`}
       {...props}
     >
       {children}

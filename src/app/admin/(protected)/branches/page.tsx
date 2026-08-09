@@ -78,6 +78,13 @@ export default function AdminBranchesPage() {
     else load();
   }
 
+  async function deleteCounter(id: string, name: string) {
+    if (!confirm(`Xoá quầy "${name}"? Không thể hoàn tác.`)) return;
+    const { error } = await supabase.from("counters").delete().eq("id", id);
+    if (error) setErrorMessage(error.message);
+    else load();
+  }
+
   if (loading) return <p className="font-body text-ink/50">Đang tải...</p>;
 
   return (
@@ -136,7 +143,9 @@ export default function AdminBranchesPage() {
                 .filter((c) => c.branch_id === b.id)
                 .map((c) => (
                   <div key={c.id} className="flex items-center justify-between gap-3 py-1 font-body text-sm">
-                    <span className="w-32">{c.counter_name}</span>
+                    <span className="w-32">
+                      {c.counter_name} <span className="text-xs text-ink/40">(mã: {c.counter_code})</span>
+                    </span>
                     <span className="w-20 text-xs text-ink/40">{c.status}</span>
                     <select
                       value={c.default_agent_id ?? ""}
@@ -152,6 +161,12 @@ export default function AdminBranchesPage() {
                           </option>
                         ))}
                     </select>
+                    <button
+                      onClick={() => deleteCounter(c.id, c.counter_name)}
+                      className="font-body text-xs text-danger underline"
+                    >
+                      Xoá
+                    </button>
                   </div>
                 ))}
               {counters.filter((c) => c.branch_id === b.id).length === 0 && (

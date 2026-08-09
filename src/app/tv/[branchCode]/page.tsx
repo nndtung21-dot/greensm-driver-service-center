@@ -218,46 +218,51 @@ export default function TvDisplayPage() {
   const totalWaiting = agentQueue.length;
 
   return (
-    <div className="flex min-h-screen flex-col bg-paper">
+    <div className="flex min-h-screen w-screen flex-col overflow-hidden bg-paper">
       {!unlocked && (
         <button
           onClick={unlockAudio}
-          className="w-full bg-warn px-4 py-2.5 text-center font-body text-sm font-semibold text-white hover:bg-warn/90"
+          className="w-full bg-warn px-4 py-2 text-center font-body font-semibold text-white hover:bg-warn/90"
+          style={{ fontSize: "1vw" }}
         >
           🔊 Bấm vào đây 1 lần để bật âm thanh thông báo cho màn hình này (chỉ cần làm 1 lần mỗi khi mở trang)
         </button>
       )}
       {/* Thanh trên: kiểu bảng điện tử ngân hàng — nền trắng, viền dưới, logo bên trái */}
-      <div className="flex items-center justify-between border-b border-line bg-white px-10 py-5 shadow-sm">
+      <div className="flex items-center justify-between border-b border-line bg-white shadow-sm" style={{ padding: "1.4vw 2.2vw" }}>
         <div>
-          <p className="font-body text-xs font-semibold uppercase tracking-widest text-brand-500">
+          <p className="font-body font-semibold uppercase tracking-widest text-brand-500" style={{ fontSize: "1vw" }}>
             Green SM
           </p>
-          <p className="font-display text-2xl font-bold text-brand-900">
+          <p className="font-display font-bold text-brand-900" style={{ fontSize: "2vw" }}>
             Driver Service Center
           </p>
         </div>
-        <div className="flex items-center gap-8">
+        <div className="flex items-center" style={{ gap: "2.2vw" }}>
           {clock && (
             <div className="text-right">
-              <p className="font-display text-3xl font-bold tabular-nums text-brand-900">
+              <p className="font-display font-bold tabular-nums text-brand-900" style={{ fontSize: "2.2vw" }}>
                 {clock.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </p>
-              <p className="font-body text-sm capitalize text-ink/50">
+              <p className="font-body capitalize text-ink/50" style={{ fontSize: "0.9vw" }}>
                 {clock.toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" })}
               </p>
             </div>
           )}
-          <div className="rounded-xl bg-brand-100 px-5 py-3 text-center">
-            <p className="font-body text-xs uppercase tracking-wide text-brand-700">Đang chờ</p>
-            <p className="font-display text-3xl font-bold text-brand-900">{totalWaiting}</p>
+          <div className="rounded-xl bg-brand-100 text-center" style={{ padding: "0.8vw 1.6vw" }}>
+            <p className="font-body uppercase tracking-wide text-brand-700" style={{ fontSize: "0.85vw" }}>Đang chờ</p>
+            <p className="font-display font-bold text-brand-900" style={{ fontSize: "2.2vw" }}>{totalWaiting}</p>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 px-10 py-8">
-        {/* Theo từng quầy: đang phục vụ số mấy + hàng chờ riêng của quầy đó */}
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="flex-1" style={{ padding: "1.6vw 2.2vw" }}>
+        {/* Theo từng quầy: LUÔN 1 hàng ngang, không xuống dòng theo breakpoint —
+            phù hợp màn hình cố định lớn (TV 75 inch) */}
+        <div
+          className="grid"
+          style={{ gridTemplateColumns: `repeat(${Math.max(counters.length, 1)}, 1fr)`, gap: "1.2vw" }}
+        >
           {counters.map((c) => {
             const busy = c.counter_status === "BUSY" && c.queue_number;
             const myWaiting = c.agent_id
@@ -268,18 +273,30 @@ export default function TvDisplayPage() {
                 key={c.counter_code}
                 className="flex flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-sm"
               >
-                <div className="bg-brand-700 px-5 py-2.5">
-                  <p className="font-body text-sm font-semibold uppercase tracking-wide text-white">
+                <div className="bg-brand-700" style={{ padding: "0.7vw 1vw" }}>
+                  <p
+                    className="truncate font-body font-semibold uppercase tracking-wide text-white"
+                    style={{ fontSize: "0.95vw" }}
+                  >
                     {c.counter_name}
                     {c.agent_name ? ` · ${c.agent_name}` : ""}
                   </p>
                 </div>
-                <div className={`px-5 py-7 text-center ${busy ? "bg-brand-100" : "bg-paper"}`}>
-                  <p className={`font-display text-6xl font-extrabold ${busy ? "text-brand-900" : "text-ink/25"}`}>
+                <div
+                  className={`text-center ${busy ? "bg-brand-100" : "bg-paper"}`}
+                  style={{ padding: "1.6vw 1vw" }}
+                >
+                  <p
+                    className={`font-display font-extrabold ${busy ? "text-brand-900" : "text-ink/25"}`}
+                    style={{ fontSize: "4.2vw", lineHeight: 1.1 }}
+                  >
                     {busy ? c.queue_number : "—"}
                   </p>
                   {!busy && (
-                    <p className="mt-1 font-body text-xs uppercase tracking-wide text-ink/40">
+                    <p
+                      className="mt-1 font-body uppercase tracking-wide text-ink/40"
+                      style={{ fontSize: "0.8vw" }}
+                    >
                       {c.counter_status === "AVAILABLE"
                         ? "Sẵn sàng"
                         : c.counter_status === "OFFLINE"
@@ -289,8 +306,11 @@ export default function TvDisplayPage() {
                   )}
                 </div>
 
-                <div className="flex-1 border-t border-line px-5 py-4">
-                  <p className="mb-2 font-body text-xs font-semibold uppercase tracking-wide text-ink/40">
+                <div className="flex-1 border-t border-line" style={{ padding: "0.9vw 1vw" }}>
+                  <p
+                    className="mb-2 font-body font-semibold uppercase tracking-wide text-ink/40"
+                    style={{ fontSize: "0.8vw" }}
+                  >
                     Đang chờ ({myWaiting.length})
                   </p>
                   <div className="space-y-1.5">
@@ -299,17 +319,22 @@ export default function TvDisplayPage() {
                         key={q.ticket_code}
                         className="flex items-baseline justify-between border-b border-line/60 pb-1 last:border-0"
                       >
-                        <span className="font-display text-lg font-bold text-brand-900">
+                        <span className="font-display font-bold text-brand-900" style={{ fontSize: "1.2vw" }}>
                           {q.queue_number}
                         </span>
-                        <span className="font-body text-sm text-ink/70">{q.driver_name}</span>
+                        <span
+                          className="truncate font-body text-ink/70"
+                          style={{ fontSize: "0.95vw", maxWidth: "60%" }}
+                        >
+                          {q.driver_name}
+                        </span>
                       </div>
                     ))}
                     {c.agent_id && myWaiting.length === 0 && (
-                      <p className="font-body text-sm text-ink/30">Không có ai chờ.</p>
+                      <p className="font-body text-ink/30" style={{ fontSize: "0.9vw" }}>Không có ai chờ.</p>
                     )}
                     {!c.agent_id && (
-                      <p className="font-body text-sm text-ink/30">Quầy chưa gán Agent.</p>
+                      <p className="font-body text-ink/30" style={{ fontSize: "0.9vw" }}>Quầy chưa gán Agent.</p>
                     )}
                   </div>
                 </div>
@@ -317,24 +342,24 @@ export default function TvDisplayPage() {
             );
           })}
           {counters.length === 0 && (
-            <p className="col-span-full font-body text-ink/40">Chưa có quầy nào được cấu hình.</p>
+            <p className="font-body text-ink/40" style={{ fontSize: "1vw" }}>Chưa có quầy nào được cấu hình.</p>
           )}
         </div>
 
         {unassigned.length > 0 && (
-          <div className="mt-6 overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
-            <div className="bg-warn/90 px-5 py-2.5">
-              <p className="font-body text-sm font-semibold uppercase tracking-wide text-white">
+          <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm" style={{ marginTop: "1.2vw" }}>
+            <div className="bg-accent-500" style={{ padding: "0.7vw 1vw" }}>
+              <p className="font-body font-semibold uppercase tracking-wide text-white" style={{ fontSize: "0.95vw" }}>
                 Chưa phân bổ Agent ({unassigned.length})
               </p>
             </div>
-            <div className="flex flex-wrap gap-x-8 gap-y-2 px-5 py-4">
+            <div className="flex flex-wrap" style={{ padding: "1vw", gap: "0.4vw 2vw" }}>
               {unassigned.map((q) => (
                 <div key={q.ticket_code} className="flex items-baseline gap-2">
-                  <span className="font-display text-lg font-bold text-brand-900">
+                  <span className="font-display font-bold text-brand-900" style={{ fontSize: "1.2vw" }}>
                     {q.queue_number}
                   </span>
-                  <span className="font-body text-sm text-ink/70">{q.driver_name}</span>
+                  <span className="font-body text-ink/70" style={{ fontSize: "0.95vw" }}>{q.driver_name}</span>
                 </div>
               ))}
             </div>
