@@ -126,6 +126,12 @@ export type CaseDetail = {
   sap_id: string | null;
   contract_type: string | null;
   vehicle_type: string | null;
+  driver_code: string | null;
+  app_code: string | null;
+  work_status: string | null;
+  account_status: string | null;
+  lock_reason: string | null;
+  driver_type: string | null;
   category_name: string;
   subcategory_name: string | null;
 };

@@ -177,12 +177,46 @@ export default function TicketDetailPage() {
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
         <Panel title="Thông tin tài xế">
+          <p className="mb-3 font-body text-base font-semibold text-ink">
+            {detail.sap_id ?? "—"} - {detail.driver_name} - {detail.driver_type ?? "—"}
+          </p>
           <dl className="space-y-2 font-body text-sm">
-            <Row label="Tên" value={detail.driver_name} />
-            <Row label="SAP ID" value={detail.sap_id ?? "—"} />
-            <Row label="Loại hợp đồng" value={detail.contract_type ?? "—"} />
-            <Row label="Loại xe" value={detail.vehicle_type ?? "—"} />
+            <Row label="Trạng thái" value={detail.work_status ?? "—"} />
+            <Row label="Trạng thái Tài khoản" value={detail.account_status ?? "—"} />
+            <Row label="Lý do khóa" value={detail.lock_reason ?? "—"} />
           </dl>
+          <div className="mt-3 space-y-1.5 border-t border-line pt-3 font-body text-sm">
+            <p>
+              Link Green Portal -{" "}
+              {detail.driver_code ? (
+                <a
+                  href={`https://greentaxi.xanhsm.com/app/driver/${detail.driver_code}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-brand-700 underline break-all"
+                >
+                  {`https://greentaxi.xanhsm.com/app/driver/${detail.driver_code}`}
+                </a>
+              ) : (
+                "—"
+              )}
+            </p>
+            <p>
+              Link Admin Portal -{" "}
+              {detail.app_code ? (
+                <a
+                  href={`https://admin-customer.xanhsm.com/drivers/${detail.app_code}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-brand-700 underline break-all"
+                >
+                  {`https://admin-customer.xanhsm.com/drivers/${detail.app_code}`}
+                </a>
+              ) : (
+                "—"
+              )}
+            </p>
+          </div>
         </Panel>
 
         <Panel title="Thông tin Visit">
