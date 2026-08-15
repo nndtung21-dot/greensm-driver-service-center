@@ -32,13 +32,21 @@ const DIGIT_CLIP: Record<string, string> = {
   A: "chu_a",
 };
 
+function stripLeadingZeros(s: string): string {
+  const stripped = s.replace(/^0+/, "");
+  return stripped.length > 0 ? stripped : "0";
+}
+
 function buildAnnouncementClips(queueNumber: string, counterCode: string): string[] {
   const clips: string[] = ["intro"];
   for (const ch of queueNumber.toUpperCase()) {
     if (DIGIT_CLIP[ch]) clips.push(DIGIT_CLIP[ch]);
   }
   clips.push("den_quay_so");
-  for (const ch of counterCode) {
+  // Đọc số quầy tự nhiên (bỏ số 0 đứng đầu): quầy "01" -> chỉ đọc "một",
+  // không đọc "không một" — tránh nghe nhầm sang số khác.
+  const counterDigits = stripLeadingZeros(counterCode);
+  for (const ch of counterDigits) {
     if (DIGIT_CLIP[ch]) clips.push(DIGIT_CLIP[ch]);
   }
   return clips;
@@ -49,9 +57,27 @@ const DIGIT_WORD: Record<string, string> = {
   "5": "năm", "6": "sáu", "7": "bảy", "8": "tám", "9": "chín", A: "a",
 };
 
+// Số quầy thực tế nhỏ (1-20) nên đọc tự nhiên như người Việt nói bình thường,
+// KHÔNG đánh vần từng chữ số — đây là nguyên nhân gây cảm giác "đọc lệch
+// quầy" (số 0 đứng đầu + đánh vần từng số dễ gây hiểu nhầm khi nghe nhanh).
+const SMALL_NUMBER_WORDS = [
+  "không", "một", "hai", "ba", "bốn", "năm", "sáu", "bảy", "tám", "chín",
+  "mười", "mười một", "mười hai", "mười ba", "mười bốn", "mười lăm",
+  "mười sáu", "mười bảy", "mười tám", "mười chín", "hai mươi",
+];
+
+function counterNumberToWords(counterCode: string): string {
+  const stripped = counterCode.replace(/^0+/, "");
+  const n = parseInt(stripped, 10);
+  if (!isNaN(n) && n >= 0 && n < SMALL_NUMBER_WORDS.length) {
+    return SMALL_NUMBER_WORDS[n];
+  }
+  return [...counterCode].map((ch) => DIGIT_WORD[ch] ?? ch).join(" ");
+}
+
 function buildAnnouncementText(queueNumber: string, counterCode: string): string {
   const qWords = [...queueNumber.toUpperCase()].map((ch) => DIGIT_WORD[ch] ?? ch).join(" ");
-  const cWords = [...counterCode].map((ch) => DIGIT_WORD[ch] ?? ch).join(" ");
+  const cWords = counterNumberToWords(counterCode);
   return `Kính mời tài xế có số ${qWords} đến quầy số ${cWords}`;
 }
 
@@ -279,7 +305,6 @@ export default function TvDisplayPage() {
                     style={{ fontSize: "0.95vw" }}
                   >
                     {c.counter_name}
-                    {c.agent_name ? ` · ${c.agent_name}` : ""}
                   </p>
                 </div>
                 <div

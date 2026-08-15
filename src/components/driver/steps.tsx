@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { KioskButton, StepCard } from "./ui";
 import {
   Branch,
@@ -45,15 +45,16 @@ export function IdentifyStep({
     <StepCard
       eyebrow="Bước 1"
       title="Xác thực tài xế"
-      subtitle="Nhập SAP ID hoặc số điện thoại đã đăng ký."
+      subtitle="Nhập SAP ID hoặc Biển số xe đã đăng ký."
     >
       <form onSubmit={handleSubmit} className="space-y-6">
         <input
           autoFocus
-          inputMode="numeric"
+          type="text"
+          autoCapitalize="characters"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="SAP ID hoặc số điện thoại"
+          placeholder="SAP ID hoặc Biển số xe"
           className="w-full rounded-card border-2 border-line px-6 py-6 text-2xl font-body focus:border-brand-700"
         />
         <KioskButton type="submit" disabled={loading}>
@@ -77,7 +78,7 @@ export function DriverFoundStep({
     <StepCard eyebrow="Xác nhận thông tin" title={driver.name}>
       <div className="mb-8 space-y-2 font-body text-lg text-ink/80">
         {driver.sap_id && <p>SAP ID: {driver.sap_id}</p>}
-        {driver.contract_type && <p>Loại hợp đồng: {driver.contract_type}</p>}
+        {driver.driver_type && <p>Loại tài xế: {driver.driver_type}</p>}
       </div>
       <div className="space-y-4">
         <KioskButton onClick={onConfirm}>ĐÚNG, TIẾP TỤC</KioskButton>
@@ -133,60 +134,92 @@ export function BranchStep({
 // ---------------------------------------------------------------------
 // Category / Subcategory (Section 8-9) — loaded from DB, never hardcoded
 // ---------------------------------------------------------------------
-export function CategoryStep({
+export function NeedsStep({
   categories,
-  onSelect,
+  fetchSubcategories,
+  onContinue,
 }: {
   categories: ServiceCategory[];
-  onSelect: (c: ServiceCategory) => void;
+  fetchSubcategories: (categoryId: string) => Promise<ServiceSubcategory[]>;
+  onContinue: (category: ServiceCategory, subcategory: ServiceSubcategory | null) => void;
 }) {
+  const [categoryId, setCategoryId] = useState("");
+  const [subcategories, setSubcategories] = useState<ServiceSubcategory[]>([]);
+  const [subcategoryId, setSubcategoryId] = useState("");
+  const [loadingSub, setLoadingSub] = useState(false);
+
+  useEffect(() => {
+    if (!categoryId) {
+      setSubcategories([]);
+      setSubcategoryId("");
+      return;
+    }
+    let active = true;
+    setLoadingSub(true);
+    fetchSubcategories(categoryId).then((subs) => {
+      if (!active) return;
+      setSubcategories(subs);
+      setSubcategoryId("");
+      setLoadingSub(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [categoryId, fetchSubcategories]);
+
+  const selectedCategory = categories.find((c) => c.id === categoryId) ?? null;
+  const selectedSubcategory = subcategories.find((s) => s.id === subcategoryId) ?? null;
+  const canContinue = !!selectedCategory && (subcategories.length === 0 || !!selectedSubcategory);
+
   return (
     <StepCard eyebrow="Bước 3" title="Bạn cần hỗ trợ về vấn đề gì?">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {categories.map((c) => (
-          <KioskButton
-            key={c.id}
-            variant="secondary"
-            onClick={() => onSelect(c)}
+      <div className="space-y-5">
+        <div>
+          <label className="mb-2 block font-body text-base text-ink/70">Chủ đề</label>
+          <select
+            value={categoryId}
+            onChange={(e) => setCategoryId(e.target.value)}
+            className="w-full rounded-card border-2 border-line bg-white px-6 py-5 text-xl font-body focus:border-brand-700"
           >
-            {c.name}
-          </KioskButton>
-        ))}
-      </div>
-    </StepCard>
-  );
-}
-
-export function SubcategoryStep({
-  categoryName,
-  subcategories,
-  onSelect,
-  onBack,
-}: {
-  categoryName: string;
-  subcategories: ServiceSubcategory[];
-  onSelect: (s: ServiceSubcategory) => void;
-  onBack: () => void;
-}) {
-  return (
-    <StepCard eyebrow={`Bước 4 · ${categoryName}`} title="Chọn nhu cầu cụ thể">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {subcategories.map((s) => (
-          <KioskButton
-            key={s.id}
-            variant="secondary"
-            onClick={() => onSelect(s)}
+            <option value="">— Chọn chủ đề —</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-2 block font-body text-base text-ink/70">Nhu cầu cụ thể</label>
+          <select
+            value={subcategoryId}
+            onChange={(e) => setSubcategoryId(e.target.value)}
+            disabled={!categoryId || loadingSub}
+            className="w-full rounded-card border-2 border-line bg-white px-6 py-5 text-xl font-body focus:border-brand-700 disabled:opacity-50"
           >
-            {s.name}
-          </KioskButton>
-        ))}
+            <option value="">
+              {!categoryId
+                ? "— Chọn chủ đề trước —"
+                : loadingSub
+                ? "Đang tải..."
+                : subcategories.length === 0
+                ? "— Không có mục con —"
+                : "— Chọn nhu cầu cụ thể —"}
+            </option>
+            {subcategories.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <KioskButton
+          disabled={!canContinue}
+          onClick={() => selectedCategory && onContinue(selectedCategory, selectedSubcategory)}
+        >
+          TIẾP TỤC
+        </KioskButton>
       </div>
-      <button
-        onClick={onBack}
-        className="mt-6 font-body text-base text-brand-700 underline underline-offset-4"
-      >
-        ← Quay lại chọn nhóm khác
-      </button>
     </StepCard>
   );
 }

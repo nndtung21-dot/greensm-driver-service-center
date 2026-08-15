@@ -12,13 +12,12 @@ import {
 } from "@/lib/types";
 import {
   BranchStep,
-  CategoryStep,
   DescriptionStep,
   DriverFoundStep,
   ErrorStep,
   IdentifyStep,
+  NeedsStep,
   NotFoundStep,
-  SubcategoryStep,
   SuccessStep,
   WelcomeStep,
 } from "./steps";
@@ -38,7 +37,6 @@ export default function CheckinFlow() {
 
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [category, setCategory] = useState<ServiceCategory | null>(null);
-  const [subcategories, setSubcategories] = useState<ServiceSubcategory[]>([]);
   const [subcategory, setSubcategory] = useState<ServiceSubcategory | null>(
     null
   );
@@ -113,22 +111,21 @@ export default function CheckinFlow() {
       return;
     }
     await loadCategories();
-    setStep("category");
+    setStep("needs");
   }
 
-  async function handleSelectCategory(c: ServiceCategory) {
-    setCategory(c);
+  async function fetchSubcategoriesFor(categoryId: string): Promise<ServiceSubcategory[]> {
     const { data } = await supabase
       .from("service_subcategories")
       .select("id, category_id, name, code, display_order")
-      .eq("category_id", c.id)
+      .eq("category_id", categoryId)
       .eq("status", "ACTIVE")
       .order("display_order");
-    setSubcategories(data ?? []);
-    setStep("subcategory");
+    return data ?? [];
   }
 
-  function handleSelectSubcategory(s: ServiceSubcategory) {
+  function handleNeedsContinue(c: ServiceCategory, s: ServiceSubcategory | null) {
+    setCategory(c);
     setSubcategory(s);
     setStep("description");
   }
@@ -197,16 +194,12 @@ export default function CheckinFlow() {
         />
       );
 
-    case "category":
-      return <CategoryStep categories={categories} onSelect={handleSelectCategory} />;
-
-    case "subcategory":
+    case "needs":
       return (
-        <SubcategoryStep
-          categoryName={category?.name ?? ""}
-          subcategories={subcategories}
-          onSelect={handleSelectSubcategory}
-          onBack={() => setStep("category")}
+        <NeedsStep
+          categories={categories}
+          fetchSubcategories={fetchSubcategoriesFor}
+          onContinue={handleNeedsContinue}
         />
       );
 

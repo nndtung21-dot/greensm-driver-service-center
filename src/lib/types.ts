@@ -23,7 +23,7 @@ export type DriverLookupResult = {
   id: string;
   name: string;
   sap_id: string | null;
-  contract_type: string | null;
+  driver_type: string | null;
 };
 
 export type CheckinResult = {
@@ -36,8 +36,7 @@ export type CheckinStep =
   | "welcome"
   | "identify"
   | "not_found"
-  | "category"
-  | "subcategory"
+  | "needs"
   | "description"
   | "submitting"
   | "success"
@@ -203,12 +202,10 @@ export const DRIVER_UPLOAD_HEADER_MAP: Record<string, string> = {
   "Mã tài xế": "driver_code",
   "Mã SAP": "sap_id",
   "Mã APP": "app_code",
-  "Số điện thoại": "phone",
   "Họ & tên": "name",
   "Trạng thái": "work_status",
   "Trạng thái tài khoản": "account_status",
   "Lý do khóa": "lock_reason",
-  "Số giấy tờ": "id_number",
   "Dòng xe": "vehicle_model",
   "Biển số": "license_plate",
   "Trạng thái gán": "assignment_status",
@@ -220,12 +217,10 @@ export type DriverUploadRow = {
   driver_code: string;
   sap_id: string | null;
   app_code: string | null;
-  phone: string | null;
   name: string;
   work_status: string | null;
   account_status: string | null;
   lock_reason: string | null;
-  id_number: string | null;
   vehicle_model: string | null;
   license_plate: string | null;
   assignment_status: string | null;

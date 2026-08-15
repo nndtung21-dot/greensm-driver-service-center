@@ -29,12 +29,10 @@ function mapRow(raw: Record<string, string>): DriverUploadRow | null {
     driver_code: mapped.driver_code,
     sap_id: mapped.sap_id || null,
     app_code: mapped.app_code || null,
-    phone: mapped.phone || null,
     name: mapped.name,
     work_status: mapped.work_status || null,
     account_status: mapped.account_status || null,
     lock_reason: mapped.lock_reason || null,
-    id_number: mapped.id_number || null,
     vehicle_model: mapped.vehicle_model || null,
     license_plate: mapped.license_plate || null,
     assignment_status: mapped.assignment_status || null,
@@ -117,9 +115,8 @@ export default function AdminDriversPage() {
       <Panel title="Tải file lên">
         <p className="mb-3 font-body text-xs text-ink/50">
           File CSV cần có đúng các cột (theo thứ tự bất kỳ): Mã tài xế, Mã SAP, Mã
-          APP, Số điện thoại, Họ &amp; tên, Trạng thái, Trạng thái tài khoản, Lý
-          do khóa, Số giấy tờ, Dòng xe, Biển số, Trạng thái gán, Thời gian gán,
-          Loại tài xế.
+          APP, Họ &amp; tên, Trạng thái, Trạng thái tài khoản, Lý do khóa, Dòng
+          xe, Biển số, Trạng thái gán, Thời gian gán, Loại tài xế.
         </p>
         <input
           type="file"
@@ -144,7 +141,7 @@ export default function AdminDriversPage() {
                   <tr>
                     <th className="px-3 py-2">Mã tài xế</th>
                     <th className="px-3 py-2">Họ &amp; tên</th>
-                    <th className="px-3 py-2">SĐT</th>
+                    <th className="px-3 py-2">SAP ID</th>
                     <th className="px-3 py-2">Trạng thái TK</th>
                     <th className="px-3 py-2">Biển số</th>
                   </tr>
@@ -154,7 +151,7 @@ export default function AdminDriversPage() {
                     <tr key={r.driver_code} className="border-b border-line last:border-0">
                       <td className="px-3 py-1.5">{r.driver_code}</td>
                       <td className="px-3 py-1.5">{r.name}</td>
-                      <td className="px-3 py-1.5">{r.phone ?? "—"}</td>
+                      <td className="px-3 py-1.5">{r.sap_id ?? "—"}</td>
                       <td className="px-3 py-1.5">{r.account_status ?? "—"}</td>
                       <td className="px-3 py-1.5">{r.license_plate ?? "—"}</td>
                     </tr>
