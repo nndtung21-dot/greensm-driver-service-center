@@ -23,7 +23,6 @@ import {
 } from "./steps";
 
 const KIOSK_BRANCH_CODE = process.env.NEXT_PUBLIC_KIOSK_BRANCH_CODE ?? null;
-const AUTO_RESET_MS = 8000;
 
 export default function CheckinFlow() {
   const [step, setStep] = useState<CheckinStep>("welcome");
@@ -158,12 +157,9 @@ export default function CheckinFlow() {
     setStep("success");
   }
 
-  // Kiosk mode: auto-return to welcome screen after a successful check-in.
-  useEffect(() => {
-    if (step !== "success") return;
-    const t = setTimeout(resetAll, AUTO_RESET_MS);
-    return () => clearTimeout(t);
-  }, [step]);
+  // Lưu ý: KHÔNG tự động reset về màn hình chào nữa — mỗi tài xế check-in
+  // trên điện thoại riêng của họ, màn hình cần ở lại để họ theo dõi trạng
+  // thái và đánh giá sau khi xong, không phải kiosk dùng chung.
 
   if (branchOptions.length > 1 && !branch) {
     return <BranchStep branches={branchOptions} onSelect={setBranch} />;
@@ -219,7 +215,7 @@ export default function CheckinFlow() {
           queueNumber={result.queue_number}
           categoryName={category?.name ?? ""}
           ticketCode={result.ticket_code}
-          onDone={resetAll}
+          onReset={resetAll}
         />
       ) : null;
 

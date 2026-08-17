@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase/client";
 import { KioskButton, StepCard } from "./ui";
 import {
   Branch,
@@ -259,17 +260,77 @@ export function DescriptionStep({
 // ---------------------------------------------------------------------
 // Success (Section 11) — the one signature moment: the ticket reveal
 // ---------------------------------------------------------------------
+const TICKET_STATUS_LABELS: Record<string, string> = {
+  WAITING: "Đang chờ được gọi",
+  CALLED: "Đang được mời đến quầy",
+  PROCESSING: "Đang được xử lý",
+  PENDING: "Tạm hoãn — đang chờ thêm thông tin",
+  TRANSFERRED: "Đang được chuyển xử lý",
+  RESOLVED: "Đã xử lý xong",
+  CLOSED: "Đã hoàn tất",
+  CANCELLED: "Đã huỷ",
+  NO_SHOW: "Đã đánh dấu vắng mặt",
+};
+
 export function SuccessStep({
   queueNumber,
   categoryName,
   ticketCode,
-  onDone,
+  onReset,
 }: {
   queueNumber: string;
   categoryName: string;
   ticketCode: string;
-  onDone: () => void;
+  onReset: () => void;
 }) {
+  const [status, setStatus] = useState<string>("WAITING");
+  const [caseId, setCaseId] = useState<string | null>(null);
+  const [alreadyRated, setAlreadyRated] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    async function poll() {
+      const { data } = await supabase
+        .rpc("lookup_ticket_for_feedback", { p_ticket_code: ticketCode })
+        .maybeSingle();
+      if (!active || !data) return;
+      setStatus(data.status);
+      setCaseId(data.case_id);
+      setAlreadyRated(data.already_rated);
+    }
+    poll();
+    const interval = setInterval(poll, 6000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [ticketCode]);
+
+  async function handleSubmitFeedback() {
+    if (rating === 0 || !caseId) return;
+    setSubmitting(true);
+    setFeedbackError(null);
+    const { error } = await supabase.rpc("submit_feedback", {
+      p_case_id: caseId,
+      p_rating: rating,
+      p_comment: comment.trim() || null,
+    });
+    setSubmitting(false);
+    if (error) {
+      setFeedbackError(error.message);
+      return;
+    }
+    setSubmitted(true);
+  }
+
+  const isDone = status === "RESOLVED" || status === "CLOSED";
+  const showFeedbackForm = isDone && !alreadyRated && !submitted;
+
   return (
     <StepCard eyebrow="Check-in thành công" title="Số của bạn">
       <div className="my-4 rounded-card bg-brand-100 py-10 text-center">
@@ -279,13 +340,68 @@ export function SuccessStep({
       </div>
       <p className="mb-2 text-center font-body text-lg text-ink/80">
         Bộ phận: {categoryName}
-        <br />
-        Vui lòng chờ được gọi.
       </p>
-      <p className="mb-8 text-center font-body text-xs text-ink/40">
-        Mã ticket: {ticketCode} (dùng để đánh giá dịch vụ sau khi hoàn tất)
+      <p className="mb-6 text-center font-body text-base font-semibold text-brand-700">
+        {TICKET_STATUS_LABELS[status] ?? status}
       </p>
-      <KioskButton onClick={onDone}>HOÀN TẤT</KioskButton>
+
+      {!isDone && (
+        <p className="text-center font-body text-xs text-ink/40">
+          Màn hình này sẽ tự cập nhật — bạn có thể yên tâm đợi ở đây, không cần thao tác gì thêm.
+        </p>
+      )}
+
+      {isDone && alreadyRated && !submitted && (
+        <p className="text-center font-body text-ink/60">Cảm ơn bạn đã đánh giá dịch vụ!</p>
+      )}
+
+      {showFeedbackForm && (
+        <div className="mt-2 border-t border-line pt-6">
+          <p className="mb-4 text-center font-body text-lg font-semibold text-ink">
+            Bạn đánh giá chất lượng phục vụ hôm nay như thế nào?
+          </p>
+          <div className="mb-4 flex justify-center gap-2">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                onClick={() => setRating(star)}
+                className={`text-4xl transition-transform hover:scale-110 ${
+                  star <= rating ? "text-warn" : "text-line"
+                }`}
+                aria-label={`${star} sao`}
+              >
+                ★
+              </button>
+            ))}
+          </div>
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            rows={2}
+            placeholder="Nhận xét thêm (không bắt buộc)"
+            className="mb-4 w-full rounded-lg border-2 border-line px-4 py-3 font-body text-base focus:border-brand-700"
+          />
+          {feedbackError && (
+            <p className="mb-3 text-center font-body text-sm text-danger">{feedbackError}</p>
+          )}
+          <KioskButton onClick={handleSubmitFeedback} disabled={submitting || rating === 0}>
+            {submitting ? "Đang gửi..." : "GỬI ĐÁNH GIÁ"}
+          </KioskButton>
+        </div>
+      )}
+
+      {submitted && (
+        <p className="mt-2 text-center font-body text-lg font-semibold text-brand-900">
+          Cảm ơn bạn đã đánh giá!
+        </p>
+      )}
+
+      <button
+        onClick={onReset}
+        className="mt-8 block w-full text-center font-body text-sm text-ink/40 underline underline-offset-4"
+      >
+        Check-in cho tài xế khác
+      </button>
     </StepCard>
   );
 }
