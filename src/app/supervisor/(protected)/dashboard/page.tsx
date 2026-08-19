@@ -1,4 +1,3 @@
-```tsx
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -73,6 +72,15 @@ type ChartRow = {
 type QueueRow = AgentQueueRow & {
   agent_name?: string | null;
 };
+
+type TrendSeriesKey =
+  | "tickets"
+  | "completed"
+  | "visits"
+  | "uniqueDrivers"
+  | "waiting"
+  | "handling"
+  | "csat";
 
 function dateToString(date: Date) {
   const year = date.getFullYear();
@@ -317,400 +325,8 @@ function BenchmarkGroup({
 }
 
 /* =========================================================
-   COMBINED TREND CHART
+   TREND CHART
 ========================================================= */
-
-type TrendSeries = {
-  key: string;
-  label: string;
-  color: string;
-  getValue: (row: ChartRow) => number | null;
-};
-
-const TREND_SERIES: TrendSeries[] = [
-  {
-    key: "tickets",
-    label: "Tickets",
-    color: "#0F766E",
-    getValue: (row) => row.tickets,
-  },
-  {
-    key: "completed",
-    label: "Completed",
-    color: "#22C55E",
-    getValue: (row) => row.completed,
-  },
-  {
-    key: "visits",
-    label: "Visits",
-    color: "#2563EB",
-    getValue: (row) => row.visits,
-  },
-  {
-    key: "uniqueDrivers",
-    label: "Unique Drivers",
-    color: "#8B5CF6",
-    getValue: (row) => row.uniqueDrivers,
-  },
-  {
-    key: "waiting",
-    label: "Waiting",
-    color: "#F59E0B",
-    getValue: (row) => row.waiting,
-  },
-  {
-    key: "handling",
-    label: "Handling",
-    color: "#EF4444",
-    getValue: (row) => row.handling,
-  },
-  {
-    key: "csat",
-    label: "CSAT",
-    color: "#EC4899",
-    getValue: (row) => row.csat,
-  },
-];
-
-function normalizeToIndex(
-  data: ChartRow[],
-  getValue: (row: ChartRow) => number | null
-) {
-  const valid = data
-    .map((row) => getValue(row))
-    .filter(
-      (value): value is number =>
-        value != null &&
-        Number.isFinite(value) &&
-        value > 0
-    );
-
-  const base = valid[0];
-
-  if (!base || base === 0) {
-    return data.map(() => null);
-  }
-
-  return data.map((row) => {
-    const value = getValue(row);
-
-    if (
-      value == null ||
-      !Number.isFinite(value)
-    ) {
-      return null;
-    }
-
-    return (value / base) * 100;
-  });
-}
-
-function CombinedTrendChart({
-  data,
-}: {
-  data: ChartRow[];
-}) {
-  const [hidden, setHidden] = useState<string[]>([]);
-
-  const chartWidth = 1000;
-  const chartHeight = 340;
-
-  const paddingLeft = 55;
-  const paddingRight = 25;
-  const paddingTop = 25;
-  const paddingBottom = 45;
-
-  const innerWidth =
-    chartWidth - paddingLeft - paddingRight;
-
-  const innerHeight =
-    chartHeight - paddingTop - paddingBottom;
-
-  const normalized = useMemo(() => {
-    return TREND_SERIES.map((series) => ({
-      ...series,
-      values: normalizeToIndex(
-        data,
-        series.getValue
-      ),
-    }));
-  }, [data]);
-
-  if (!data.length) {
-    return (
-      <div className="flex h-80 items-center justify-center text-sm text-ink/40">
-        Chưa có dữ liệu
-      </div>
-    );
-  }
-
-  const visibleSeries = normalized.filter(
-    (series) => !hidden.includes(series.key)
-  );
-
-  const allValues = visibleSeries.flatMap(
-    (series) =>
-      series.values.filter(
-        (value): value is number =>
-          value != null && Number.isFinite(value)
-      )
-  );
-
-  const minValue =
-    allValues.length > 0
-      ? Math.min(...allValues)
-      : 0;
-
-  const maxValue =
-    allValues.length > 0
-      ? Math.max(...allValues)
-      : 100;
-
-  const chartMin = Math.max(
-    0,
-    Math.floor((minValue - 10) / 10) * 10
-  );
-
-  const chartMax = Math.max(
-    120,
-    Math.ceil((maxValue + 10) / 10) * 10
-  );
-
-  const yTicks = [0, 25, 50, 75, 100, 125, 150].filter(
-    (value) =>
-      value >= chartMin &&
-      value <= chartMax
-  );
-
-  function getX(index: number) {
-    if (data.length <= 1) {
-      return paddingLeft;
-    }
-
-    return (
-      paddingLeft +
-      (index / (data.length - 1)) *
-        innerWidth
-    );
-  }
-
-  function getY(value: number) {
-    return (
-      paddingTop +
-      innerHeight -
-      ((value - chartMin) /
-        (chartMax - chartMin)) *
-        innerHeight
-    );
-  }
-
-  function buildPath(
-    values: Array<number | null>
-  ) {
-    let path = "";
-    let started = false;
-
-    values.forEach((value, index) => {
-      if (value == null) {
-        started = false;
-        return;
-      }
-
-      const x = getX(index);
-      const y = getY(value);
-
-      if (!started) {
-        path += `M ${x} ${y}`;
-        started = true;
-      } else {
-        path += ` L ${x} ${y}`;
-      }
-    });
-
-    return path;
-  }
-
-  const dateIndexes = [
-    0,
-    Math.floor((data.length - 1) / 2),
-    data.length - 1,
-  ].filter(
-    (value, index, array) =>
-      array.indexOf(value) === index
-  );
-
-  return (
-    <div>
-      {/* Legend */}
-      <div className="mb-5 flex flex-wrap gap-x-5 gap-y-2">
-        {TREND_SERIES.map((series) => {
-          const isHidden = hidden.includes(
-            series.key
-          );
-
-          return (
-            <button
-              key={series.key}
-              type="button"
-              onClick={() => {
-                setHidden((current) =>
-                  current.includes(series.key)
-                    ? current.filter(
-                        (key) =>
-                          key !== series.key
-                      )
-                    : [
-                        ...current,
-                        series.key,
-                      ]
-                );
-              }}
-              className={`flex items-center gap-2 rounded-full px-2 py-1 text-xs transition ${
-                isHidden
-                  ? "opacity-30"
-                  : "opacity-100"
-              }`}
-            >
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{
-                  backgroundColor:
-                    series.color,
-                }}
-              />
-
-              <span className="font-body text-ink/60">
-                {series.label}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Chart */}
-      <div className="w-full overflow-x-auto">
-        <svg
-          viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-          className="h-[340px] min-w-[760px] w-full"
-          preserveAspectRatio="none"
-        >
-          {/* Horizontal grid */}
-          {yTicks.map((tick) => {
-            const y = getY(tick);
-
-            return (
-              <g key={tick}>
-                <line
-                  x1={paddingLeft}
-                  x2={chartWidth - paddingRight}
-                  y1={y}
-                  y2={y}
-                  stroke="#E5E7EB"
-                  strokeWidth="1"
-                />
-
-                <text
-                  x={paddingLeft - 10}
-                  y={y + 4}
-                  textAnchor="end"
-                  fontSize="11"
-                  fill="#9CA3AF"
-                >
-                  {tick}
-                </text>
-              </g>
-            );
-          })}
-
-          {/* 100 baseline */}
-          {100 >= chartMin &&
-            100 <= chartMax && (
-              <line
-                x1={paddingLeft}
-                x2={chartWidth - paddingRight}
-                y1={getY(100)}
-                y2={getY(100)}
-                stroke="#94A3B8"
-                strokeWidth="1.5"
-                strokeDasharray="5 5"
-              />
-            )}
-
-          {/* Lines */}
-          {visibleSeries.map((series) => (
-            <path
-              key={series.key}
-              d={buildPath(series.values)}
-              fill="none"
-              stroke={series.color}
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          ))}
-
-          {/* Points */}
-          {visibleSeries.map((series) =>
-            series.values.map(
-              (value, index) => {
-                if (value == null) return null;
-
-                return (
-                  <circle
-                    key={`${series.key}-${index}`}
-                    cx={getX(index)}
-                    cy={getY(value)}
-                    r="3.5"
-                    fill="white"
-                    stroke={series.color}
-                    strokeWidth="2"
-                  >
-                    <title>
-                      {`${series.label} · ${
-                        data[index]?.date
-                      } · ${value.toFixed(
-                        1
-                      )}`}
-                    </title>
-                  </circle>
-                );
-              }
-            )
-          )}
-
-          {/* X axis labels */}
-          {dateIndexes.map((index) => (
-            <text
-              key={index}
-              x={getX(index)}
-              y={
-                chartHeight -
-                paddingBottom +
-                22
-              }
-              textAnchor="middle"
-              fontSize="11"
-              fill="#9CA3AF"
-            >
-              {data[index]?.date}
-            </text>
-          ))}
-        </svg>
-      </div>
-
-      {/* Explanation */}
-      <div className="mt-3 flex items-center justify-between">
-        <p className="font-body text-[11px] text-ink/40">
-          Chỉ số được chuẩn hóa: ngày đầu tiên = 100
-        </p>
-
-        <p className="font-body text-[11px] text-ink/40">
-          100 = mức tham chiếu
-        </p>
-      </div>
-    </div>
-  );
-}
 
 function ChartHeader({
   title,
@@ -728,6 +344,328 @@ function ChartHeader({
       <p className="mt-1 font-body text-xs text-ink/45">
         {description}
       </p>
+    </div>
+  );
+}
+
+const trendSeries = [
+  {
+    key: "tickets" as TrendSeriesKey,
+    label: "Tickets",
+    group: "Ticket",
+    color: "#16A34A",
+  },
+  {
+    key: "completed" as TrendSeriesKey,
+    label: "Completed",
+    group: "Ticket",
+    color: "#86EFAC",
+  },
+  {
+    key: "visits" as TrendSeriesKey,
+    label: "Visits",
+    group: "Traffic",
+    color: "#2563EB",
+  },
+  {
+    key: "uniqueDrivers" as TrendSeriesKey,
+    label: "Unique Drivers",
+    group: "Traffic",
+    color: "#93C5FD",
+  },
+  {
+    key: "waiting" as TrendSeriesKey,
+    label: "Waiting",
+    group: "Service",
+    color: "#F59E0B",
+  },
+  {
+    key: "handling" as TrendSeriesKey,
+    label: "Handling",
+    group: "Service",
+    color: "#FCD34D",
+  },
+  {
+    key: "csat" as TrendSeriesKey,
+    label: "CSAT",
+    group: "CSAT",
+    color: "#8B5CF6",
+  },
+];
+
+function TrendChart({
+  data,
+}: {
+  data: ChartRow[];
+}) {
+  const [activeGroups, setActiveGroups] = useState<
+    string[]
+  >([
+    "Ticket",
+    "Traffic",
+    "Service",
+    "CSAT",
+  ]);
+
+  const toggleGroup = (group: string) => {
+    setActiveGroups((current) => {
+      if (current.includes(group)) {
+        if (current.length === 1) return current;
+        return current.filter((item) => item !== group);
+      }
+
+      return [...current, group];
+    });
+  };
+
+  const activeSeries = trendSeries.filter((series) =>
+    activeGroups.includes(series.group)
+  );
+
+  if (!data.length) {
+    return (
+      <div className="flex h-72 items-center justify-center text-sm text-ink/40">
+        Chưa có dữ liệu
+      </div>
+    );
+  }
+
+  const allValues = activeSeries.flatMap((series) =>
+    data
+      .map((row) => row[series.key])
+      .filter(
+        (value): value is number =>
+          value != null &&
+          typeof value === "number" &&
+          !Number.isNaN(value)
+      )
+  );
+
+  const maxValue = Math.max(
+    ...allValues,
+    1
+  );
+
+  const chartHeight = 240;
+
+  return (
+    <div>
+      <div className="mb-5 flex flex-wrap gap-2">
+        {[
+          {
+            group: "Ticket",
+            label: "Ticket",
+            color: "#16A34A",
+          },
+          {
+            group: "Traffic",
+            label: "Traffic",
+            color: "#2563EB",
+          },
+          {
+            group: "Service",
+            label: "Service",
+            color: "#F59E0B",
+          },
+          {
+            group: "CSAT",
+            label: "CSAT",
+            color: "#8B5CF6",
+          },
+        ].map((item) => {
+          const active = activeGroups.includes(
+            item.group
+          );
+
+          return (
+            <button
+              key={item.group}
+              type="button"
+              onClick={() =>
+                toggleGroup(item.group)
+              }
+              className={`flex items-center gap-2 rounded-full border px-3 py-1.5 font-body text-xs font-semibold transition ${
+                active
+                  ? "border-line bg-paper text-ink"
+                  : "border-line/60 bg-white text-ink/35"
+              }`}
+            >
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{
+                  backgroundColor: active
+                    ? item.color
+                    : "#D1D5DB",
+                }}
+              />
+
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-x-5 gap-y-2">
+        {activeSeries.map((series) => (
+          <div
+            key={series.key}
+            className="flex items-center gap-2 text-xs text-ink/55"
+          >
+            <span
+              className="h-2.5 w-2.5 rounded-sm"
+              style={{
+                backgroundColor: series.color,
+              }}
+            />
+
+            {series.label}
+          </div>
+        ))}
+      </div>
+
+      <div className="relative h-72">
+        <div className="absolute inset-0">
+          {[0, 25, 50, 75, 100].map(
+            (percentage) => (
+              <div
+                key={percentage}
+                className="absolute inset-x-0 border-t border-line/60"
+                style={{
+                  top: `${100 - percentage}%`,
+                }}
+              >
+                <span className="absolute -left-1 top-1 -translate-x-full font-body text-[9px] text-ink/30">
+                  {Math.round(
+                    (maxValue * percentage) /
+                      100
+                  )}
+                </span>
+              </div>
+            )
+          )}
+        </div>
+
+        <div className="absolute inset-x-0 bottom-0 h-[240px] overflow-x-auto">
+          <div
+            className="flex h-full items-end gap-1 px-2"
+            style={{
+              minWidth: Math.max(
+                data.length * 34,
+                100
+              ),
+            }}
+          >
+            {data.map((row) => (
+              <div
+                key={row.date}
+                className="group relative flex h-full min-w-[30px] flex-1 items-end justify-center"
+              >
+                <div
+                  className="absolute bottom-0 left-1/2 h-full w-px -translate-x-1/2 opacity-0 transition group-hover:opacity-100"
+                  style={{
+                    backgroundColor:
+                      "#E5E7EB",
+                  }}
+                />
+
+                <div className="relative flex h-full w-full items-end justify-center gap-[2px]">
+                  {activeSeries.map(
+                    (series) => {
+                      const value =
+                        row[series.key];
+
+                      if (
+                        value == null ||
+                        typeof value !==
+                          "number"
+                      ) {
+                        return null;
+                      }
+
+                      const height =
+                        Math.max(
+                          3,
+                          (value /
+                            maxValue) *
+                            chartHeight
+                        );
+
+                      return (
+                        <div
+                          key={
+                            series.key
+                          }
+                          className="w-1.5 rounded-t transition-all duration-300 group-hover:opacity-90"
+                          style={{
+                            height: `${height}px`,
+                            backgroundColor:
+                              series.color,
+                          }}
+                          title={`${row.date} · ${series.label}: ${
+                            series.key ===
+                              "waiting" ||
+                            series.key ===
+                              "handling"
+                              ? `${value.toFixed(
+                                  1
+                                )} phút`
+                              : series.key ===
+                                "csat"
+                              ? `${value.toFixed(
+                                  1
+                                )}/5`
+                              : value.toLocaleString(
+                                  "vi-VN"
+                                )
+                          }`}
+                        />
+                      );
+                    }
+                  )}
+                </div>
+
+                <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap font-body text-[9px] text-ink/35">
+                  {row.date.slice(
+                    5
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-8 rounded-xl bg-paper/40 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[11px] text-ink/45">
+          <span>
+            <strong className="text-ink/65">
+              Ticket:
+            </strong>{" "}
+            khối lượng yêu cầu
+          </span>
+
+          <span>
+            <strong className="text-ink/65">
+              Traffic:
+            </strong>{" "}
+            lượng khách/tài xế
+          </span>
+
+          <span>
+            <strong className="text-ink/65">
+              Service:
+            </strong>{" "}
+            thời gian phục vụ
+          </span>
+
+          <span>
+            <strong className="text-ink/65">
+              CSAT:
+            </strong>{" "}
+            mức độ hài lòng
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -759,8 +697,9 @@ export default function SupervisorDashboardPage() {
   const [profile, setProfile] =
     useState<Profile | null>(null);
 
-  const [rows, setRows] =
-    useState<QueueRow[]>([]);
+  const [rows, setRows] = useState<QueueRow[]>(
+    []
+  );
 
   const [summary, setSummary] =
     useState<DailySummary | null>(null);
@@ -806,465 +745,583 @@ export default function SupervisorDashboardPage() {
   const load = useCallback(async () => {
     setLoading(true);
 
-    const today = startOfDay(new Date());
+    try {
+      const today = startOfDay(
+        new Date()
+      );
 
-    const todayStr = dateToString(today);
+      const todayStr =
+        dateToString(today);
 
-    const yesterdayStr = dateToString(
-      addDays(today, -1)
-    );
+      const yesterdayStr =
+        dateToString(
+          addDays(today, -1)
+        );
 
-    const weekAgoStr = dateToString(
-      addDays(today, -7)
-    );
+      const weekAgoStr =
+        dateToString(
+          addDays(today, -7)
+        );
 
-    const monthAgoStr = dateToString(
-      getPreviousMonthSamePeriod(today)
-    );
+      const monthAgoStr =
+        dateToString(
+          getPreviousMonthSamePeriod(
+            today
+          )
+        );
 
-    const chartStart = dateToString(
-      addDays(today, -29)
-    );
+      const chartStart =
+        dateToString(
+          addDays(today, -29)
+        );
 
-    const [
-      { data: queueData },
-      { data: summaryData },
-      { data: feedbackData },
-      { data: counterData },
-      { data: colleagueData },
-      { data: trendData },
-      { data: chartSummaryData },
-    ] = await Promise.all([
-      supabase
-        .from("v_agent_queue")
-        .select("*")
-        .order("created_at", {
-          ascending: true,
-        }),
+      const [
+        { data: queueData },
+        { data: summaryData },
+        { data: feedbackData },
+        { data: counterData },
+        { data: colleagueData },
+        { data: trendData },
+        { data: chartSummaryData },
+      ] = await Promise.all([
+        supabase
+          .from("v_agent_queue")
+          .select("*")
+          .order("created_at", {
+            ascending: true,
+          }),
 
-      supabase
-        .from("v_report_daily_summary")
-        .select("*")
-        .eq("business_date", todayStr),
+        supabase
+          .from(
+            "v_report_daily_summary"
+          )
+          .select("*")
+          .eq(
+            "business_date",
+            todayStr
+          ),
 
-      supabase
-        .from("v_report_feedback")
-        .select("rating, created_at"),
+        supabase
+          .from("v_report_feedback")
+          .select(
+            "rating, created_at"
+          ),
 
-      supabase
-        .from("counters")
-        .select(
-          "id, counter_code, counter_name, status, branch_id"
+        supabase
+          .from("counters")
+          .select(
+            "id, counter_code, counter_name, status, branch_id"
+          ),
+
+        supabase
+          .from("profiles")
+          .select(
+            "id, full_name, email, role"
+          )
+          .eq("role", "agent"),
+
+        supabase
+          .from(
+            "v_report_daily_summary"
+          )
+          .select("*")
+          .gte(
+            "business_date",
+            monthAgoStr
+          )
+          .lte(
+            "business_date",
+            todayStr
+          )
+          .order("business_date", {
+            ascending: true,
+          }),
+
+        supabase
+          .from(
+            "v_report_daily_summary"
+          )
+          .select("*")
+          .gte(
+            "business_date",
+            chartStart
+          )
+          .lte(
+            "business_date",
+            todayStr
+          )
+          .order("business_date", {
+            ascending: true,
+          }),
+      ]);
+
+      setRows(
+        ((queueData as QueueRow[]) ??
+          [])
+      );
+
+      setSummary(
+        (
+          (summaryData as DailySummary[]) ??
+          []
+        )[0] ?? null
+      );
+
+      const loadedFeedback =
+        (feedbackData as FeedbackRow[]) ??
+        [];
+
+      setFeedback(
+        loadedFeedback
+      );
+
+      setCounters(
+        (counterData as Counter[]) ??
+          []
+      );
+
+      setColleagues(
+        (colleagueData as AgentOption[]) ??
+          []
+      );
+
+      const summaries =
+        (trendData as DailySummary[]) ??
+        [];
+
+      const chartSummaries =
+        (chartSummaryData as DailySummary[]) ??
+        [];
+
+      const getDateSummary = (
+        date: string
+      ) =>
+        summaries.filter(
+          (row) =>
+            row.business_date ===
+            date
+        );
+
+      const todaySummary =
+        aggregateSummaries(
+          getDateSummary(
+            todayStr
+          )
+        );
+
+      const yesterdaySummary =
+        aggregateSummaries(
+          getDateSummary(
+            yesterdayStr
+          )
+        );
+
+      const weekSummary =
+        aggregateSummaries(
+          getDateSummary(
+            weekAgoStr
+          )
+        );
+
+      const monthSummary =
+        aggregateSummaries(
+          getDateSummary(
+            monthAgoStr
+          )
+        );
+
+      const feedbackByDate = (
+        start: string,
+        end: string
+      ) =>
+        loadedFeedback.filter(
+          (item) => {
+            if (!item.created_at)
+              return false;
+
+            const date =
+              item.created_at.slice(
+                0,
+                10
+              );
+
+            return (
+              date >= start &&
+              date <= end
+            );
+          }
+        );
+
+      const getCsat = (
+        items: FeedbackRow[]
+      ) =>
+        items.length
+          ? items.reduce(
+              (
+                sum,
+                item
+              ) =>
+                sum +
+                Number(
+                  item.rating || 0
+                ),
+              0
+            ) / items.length
+          : null;
+
+      const todayCsat =
+        getCsat(
+          feedbackByDate(
+            todayStr,
+            todayStr
+          )
+        );
+
+      const yesterdayCsat =
+        getCsat(
+          feedbackByDate(
+            yesterdayStr,
+            yesterdayStr
+          )
+        );
+
+      const weekCsat =
+        getCsat(
+          feedbackByDate(
+            weekAgoStr,
+            weekAgoStr
+          )
+        );
+
+      const monthCsat =
+        getCsat(
+          feedbackByDate(
+            monthAgoStr,
+            monthAgoStr
+          )
+        );
+
+      const createMetrics = (
+        previous: PeriodSummary,
+        previousCsat: number | null
+      ): TrendMetrics => ({
+        tickets: buildTrend(
+          todaySummary.tickets,
+          previous.tickets
         ),
 
-      supabase
-        .from("profiles")
-        .select(
-          "id, full_name, email, role"
-        )
-        .eq("role", "agent"),
+        completed: buildTrend(
+          todaySummary.completed,
+          previous.completed
+        ),
 
-      supabase
-        .from("v_report_daily_summary")
-        .select("*")
-        .gte(
-          "business_date",
-          monthAgoStr
-        )
-        .lte(
-          "business_date",
-          todayStr
-        )
-        .order("business_date", {
-          ascending: true,
-        }),
+        visits: buildTrend(
+          todaySummary.visits,
+          previous.visits
+        ),
 
-      supabase
-        .from("v_report_daily_summary")
-        .select("*")
-        .gte(
-          "business_date",
-          chartStart
-        )
-        .lte(
-          "business_date",
-          todayStr
-        )
-        .order("business_date", {
-          ascending: true,
-        }),
-    ]);
+        uniqueDrivers:
+          buildTrend(
+            todaySummary.uniqueDrivers,
+            previous.uniqueDrivers
+          ),
 
-    setRows(
-      ((queueData as QueueRow[]) ?? [])
-    );
+        waiting: buildTrend(
+          todaySummary.waiting,
+          previous.waiting
+        ),
 
-    setSummary(
-      ((summaryData as DailySummary[]) ?? [])[0] ??
-        null
-    );
+        handling: buildTrend(
+          todaySummary.handling,
+          previous.handling
+        ),
 
-    setFeedback(
-      (feedbackData as FeedbackRow[]) ?? []
-    );
-
-    setCounters(
-      (counterData as Counter[]) ?? []
-    );
-
-    setColleagues(
-      (colleagueData as AgentOption[]) ?? []
-    );
-
-    const summaries =
-      (trendData as DailySummary[]) ?? [];
-
-    const chartSummaries =
-      (chartSummaryData as DailySummary[]) ?? [];
-
-    const getDateSummary = (
-      date: string
-    ) =>
-      summaries.filter(
-        (row) =>
-          row.business_date === date
-      );
-
-    const todaySummary =
-      aggregateSummaries(
-        getDateSummary(todayStr)
-      );
-
-    const yesterdaySummary =
-      aggregateSummaries(
-        getDateSummary(yesterdayStr)
-      );
-
-    const weekSummary =
-      aggregateSummaries(
-        getDateSummary(weekAgoStr)
-      );
-
-    const monthSummary =
-      aggregateSummaries(
-        getDateSummary(monthAgoStr)
-      );
-
-    const feedbackByDate = (
-      start: string,
-      end: string
-    ) =>
-      feedback.filter((item) => {
-        if (!item.created_at) return false;
-
-        const date =
-          item.created_at.slice(0, 10);
-
-        return (
-          date >= start &&
-          date <= end
-        );
+        csat: buildTrend(
+          todayCsat,
+          previousCsat
+        ),
       });
 
-    const getCsat = (
-      items: FeedbackRow[]
-    ) =>
-      items.length
-        ? items.reduce(
-            (sum, item) =>
-              sum +
-              Number(item.rating || 0),
-            0
-          ) / items.length
-        : null;
+      setTrendMetrics({
+        dod: createMetrics(
+          yesterdaySummary,
+          yesterdayCsat
+        ),
 
-    const todayCsat = getCsat(
-      feedbackByDate(
-        todayStr,
-        todayStr
-      )
-    );
+        wow: createMetrics(
+          weekSummary,
+          weekCsat
+        ),
 
-    const yesterdayCsat = getCsat(
-      feedbackByDate(
-        yesterdayStr,
-        yesterdayStr
-      )
-    );
+        mom: createMetrics(
+          monthSummary,
+          monthCsat
+        ),
+      });
 
-    const weekCsat = getCsat(
-      feedbackByDate(
-        weekAgoStr,
-        weekAgoStr
-      )
-    );
+      /*
+       * =====================================================
+       * BUILD 30-DAY CHART
+       * =====================================================
+       */
 
-    const monthCsat = getCsat(
-      feedbackByDate(
-        monthAgoStr,
-        monthAgoStr
-      )
-    );
+      const groupedChart =
+        new Map<
+          string,
+          ChartRow
+        >();
 
-    const createMetrics = (
-      previous: PeriodSummary,
-      previousCsat: number | null
-    ): TrendMetrics => ({
-      tickets: buildTrend(
-        todaySummary.tickets,
-        previous.tickets
-      ),
+      chartSummaries.forEach(
+        (row) => {
+          const date =
+            row.business_date;
 
-      completed: buildTrend(
-        todaySummary.completed,
-        previous.completed
-      ),
-
-      visits: buildTrend(
-        todaySummary.visits,
-        previous.visits
-      ),
-
-      uniqueDrivers: buildTrend(
-        todaySummary.uniqueDrivers,
-        previous.uniqueDrivers
-      ),
-
-      waiting: buildTrend(
-        todaySummary.waiting,
-        previous.waiting
-      ),
-
-      handling: buildTrend(
-        todaySummary.handling,
-        previous.handling
-      ),
-
-      csat: buildTrend(
-        todayCsat,
-        previousCsat
-      ),
-    });
-
-    setTrendMetrics({
-      dod: createMetrics(
-        yesterdaySummary,
-        yesterdayCsat
-      ),
-
-      wow: createMetrics(
-        weekSummary,
-        weekCsat
-      ),
-
-      mom: createMetrics(
-        monthSummary,
-        monthCsat
-      ),
-    });
-
-    /*
-     * ============================
-     * BUILD 30-DAY CHART
-     * ============================
-     */
-
-    const groupedChart =
-      new Map<string, ChartRow>();
-
-    chartSummaries.forEach((row) => {
-      const date = row.business_date;
-
-      const existing =
-        groupedChart.get(date);
-
-      if (existing) {
-        existing.tickets += Number(
-          row.total_tickets || 0
-        );
-
-        existing.completed += Number(
-          row.completed_tickets || 0
-        );
-
-        existing.visits += Number(
-          row.total_visits || 0
-        );
-
-        existing.uniqueDrivers += Number(
-          row.unique_drivers || 0
-        );
-
-        if (
-          row.avg_waiting_time_min !=
-          null
-        ) {
-          existing.waiting =
-            Number(
-              row.avg_waiting_time_min
+          const existing =
+            groupedChart.get(
+              date
             );
-        }
 
-        if (
-          row.avg_handling_time_min !=
-          null
-        ) {
-          existing.handling =
-            Number(
-              row.avg_handling_time_min
-            );
-        }
-      } else {
-        groupedChart.set(date, {
-          date,
+          if (existing) {
+            existing.tickets +=
+              Number(
+                row.total_tickets ||
+                  0
+              );
 
-          tickets: Number(
-            row.total_tickets || 0
-          ),
+            existing.completed +=
+              Number(
+                row.completed_tickets ||
+                  0
+              );
 
-          completed: Number(
-            row.completed_tickets || 0
-          ),
+            existing.visits +=
+              Number(
+                row.total_visits ||
+                  0
+              );
 
-          visits: Number(
-            row.total_visits || 0
-          ),
+            existing.uniqueDrivers +=
+              Number(
+                row.unique_drivers ||
+                  0
+              );
 
-          uniqueDrivers: Number(
-            row.unique_drivers || 0
-          ),
-
-          waiting:
-            row.avg_waiting_time_min !=
-            null
-              ? Number(
+            if (
+              row.avg_waiting_time_min !=
+              null
+            ) {
+              existing.waiting =
+                Number(
                   row.avg_waiting_time_min
-                )
-              : null,
+                );
+            }
 
-          handling:
-            row.avg_handling_time_min !=
-            null
-              ? Number(
+            if (
+              row.avg_handling_time_min !=
+              null
+            ) {
+              existing.handling =
+                Number(
                   row.avg_handling_time_min
-                )
-              : null,
+                );
+            }
+          } else {
+            groupedChart.set(
+              date,
+              {
+                date,
 
-          csat: null,
-        });
-      }
-    });
+                tickets:
+                  Number(
+                    row.total_tickets ||
+                      0
+                  ),
 
-    /*
-     * ============================
-     * ADD CSAT BY DATE
-     * ============================
-     */
+                completed:
+                  Number(
+                    row.completed_tickets ||
+                      0
+                  ),
 
-    const chartFeedback =
-      feedback.filter((item) => {
-        if (!item.created_at) return false;
+                visits:
+                  Number(
+                    row.total_visits ||
+                      0
+                  ),
 
-        const date =
-          item.created_at.slice(0, 10);
+                uniqueDrivers:
+                  Number(
+                    row.unique_drivers ||
+                      0
+                  ),
 
-        return (
-          date >= chartStart &&
-          date <= todayStr
+                waiting:
+                  row.avg_waiting_time_min !=
+                  null
+                    ? Number(
+                        row.avg_waiting_time_min
+                      )
+                    : null,
+
+                handling:
+                  row.avg_handling_time_min !=
+                  null
+                    ? Number(
+                        row.avg_handling_time_min
+                      )
+                    : null,
+
+                csat: null,
+              }
+            );
+          }
+        }
+      );
+
+      /*
+       * =====================================================
+       * ADD CSAT BY DATE
+       * =====================================================
+       */
+
+      const chartFeedback =
+        loadedFeedback.filter(
+          (item) => {
+            if (!item.created_at)
+              return false;
+
+            const date =
+              item.created_at.slice(
+                0,
+                10
+              );
+
+            return (
+              date >= chartStart &&
+              date <= todayStr
+            );
+          }
         );
-      });
 
-    const feedbackMap =
-      new Map<string, number[]>();
+      const feedbackMap =
+        new Map<
+          string,
+          number[]
+        >();
 
-    chartFeedback.forEach((item) => {
-      if (!item.created_at) return;
+      chartFeedback.forEach(
+        (item) => {
+          if (!item.created_at)
+            return;
 
-      const date =
-        item.created_at.slice(0, 10);
+          const date =
+            item.created_at.slice(
+              0,
+              10
+            );
 
-      const current =
-        feedbackMap.get(date) ?? [];
+          const current =
+            feedbackMap.get(
+              date
+            ) ?? [];
 
-      current.push(
-        Number(item.rating || 0)
+          current.push(
+            Number(
+              item.rating || 0
+            )
+          );
+
+          feedbackMap.set(
+            date,
+            current
+          );
+        }
       );
 
-      feedbackMap.set(
-        date,
-        current
+      feedbackMap.forEach(
+        (ratings, date) => {
+          const row =
+            groupedChart.get(
+              date
+            );
+
+          if (!row) return;
+
+          row.csat =
+            ratings.reduce(
+              (
+                sum,
+                rating
+              ) =>
+                sum + rating,
+              0
+            ) /
+            ratings.length;
+        }
       );
-    });
 
-    feedbackMap.forEach(
-      (ratings, date) => {
-        const row =
-          groupedChart.get(date);
-
-        if (!row) return;
-
-        row.csat =
-          ratings.reduce(
-            (sum, rating) =>
-              sum + rating,
-            0
-          ) / ratings.length;
-      }
-    );
-
-    setChartData(
-      Array.from(
-        groupedChart.values()
-      ).sort((a, b) =>
-        a.date.localeCompare(b.date)
-      )
-    );
-
-    setLoading(false);
-  }, [feedback]);
+      setChartData(
+        Array.from(
+          groupedChart.values()
+        ).sort((a, b) =>
+          a.date.localeCompare(
+            b.date
+          )
+        )
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    getCurrentProfile().then(setProfile);
+    getCurrentProfile().then(
+      setProfile
+    );
+
     load();
   }, [load]);
 
   useEffect(() => {
-    const channel = supabase
-      .channel(
-        "supervisor-dashboard"
-      )
+    const channel =
+      supabase
+        .channel(
+          "supervisor-dashboard"
+        )
 
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "queue_tickets",
-        },
-        load
-      )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table:
+              "queue_tickets",
+          },
+          load
+        )
 
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "service_cases",
-        },
-        load
-      )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table:
+              "service_cases",
+          },
+          load
+        )
 
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "counters",
-        },
-        load
-      )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "counters",
+          },
+          load
+        )
 
-      .subscribe();
+        .subscribe();
 
     return () => {
       supabase.removeChannel(
@@ -1277,14 +1334,16 @@ export default function SupervisorDashboardPage() {
     counter: Counter
   ) {
     const next =
-      counter.status === "AVAILABLE"
+      counter.status ===
+      "AVAILABLE"
         ? "CLOSED"
         : "AVAILABLE";
 
     await supabase.rpc(
       "set_counter_status",
       {
-        p_counter_id: counter.id,
+        p_counter_id:
+          counter.id,
         p_status: next,
       }
     );
@@ -1300,27 +1359,34 @@ export default function SupervisorDashboardPage() {
       "reassign_case",
       {
         p_case_id: caseId,
-        p_to_agent_id: toAgentId,
+        p_to_agent_id:
+          toAgentId,
       }
     );
 
-    setReassignOpenFor(null);
+    setReassignOpenFor(
+      null
+    );
+
     load();
   }
 
   const filtered = useMemo(() => {
-    return rows.filter((r) => {
-      return (
-        (!categoryFilter ||
-          r.category_name ===
-            categoryFilter) &&
-        (!statusFilter ||
-          r.status === statusFilter) &&
-        (!agentFilter ||
-          r.agent_name ===
-            agentFilter)
-      );
-    });
+    return rows.filter(
+      (r) => {
+        return (
+          (!categoryFilter ||
+            r.category_name ===
+              categoryFilter) &&
+          (!statusFilter ||
+            r.status ===
+              statusFilter) &&
+          (!agentFilter ||
+            r.agent_name ===
+              agentFilter)
+        );
+      }
+    );
   }, [
     rows,
     categoryFilter,
@@ -1328,72 +1394,92 @@ export default function SupervisorDashboardPage() {
     agentFilter,
   ]);
 
-  const categories = Array.from(
-    new Set(
-      rows
-        .map(
-          (r) => r.category_name
+  const categories =
+    Array.from(
+      new Set(
+        rows
+          .map(
+            (r) =>
+              r.category_name
+          )
+          .filter(Boolean)
+      )
+    );
+
+  const agents =
+    Array.from(
+      new Set(
+        rows
+          .map(
+            (r) =>
+              r.agent_name
+          )
+          .filter(Boolean)
+      )
+    );
+
+  const waiting =
+    rows.filter(
+      (r) =>
+        r.status ===
+        "WAITING"
+    ).length;
+
+  const processing =
+    rows.filter(
+      (r) =>
+        r.status ===
+        "PROCESSING"
+    ).length;
+
+  const pending =
+    rows.filter(
+      (r) =>
+        r.status ===
+        "PENDING"
+    ).length;
+
+  const overSla =
+    rows.filter(
+      (r) =>
+        r.sla_due_at &&
+        new Date(
+          r.sla_due_at
+        ).getTime() <
+          Date.now() &&
+        !r.resolved_at &&
+        !r.closed_at &&
+        r.status !==
+          "PENDING"
+    ).length;
+
+  const completed =
+    rows.filter(
+      (r) =>
+        [
+          "RESOLVED",
+          "CLOSED",
+        ].includes(
+          r.status
         )
-        .filter(Boolean)
-    )
-  );
-
-  const agents = Array.from(
-    new Set(
-      rows
-        .map(
-          (r) => r.agent_name
-        )
-        .filter(Boolean)
-    )
-  );
-
-  const waiting = rows.filter(
-    (r) =>
-      r.status === "WAITING"
-  ).length;
-
-  const processing = rows.filter(
-    (r) =>
-      r.status === "PROCESSING"
-  ).length;
-
-  const pending = rows.filter(
-    (r) =>
-      r.status === "PENDING"
-  ).length;
-
-  const overSla = rows.filter(
-    (r) =>
-      r.sla_due_at &&
-      new Date(
-        r.sla_due_at
-      ).getTime() <
-        Date.now() &&
-      !r.resolved_at &&
-      !r.closed_at &&
-      r.status !== "PENDING"
-  ).length;
-
-  const completed = rows.filter(
-    (r) =>
-      [
-        "RESOLVED",
-        "CLOSED",
-      ].includes(r.status)
-  ).length;
+    ).length;
 
   const avgCsat =
     feedback.length > 0
       ? (
           feedback.reduce(
-            (sum, item) =>
+            (
+              sum,
+              item
+            ) =>
               sum +
               Number(
-                item.rating || 0
+                item.rating ||
+                  0
               ),
             0
-          ) / feedback.length
+          ) /
+          feedback.length
         ).toFixed(1)
       : "—";
 
@@ -1422,7 +1508,10 @@ export default function SupervisorDashboardPage() {
         </h1>
 
         <p className="mt-1 font-body text-sm text-ink/50">
-          Theo dõi vận hành, hiệu suất và xu hướng trung tâm dịch vụ.
+          Theo dõi vận hành,
+          hiệu suất và xu
+          hướng trung tâm
+          dịch vụ.
         </p>
       </div>
 
@@ -1558,21 +1647,24 @@ export default function SupervisorDashboardPage() {
       <section>
         <div className="mb-4">
           <p className="font-body text-sm font-bold uppercase tracking-wide text-ink/50">
-            Trend theo nhóm chủ đề
+            Trend theo chủ đề
           </p>
 
           <p className="mt-1 font-body text-xs text-ink/40">
-            Diễn biến 30 ngày gần nhất · click vào từng nhóm để ẩn/hiện
+            Diễn biến 30 ngày
+            gần nhất · gom
+            các chỉ số vào
+            một biểu đồ
           </p>
         </div>
 
         <div className="rounded-card border border-line bg-white p-5">
           <ChartHeader
             title="Service Center Trend"
-            description="So sánh xu hướng Volume, Traffic, Performance và CSAT trên cùng một biểu đồ"
+            description="Theo dõi đồng thời Ticket, Traffic, Service Performance và CSAT"
           />
 
-          <CombinedTrendChart
+          <TrendChart
             data={chartData}
           />
         </div>
@@ -1589,7 +1681,9 @@ export default function SupervisorDashboardPage() {
           </p>
 
           <p className="mt-1 font-body text-xs text-ink/40">
-            So sánh hiệu suất hôm nay với các mốc tham chiếu
+            So sánh hiệu suất
+            hôm nay với các
+            mốc tham chiếu
           </p>
         </div>
 
@@ -1630,7 +1724,9 @@ export default function SupervisorDashboardPage() {
           {counters.map(
             (counter) => (
               <div
-                key={counter.id}
+                key={
+                  counter.id
+                }
                 className="flex items-center gap-3 rounded-card border border-line bg-white px-4 py-3"
               >
                 <span className="font-body text-sm font-semibold text-ink">
@@ -1681,7 +1777,8 @@ export default function SupervisorDashboardPage() {
             </p>
 
             <p className="mt-1 font-body text-xs text-ink/40">
-              {filtered.length} ticket
+              {filtered.length}{" "}
+              ticket
             </p>
           </div>
 
@@ -1704,8 +1801,12 @@ export default function SupervisorDashboardPage() {
               {agents.map(
                 (agent) => (
                   <option
-                    key={agent}
-                    value={agent}
+                    key={
+                      agent
+                    }
+                    value={
+                      agent
+                    }
                   >
                     {agent}
                   </option>
@@ -1731,8 +1832,12 @@ export default function SupervisorDashboardPage() {
               {categories.map(
                 (category) => (
                   <option
-                    key={category}
-                    value={category}
+                    key={
+                      category
+                    }
+                    value={
+                      category
+                    }
                   >
                     {category}
                   </option>
@@ -1841,7 +1946,8 @@ export default function SupervisorDashboardPage() {
                         colSpan={7}
                         className="px-4 py-8 text-center text-ink/40"
                       >
-                        Không có ticket
+                        Không có
+                        ticket
                         phù hợp.
                       </td>
                     </tr>
@@ -1869,10 +1975,8 @@ export default function SupervisorDashboardPage() {
                         </td>
 
                         <td className="px-4 py-3">
-                          {
-                            r.agent_name ||
-                            "—"
-                          }
+                          {r.agent_name ||
+                            "—"}
                         </td>
 
                         <td className="px-4 py-3">
@@ -1924,7 +2028,8 @@ export default function SupervisorDashboardPage() {
                             >
                               <option value="">
                                 -- Chọn
-                                agent --
+                                agent
+                                --
                               </option>
 
                               {colleagues.map(
@@ -1970,4 +2075,3 @@ export default function SupervisorDashboardPage() {
     </div>
   );
 }
-```
