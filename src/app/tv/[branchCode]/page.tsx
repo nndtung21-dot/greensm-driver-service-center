@@ -83,7 +83,6 @@ function buildAnnouncementText(
   const qWords = [...queueNumber.toUpperCase()]
     .map((ch) => DIGIT_WORD[ch] ?? ch)
     .join(" ");
-
   const cWords = counterNumberToWords(counterCode);
 
   return `Kính mời tài xế có số ${qWords}, ${driverName}, đến quầy số ${cWords}`;
@@ -168,23 +167,67 @@ function useAnnouncer() {
   }, []);
 
   const enqueue = useCallback(
-    (queueNumber: string, driverName: string, counterCode: string) => {
+    (
+      queueNumber: string,
+      driverName: string,
+      counterCode: string
+    ) => {
       queueRef.current.push(async () => {
+        const text = buildAnnouncementText(
+          queueNumber,
+          driverName,
+          counterCode
+        );
+
+        // Đọc lần 1
         try {
-          const text = buildAnnouncementText(queueNumber, driverName, counterCode);
-          const res = await fetch(`/api/tts?text=${encodeURIComponent(text)}`);
+          const res = await fetch(
+            `/api/tts?text=${encodeURIComponent(text)}`
+          );
+
           if (!res.ok) throw new Error("tts route failed");
+
           const blob = await res.blob();
           const url = URL.createObjectURL(blob);
+
           try {
             await playRemote(url);
           } finally {
             URL.revokeObjectURL(url);
           }
         } catch {
-          await playLocalClips(buildAnnouncementClips(queueNumber, counterCode));
+          // Fallback cũ nếu Google TTS lỗi
+          await playLocalClips(
+            buildAnnouncementClips(queueNumber, counterCode)
+          );
+        }
+
+        // Nghỉ một chút trước khi gọi lại
+        await new Promise((resolve) => setTimeout(resolve, 700));
+
+        // Đọc lần 2
+        try {
+          const res = await fetch(
+            `/api/tts?text=${encodeURIComponent(text)}`
+          );
+
+          if (!res.ok) throw new Error("tts route failed");
+
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+
+          try {
+            await playRemote(url);
+          } finally {
+            URL.revokeObjectURL(url);
+          }
+        } catch {
+          await playLocalClips(
+            buildAnnouncementClips(queueNumber, counterCode)
+          );
         }
       });
+
       processQueue();
     },
     [playRemote, playLocalClips, processQueue]
@@ -226,13 +269,17 @@ export default function TvDisplayPage() {
       .sort((a, b) => (a.called_at! < b.called_at! ? -1 : 1));
 
     for (const c of newlyCalled) {
-      const driverName = c.driver_name?.trim() || "tài xế";
+      const driver = (queueData as AgentQueueRow[] | null)?.find(
+        (q) => q.queue_number === c.queue_number
+      );
 
-      // Gọi 2 lần: mỗi lần có đầy đủ số queue + họ tên + quầy
-      enqueueAudio(c.queue_number!, driverName, c.counter_code);
-      setTimeout(() => {
-        enqueueAudio(c.queue_number!, driverName, c.counter_code);
-      }, 2500);
+      const driverName = driver?.driver_name?.trim() || "tài xế";
+
+      enqueueAudio(
+        c.queue_number!,
+        driverName,
+        c.counter_code
+      );
     }
     if (newlyCalled.length > 0) {
       lastAnnouncedAt.current = newlyCalled[newlyCalled.length - 1].called_at;
