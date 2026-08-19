@@ -1,15 +1,11 @@
+```tsx
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/auth";
-import {
-  CaseDetail,
-  CaseHistoryEntry,
-  Counter,
-  Profile,
-} from "@/lib/types";
+import { CaseDetail, CaseHistoryEntry, Profile } from "@/lib/types";
 import {
   Panel,
   PrimaryButton,
@@ -20,6 +16,16 @@ import {
 const HISTORY_LABELS: Record<string, string> = {
   Created: "Tạo ticket",
   "Status Changed": "Đổi trạng thái",
+};
+
+type CounterOption = {
+  id: string;
+  counter_code: string;
+  counter_name: string;
+  status: "AVAILABLE" | "BUSY" | "CLOSED";
+  default_agent_id: string | null;
+  current_agent_id: string | null;
+  default_agent_name?: string | null;
 };
 
 function fmt(dt: string | null) {
@@ -34,12 +40,11 @@ export default function TicketDetailPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [detail, setDetail] = useState<CaseDetail | null>(null);
   const [history, setHistory] = useState<CaseHistoryEntry[]>([]);
-  const [counters, setCounters] = useState<Counter[]>([]);
+  const [counters, setCounters] = useState<CounterOption[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [transferring, setTransferring] = useState(false);
-
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [resolution, setResolution] = useState("");
@@ -54,52 +59,94 @@ export default function TicketDetailPage() {
   const [pendingExpected, setPendingExpected] = useState("");
 
   const load = useCallback(async () => {
-    const [{ data: caseData }, { data: historyData }] = await Promise.all([
-      supabase
-        .from("v_case_detail")
-        .select("*")
-        .eq("case_id", params.id)
-        .maybeSingle(),
+    const [{ data: caseData, error: caseError }, { data: historyData }] =
+      await Promise.all([
+        supabase
+          .from("v_case_detail")
+          .select("*")
+          .eq("case_id", params.id)
+          .maybeSingle(),
 
-      supabase
-        .from("case_history")
-        .select(
-          "id, action, old_status, new_status, note, created_at, performed_by"
-        )
-        .eq("case_id", params.id)
-        .order("created_at", { ascending: true }),
-    ]);
+        supabase
+          .from("case_history")
+          .select(
+            "id, action, old_status, new_status, note, created_at, performed_by"
+          )
+          .eq("case_id", params.id)
+          .order("created_at", { ascending: true }),
+      ]);
+
+    if (caseError) {
+      setErrorMessage(caseError.message);
+    }
 
     setDetail((caseData as CaseDetail) ?? null);
     setHistory((historyData as CaseHistoryEntry[]) ?? []);
     setLoading(false);
   }, [params.id]);
 
-  useEffect(() => {
-    async function init() {
-      const currentProfile = await getCurrentProfile();
+  const loadCounters = useCallback(async () => {
+    const currentProfile = await getCurrentProfile();
 
-      setProfile(currentProfile);
-
-      if (currentProfile?.branch_id) {
-        const { data, error } = await supabase
-          .from("counters")
-          .select(
-            "id, counter_code, counter_name, status, branch_id, default_agent_id"
-          )
-          .eq("branch_id", currentProfile.branch_id)
-          .in("status", ["AVAILABLE", "BUSY", "OPEN"])
-          .order("counter_code", { ascending: true });
-
-        if (!error) {
-          setCounters((data as Counter[]) ?? []);
-        }
-      }
+    if (!currentProfile?.branch_id) {
+      return;
     }
 
-    init();
+    const { data, error } = await supabase
+      .from("counters")
+      .select(
+        `
+          id,
+          counter_code,
+          counter_name,
+          status,
+          default_agent_id,
+          current_agent_id
+        `
+      )
+      .eq("branch_id", currentProfile.branch_id)
+      .order("counter_code", { ascending: true });
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    const rawCounters = data ?? [];
+
+    const agentIds = rawCounters
+      .map((counter) => counter.default_agent_id)
+      .filter((id): id is string => Boolean(id));
+
+    let agentMap = new Map<string, string>();
+
+    if (agentIds.length > 0) {
+      const { data: agents } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", agentIds);
+
+      agentMap = new Map(
+        (agents ?? []).map((agent) => [agent.id, agent.full_name])
+      );
+    }
+
+    setCounters(
+      rawCounters.map((counter) => ({
+        ...counter,
+        default_agent_name:
+          counter.default_agent_id
+            ? agentMap.get(counter.default_agent_id) ?? null
+            : null,
+      })) as CounterOption[]
+    );
+  }, []);
+
+  useEffect(() => {
+    getCurrentProfile().then(setProfile);
     load();
-  }, [load]);
+    loadCounters();
+  }, [load, loadCounters]);
 
   useEffect(() => {
     const channel = supabase
@@ -111,6 +158,15 @@ export default function TicketDetailPage() {
           schema: "public",
           table: "service_cases",
           filter: `id=eq.${params.id}`,
+        },
+        load
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "queue_tickets",
         },
         load
       )
@@ -175,29 +231,6 @@ export default function TicketDetailPage() {
       p_case_id: params.id,
     });
 
-  const handleSetPending = () => {
-    if (!pendingReason.trim() || !pendingNextStep.trim()) {
-      setErrorMessage("Vui lòng nhập lý do và bước tiếp theo.");
-      return;
-    }
-
-    runRpc(
-      "set_case_pending",
-      {
-        p_case_id: params.id,
-        p_reason: pendingReason.trim(),
-        p_next_step: pendingNextStep.trim(),
-        p_expected_date: pendingExpected || null,
-      },
-      () => {
-        setShowPending(false);
-        setPendingReason("");
-        setPendingNextStep("");
-        setPendingExpected("");
-      }
-    );
-  };
-
   async function handleTransferToCounter() {
     if (!detail) return;
 
@@ -211,20 +244,16 @@ export default function TicketDetailPage() {
     );
 
     if (!targetCounter) {
-      setErrorMessage("Không tìm thấy quầy được chọn.");
+      setErrorMessage("Không tìm thấy quầy đích.");
       return;
     }
 
-    if (!targetCounter.default_agent_id) {
-      setErrorMessage("Quầy này chưa được gán Agent.");
-      return;
-    }
-
-    const confirmed = confirm(
-      `Chuyển ticket ${detail.queue_number} sang ${targetCounter.counter_name}?\n\n` +
-        `Agent nhận: Agent của ${targetCounter.counter_name}\n` +
-        `Trạng thái quầy: ${targetCounter.status === "BUSY" ? "Đang bận" : "Sẵn sàng"}\n\n` +
-        `Ticket sẽ quay về hàng chờ của Agent quầy đích.`
+    const confirmed = window.confirm(
+      `Chuyển ticket ${detail.queue_number} sang ${targetCounter.counter_name}${
+        targetCounter.default_agent_name
+          ? ` - ${targetCounter.default_agent_name}`
+          : ""
+      }?`
     );
 
     if (!confirmed) return;
@@ -247,6 +276,8 @@ export default function TicketDetailPage() {
     setShowTransfer(false);
     setTargetCounterId("");
 
+    await load();
+
     router.push("/agent/queue");
   }
 
@@ -268,6 +299,10 @@ export default function TicketDetailPage() {
     isMine ||
     profile?.role === "supervisor" ||
     profile?.role === "admin";
+
+  const canTransfer =
+    canAct &&
+    ["CALLED", "PROCESSING"].includes(detail.status);
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -401,12 +436,6 @@ export default function TicketDetailPage() {
                   {HISTORY_LABELS[h.action] ?? h.action}
                   {h.new_status ? ` → ${h.new_status}` : ""}
                 </p>
-
-                {h.note && (
-                  <p className="mt-1 text-ink/60">
-                    {h.note}
-                  </p>
-                )}
               </li>
             ))}
           </ol>
@@ -512,19 +541,18 @@ export default function TicketDetailPage() {
                 </PrimaryButton>
 
                 <SecondaryButton
-                  onClick={() =>
-                    setShowPending((v) => !v)
-                  }
+                  onClick={() => setShowPending((v) => !v)}
                   disabled={busy}
                 >
                   Đặt Pending
                 </SecondaryButton>
 
                 <SecondaryButton
-                  onClick={() =>
-                    setShowTransfer((v) => !v)
-                  }
-                  disabled={busy || transferring}
+                  onClick={() => {
+                    setShowTransfer((v) => !v);
+                    setErrorMessage(null);
+                  }}
+                  disabled={busy}
                 >
                   Chuyển ticket
                 </SecondaryButton>
@@ -568,7 +596,19 @@ export default function TicketDetailPage() {
                 </Field>
 
                 <PrimaryButton
-                  onClick={handleSetPending}
+                  onClick={() =>
+                    runRpc(
+                      "set_case_pending",
+                      {
+                        p_case_id: params.id,
+                        p_reason: pendingReason.trim(),
+                        p_next_step: pendingNextStep.trim(),
+                        p_expected_date:
+                          pendingExpected || null,
+                      },
+                      () => setShowPending(false)
+                    )
+                  }
                   disabled={busy}
                 >
                   XÁC NHẬN PENDING
@@ -581,14 +621,12 @@ export default function TicketDetailPage() {
             <Panel title="Chuyển ticket sang quầy khác">
               <div className="space-y-4">
                 <div className="rounded-lg bg-orange-50 px-4 py-3 font-body text-sm text-orange-800">
-                  <p className="font-semibold">
-                    Tài xế chọn sai chủ đề?
-                  </p>
-
-                  <p className="mt-1">
-                    Chọn quầy đúng. Ticket sẽ quay về hàng chờ
-                    của Agent thuộc quầy đó.
-                  </p>
+                  Ticket sẽ quay lại <b>hàng chờ</b> và được
+                  phân cho Agent mặc định của quầy bạn chọn.
+                  <br />
+                  <span className="font-semibold">
+                    Quầy đang BUSY vẫn có thể nhận ticket.
+                  </span>
                 </div>
 
                 <Field label="Chọn quầy nhận ticket *">
@@ -597,70 +635,64 @@ export default function TicketDetailPage() {
                     onChange={(e) =>
                       setTargetCounterId(e.target.value)
                     }
-                    className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
+                    className="w-full rounded-lg border-2 border-line bg-white px-4 py-3 font-body text-sm focus:border-brand-700"
                   >
                     <option value="">
                       -- Chọn quầy --
                     </option>
 
-                    {counters.map((counter) => (
-                      <option
-                        key={counter.id}
-                        value={counter.id}
-                        disabled={!counter.default_agent_id}
-                      >
-                        {counter.counter_name} (
-                        {counter.status === "BUSY"
-                          ? "Đang bận"
-                          : counter.status === "AVAILABLE"
-                            ? "Sẵn sàng"
-                            : counter.status}
-                        )
-                        {!counter.default_agent_id
-                          ? " - Chưa gán Agent"
-                          : ""}
-                      </option>
-                    ))}
+                    {counters
+                      .filter(
+                        (counter) =>
+                          counter.id !== detail.counter_id
+                      )
+                      .map((counter) => (
+                        <option
+                          key={counter.id}
+                          value={counter.id}
+                          disabled={
+                            counter.status === "CLOSED" ||
+                            !counter.default_agent_id
+                          }
+                        >
+                          {counter.counter_name}
+                          {" - "}
+                          {counter.default_agent_name ??
+                            "Chưa có Agent"}
+                          {" - "}
+                          {counter.status}
+                        </option>
+                      ))}
                   </select>
                 </Field>
 
                 {targetCounterId && (
                   <div className="rounded-lg border border-line bg-paper px-4 py-3 font-body text-sm">
                     {(() => {
-                      const counter = counters.find(
-                        (c) => c.id === targetCounterId
+                      const selected = counters.find(
+                        (counter) =>
+                          counter.id === targetCounterId
                       );
 
-                      if (!counter) return null;
+                      if (!selected) return null;
 
                       return (
                         <>
-                          <p>
-                            <span className="text-ink/50">
-                              Quầy:
-                            </span>{" "}
-                            <strong>
-                              {counter.counter_name}
-                            </strong>
-                          </p>
-
-                          <p className="mt-1">
-                            <span className="text-ink/50">
-                              Trạng thái:
-                            </span>{" "}
-                            <strong>
-                              {counter.status === "BUSY"
-                                ? "Đang bận"
-                                : counter.status ===
-                                    "AVAILABLE"
-                                  ? "Sẵn sàng"
-                                  : counter.status}
-                            </strong>
+                          <p className="font-semibold text-ink">
+                            {selected.counter_name}
                           </p>
 
                           <p className="mt-1 text-ink/60">
-                            Ticket vẫn được nhận và chờ Agent
-                            của quầy xử lý.
+                            Agent nhận:{" "}
+                            {selected.default_agent_name ??
+                              "Chưa có Agent"}
+                          </p>
+
+                          <p className="text-ink/60">
+                            Trạng thái quầy:{" "}
+                            <span className="font-semibold">
+                              {selected.status}
+                            </span>
                           </p>
                         </>
                       );
@@ -672,20 +704,19 @@ export default function TicketDetailPage() {
                   <PrimaryButton
                     onClick={handleTransferToCounter}
                     disabled={
-                      transferring ||
-                      busy ||
-                      !targetCounterId
+                      transferring || !targetCounterId
                     }
                   >
                     {transferring
                       ? "ĐANG CHUYỂN..."
-                      : "XÁC NHẬN CHUYỂN QUẦY"}
+                      : "XÁC NHẬN CHUYỂN"}
                   </PrimaryButton>
 
                   <SecondaryButton
                     onClick={() => {
                       setShowTransfer(false);
                       setTargetCounterId("");
+                      setErrorMessage(null);
                     }}
                     disabled={transferring}
                   >
@@ -787,7 +818,6 @@ function Row({
   return (
     <div className="flex justify-between gap-4">
       <dt className="text-ink/50">{label}</dt>
-
       <dd className="text-right font-medium text-ink">
         {value}
       </dd>
@@ -807,8 +837,8 @@ function Field({
       <label className="mb-1 block font-body text-sm text-ink/70">
         {label}
       </label>
-
       {children}
     </div>
   );
 }
+```
