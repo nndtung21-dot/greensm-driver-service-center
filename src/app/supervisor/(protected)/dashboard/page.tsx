@@ -398,9 +398,7 @@ function TrendChart({
 }: {
   data: ChartRow[];
 }) {
-  const [activeGroups, setActiveGroups] = useState<
-    string[]
-  >([
+  const [activeGroups, setActiveGroups] = useState<string[]>([
     "Ticket",
     "Traffic",
     "Service",
@@ -411,7 +409,10 @@ function TrendChart({
     setActiveGroups((current) => {
       if (current.includes(group)) {
         if (current.length === 1) return current;
-        return current.filter((item) => item !== group);
+
+        return current.filter(
+          (item) => item !== group
+        );
       }
 
       return [...current, group];
@@ -625,9 +626,7 @@ function TrendChart({
                 </div>
 
                 <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap font-body text-[9px] text-ink/35">
-                  {row.date.slice(
-                    5
-                  )}
+                  {row.date.slice(5)}
                 </span>
               </div>
             ))}
@@ -1059,11 +1058,9 @@ export default function SupervisorDashboardPage() {
         ),
       });
 
-      /*
-       * =====================================================
-       * BUILD 30-DAY CHART
-       * =====================================================
-       */
+      /* =====================================================
+         BUILD 30-DAY CHART
+      ===================================================== */
 
       const groupedChart =
         new Map<
@@ -1178,11 +1175,9 @@ export default function SupervisorDashboardPage() {
         }
       );
 
-      /*
-       * =====================================================
-       * ADD CSAT BY DATE
-       * =====================================================
-       */
+      /* =====================================================
+         ADD CSAT BY DATE
+      ===================================================== */
 
       const chartFeedback =
         loadedFeedback.filter(
@@ -1394,29 +1389,34 @@ export default function SupervisorDashboardPage() {
     agentFilter,
   ]);
 
-  const categories =
-    Array.from(
-      new Set(
-        rows
-          .map(
-            (r) =>
-              r.category_name
-          )
-          .filter(Boolean)
-      )
-    );
+  /*
+   * IMPORTANT:
+   * Dùng type guard để TypeScript hiểu
+   * category và agent chắc chắn là string.
+   */
+  const categories = Array.from(
+    new Set(
+      rows
+        .map((r) => r.category_name)
+        .filter(
+          (category): category is string =>
+            typeof category === "string" &&
+            category.length > 0
+        )
+    )
+  );
 
-  const agents =
-    Array.from(
-      new Set(
-        rows
-          .map(
-            (r) =>
-              r.agent_name
-          )
-          .filter(Boolean)
-      )
-    );
+  const agents = Array.from(
+    new Set(
+      rows
+        .map((r) => r.agent_name)
+        .filter(
+          (agent): agent is string =>
+            typeof agent === "string" &&
+            agent.length > 0
+        )
+    )
+  );
 
   const waiting =
     rows.filter(
