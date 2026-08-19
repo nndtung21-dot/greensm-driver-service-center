@@ -1,4 +1,3 @@
-```tsx
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -94,16 +93,14 @@ export default function TicketDetailPage() {
 
     const { data, error } = await supabase
       .from("counters")
-      .select(
-        `
-          id,
-          counter_code,
-          counter_name,
-          status,
-          default_agent_id,
-          current_agent_id
-        `
-      )
+      .select(`
+        id,
+        counter_code,
+        counter_name,
+        status,
+        default_agent_id,
+        current_agent_id
+      `)
       .eq("branch_id", currentProfile.branch_id)
       .order("counter_code", { ascending: true });
 
@@ -121,10 +118,15 @@ export default function TicketDetailPage() {
     let agentMap = new Map<string, string>();
 
     if (agentIds.length > 0) {
-      const { data: agents } = await supabase
+      const { data: agents, error: agentError } = await supabase
         .from("profiles")
         .select("id, full_name")
         .in("id", agentIds);
+
+      if (agentError) {
+        setErrorMessage(agentError.message);
+        return;
+      }
 
       agentMap = new Map(
         (agents ?? []).map((agent) => [agent.id, agent.full_name])
@@ -166,6 +168,7 @@ export default function TicketDetailPage() {
           event: "*",
           schema: "public",
           table: "queue_tickets",
+          filter: `id=eq.${detail?.ticket_id ?? ""}`,
         },
         load
       )
@@ -174,7 +177,7 @@ export default function TicketDetailPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [params.id, load]);
+  }, [params.id, detail?.ticket_id, load]);
 
   async function runRpc(
     name: string,
@@ -244,7 +247,12 @@ export default function TicketDetailPage() {
         p_next_step: pendingNextStep.trim(),
         p_expected_date: pendingExpected || null,
       },
-      () => setShowPending(false)
+      () => {
+        setShowPending(false);
+        setPendingReason("");
+        setPendingNextStep("");
+        setPendingExpected("");
+      }
     );
   };
 
@@ -266,7 +274,7 @@ export default function TicketDetailPage() {
     }
 
     if (targetCounter.status === "CLOSED") {
-      setErrorMessage("Không thể chuyển sang quầy đang đóng.");
+      setErrorMessage("Quầy đích đang đóng.");
       return;
     }
 
@@ -290,10 +298,13 @@ export default function TicketDetailPage() {
     setTransferring(true);
     setErrorMessage(null);
 
-    const { error } = await supabase.rpc("transfer_ticket_to_counter", {
-      p_ticket_id: detail.ticket_id,
-      p_target_counter_id: targetCounterId,
-    });
+    const { error } = await supabase.rpc(
+      "transfer_ticket_to_counter",
+      {
+        p_ticket_id: detail.ticket_id,
+        p_target_counter_id: targetCounterId,
+      }
+    );
 
     setTransferring(false);
 
@@ -311,7 +322,11 @@ export default function TicketDetailPage() {
   }
 
   if (loading) {
-    return <p className="font-body text-ink/50">Đang tải...</p>;
+    return (
+      <p className="font-body text-ink/50">
+        Đang tải...
+      </p>
+    );
   }
 
   if (!detail) {
@@ -336,6 +351,7 @@ export default function TicketDetailPage() {
   return (
     <div className="max-w-4xl space-y-6">
       <button
+        type="button"
         onClick={() => router.push("/agent/queue")}
         className="font-body text-sm text-brand-700 underline underline-offset-2"
       >
@@ -423,10 +439,25 @@ export default function TicketDetailPage() {
 
         <Panel title="Thông tin Visit">
           <dl className="space-y-2 font-body text-sm">
-            <Row label="Visit ID" value={detail.visit_code} />
-            <Row label="VP" value={detail.branch_name} />
-            <Row label="Check-in" value={fmt(detail.checkin_at)} />
-            <Row label="Số queue" value={detail.queue_number} />
+            <Row
+              label="Visit ID"
+              value={detail.visit_code}
+            />
+
+            <Row
+              label="VP"
+              value={detail.branch_name}
+            />
+
+            <Row
+              label="Check-in"
+              value={fmt(detail.checkin_at)}
+            />
+
+            <Row
+              label="Số queue"
+              value={detail.queue_number}
+            />
           </dl>
         </Panel>
 
@@ -463,7 +494,9 @@ export default function TicketDetailPage() {
 
                 <p className="font-medium text-ink">
                   {HISTORY_LABELS[h.action] ?? h.action}
-                  {h.new_status ? ` → ${h.new_status}` : ""}
+                  {h.new_status
+                    ? ` → ${h.new_status}`
+                    : ""}
                 </p>
 
                 {h.note && (
@@ -576,11 +609,9 @@ export default function TicketDetailPage() {
                 </PrimaryButton>
 
                 <SecondaryButton
-                  onClick={() => {
-                    setShowPending((v) => !v);
-                    setShowTransfer(false);
-                    setErrorMessage(null);
-                  }}
+                  onClick={() =>
+                    setShowPending((v) => !v)
+                  }
                   disabled={busy}
                 >
                   Đặt Pending
@@ -590,10 +621,9 @@ export default function TicketDetailPage() {
                   <SecondaryButton
                     onClick={() => {
                       setShowTransfer((v) => !v);
-                      setShowPending(false);
                       setErrorMessage(null);
                     }}
-                    disabled={busy}
+                    disabled={busy || transferring}
                   >
                     Chuyển ticket
                   </SecondaryButton>
@@ -638,22 +668,34 @@ export default function TicketDetailPage() {
                   />
                 </Field>
 
-                <PrimaryButton
-                  onClick={handleSetPending}
-                  disabled={busy}
-                >
-                  XÁC NHẬN PENDING
-                </PrimaryButton>
+                <div className="flex gap-3">
+                  <PrimaryButton
+                    onClick={handleSetPending}
+                    disabled={busy}
+                  >
+                    XÁC NHẬN PENDING
+                  </PrimaryButton>
+
+                  <SecondaryButton
+                    onClick={() =>
+                      setShowPending(false)
+                    }
+                    disabled={busy}
+                  >
+                    HỦY
+                  </SecondaryButton>
+                </div>
               </div>
             </Panel>
           )}
 
-          {showTransfer && (
+          {showTransfer && canTransfer && (
             <Panel title="Chuyển ticket sang quầy khác">
               <div className="space-y-4">
                 <div className="rounded-lg bg-orange-50 px-4 py-3 font-body text-sm text-orange-800">
-                  Ticket sẽ quay lại <b>hàng chờ</b> và được
-                  phân cho Agent mặc định của quầy bạn chọn.
+                  Ticket sẽ quay lại{" "}
+                  <b>hàng chờ</b> và được phân cho
+                  Agent mặc định của quầy bạn chọn.
                   <br />
                   <span className="font-semibold">
                     Quầy đang BUSY vẫn có thể nhận ticket.
@@ -675,7 +717,8 @@ export default function TicketDetailPage() {
                     {counters
                       .filter(
                         (counter) =>
-                          counter.id !== detail.counter_id
+                          counter.id !==
+                          detail.counter_id
                       )
                       .map((counter) => (
                         <option
@@ -686,16 +729,21 @@ export default function TicketDetailPage() {
                             !counter.default_agent_id
                           }
                         >
-                          {counter.counter_name}
-                          {" - "}
+                          {counter.counter_name} -{" "}
                           {counter.default_agent_name ??
-                            "Chưa có Agent"}
-                          {" - "}
-                          {counter.status}
+                            "Chưa có Agent"}{" "}
+                          - {counter.status}
                         </option>
                       ))}
                   </select>
                 </Field>
+
+                {counters.length === 0 && (
+                  <p className="rounded-lg bg-red-50 px-4 py-3 font-body text-sm text-danger">
+                    Không tìm thấy quầy nào trong văn phòng
+                    của bạn.
+                  </p>
+                )}
 
                 {targetCounterId && (
                   <div className="rounded-lg border border-line bg-paper px-4 py-3 font-body text-sm">
@@ -735,7 +783,9 @@ export default function TicketDetailPage() {
                   <PrimaryButton
                     onClick={handleTransferToCounter}
                     disabled={
-                      transferring || !targetCounterId
+                      transferring ||
+                      busy ||
+                      !targetCounterId
                     }
                   >
                     {transferring
@@ -830,8 +880,8 @@ export default function TicketDetailPage() {
       {detail.status === "NO_SHOW" && (
         <Panel title="Tài xế không đến">
           <p className="font-body text-sm text-ink/70">
-            Ticket đã được gọi nhưng tài xế không có mặt tại
-            quầy.
+            Ticket đã được gọi nhưng tài xế không có mặt
+            tại quầy.
           </p>
         </Panel>
       )}
@@ -849,6 +899,7 @@ function Row({
   return (
     <div className="flex justify-between gap-4">
       <dt className="text-ink/50">{label}</dt>
+
       <dd className="text-right font-medium text-ink">
         {value}
       </dd>
@@ -868,8 +919,8 @@ function Field({
       <label className="mb-1 block font-body text-sm text-ink/70">
         {label}
       </label>
+
       {children}
     </div>
   );
 }
-```
