@@ -10,7 +10,6 @@ import {
   Profile,
 } from "@/lib/types";
 import {
-  PrimaryButton,
   SecondaryButton,
   SlaBadge,
   StatCard,
@@ -30,61 +29,449 @@ type DailySummary = {
 
 type FeedbackRow = {
   rating: number;
+  created_at?: string;
 };
 
-type QueueRowExtended = AgentQueueRow & {
-  branch_id?: string | null;
-  branch_name?: string | null;
-  assigned_agent_id?: string | null;
-  assigned_agent_name?: string | null;
-  created_at?: string | null;
+type TrendValue = {
+  current: number;
+  previous: number;
+  change: number | null;
 };
+
+type TrendMetrics = {
+  tickets: TrendValue;
+  completed: TrendValue;
+  visits: TrendValue;
+  uniqueDrivers: TrendValue;
+  waiting: TrendValue;
+  handling: TrendValue;
+  csat: TrendValue;
+};
+
+type PeriodSummary = {
+  tickets: number;
+  completed: number;
+  visits: number;
+  uniqueDrivers: number;
+  waiting: number | null;
+  handling: number | null;
+  csat: number | null;
+};
+
+function dateToString(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function startOfDay(date: Date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function addDays(date: Date, days: number) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function getMonthStart(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function getPreviousMonthSamePeriod(date: Date) {
+  const currentDay = date.getDate();
+
+  const previousMonthStart = new Date(
+    date.getFullYear(),
+    date.getMonth() - 1,
+    1
+  );
+
+  const previousMonthLastDay = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    0
+  ).getDate();
+
+  const day = Math.min(currentDay, previousMonthLastDay);
+
+  return new Date(
+    previousMonthStart.getFullYear(),
+    previousMonthStart.getMonth(),
+    day
+  );
+}
+
+function percentChange(
+  current: number | null,
+  previous: number | null
+): number | null {
+  if (current == null || previous == null) return null;
+
+  if (previous === 0) {
+    if (current === 0) return 0;
+    return null;
+  }
+
+  return ((current - previous) / Math.abs(previous)) * 100;
+}
+
+function buildTrend(
+  current: number | null,
+  previous: number | null
+): TrendValue {
+  return {
+    current: current ?? 0,
+    previous: previous ?? 0,
+    change: percentChange(current, previous),
+  };
+}
+
+function formatChange(change: number | null) {
+  if (change == null) return "—";
+
+  const rounded = Math.abs(change) >= 10
+    ? change.toFixed(1)
+    : change.toFixed(1);
+
+  if (change > 0) return `+${rounded}%`;
+  if (change < 0) return `${rounded}%`;
+
+  return "0.0%";
+}
+
+function trendColor(
+  change: number | null,
+  inverse = false
+) {
+  if (change == null || change === 0) {
+    return "text-ink/50";
+  }
+
+  const positive = inverse ? change < 0 : change > 0;
+
+  return positive ? "text-brand-700" : "text-danger";
+}
+
+function trendArrow(change: number | null) {
+  if (change == null || change === 0) return "→";
+  return change > 0 ? "↑" : "↓";
+}
+
+function TrendBadge({
+  value,
+  inverse = false,
+}: {
+  value: TrendValue;
+  inverse?: boolean;
+}) {
+  return (
+    <span
+      className={`font-body text-xs font-semibold ${trendColor(
+        value.change,
+        inverse
+      )}`}
+    >
+      {trendArrow(value.change)} {formatChange(value.change)}
+    </span>
+  );
+}
+
+function average(
+  values: Array<number | null>
+): number | null {
+  const valid = values.filter(
+    (value): value is number => value != null
+  );
+
+  if (!valid.length) return null;
+
+  return valid.reduce((sum, value) => sum + value, 0) / valid.length;
+}
+
+function aggregateSummaries(
+  summaries: DailySummary[]
+): PeriodSummary {
+  const tickets = summaries.reduce(
+    (sum, row) => sum + Number(row.total_tickets || 0),
+    0
+  );
+
+  const completed = summaries.reduce(
+    (sum, row) => sum + Number(row.completed_tickets || 0),
+    0
+  );
+
+  const visits = summaries.reduce(
+    (sum, row) => sum + Number(row.total_visits || 0),
+    0
+  );
+
+  const uniqueDrivers = summaries.reduce(
+    (sum, row) => sum + Number(row.unique_drivers || 0),
+    0
+  );
+
+  return {
+    tickets,
+    completed,
+    visits,
+    uniqueDrivers,
+    waiting: average(
+      summaries.map((row) => row.avg_waiting_time_min)
+    ),
+    handling: average(
+      summaries.map((row) => row.avg_handling_time_min)
+    ),
+    csat: null,
+  };
+}
+
+function TrendCard({
+  label,
+  trend,
+  inverse = false,
+  suffix = "",
+  decimals = 0,
+}: {
+  label: string;
+  trend: TrendValue;
+  inverse?: boolean;
+  suffix?: string;
+  decimals?: number;
+}) {
+  return (
+    <div className="rounded-card border border-line bg-white p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="font-body text-xs font-semibold uppercase tracking-wide text-ink/50">
+          {label}
+        </span>
+
+        <TrendBadge value={trend} inverse={inverse} />
+      </div>
+
+      <div className="font-display text-xl font-bold text-brand-900">
+        {trend.current.toFixed(decimals)}
+        {suffix}
+      </div>
+
+      <div className="mt-1 font-body text-xs text-ink/45">
+        Previous: {trend.previous.toFixed(decimals)}
+        {suffix}
+      </div>
+    </div>
+  );
+}
+
+function BenchmarkSection({
+  title,
+  metrics,
+}: {
+  title: string;
+  metrics: TrendMetrics;
+}) {
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between">
+        <p className="font-body text-sm font-semibold uppercase tracking-wide text-ink/50">
+          {title}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+        <TrendCard
+          label="Tickets"
+          trend={metrics.tickets}
+        />
+
+        <TrendCard
+          label="Completed"
+          trend={metrics.completed}
+        />
+
+        <TrendCard
+          label="Visits"
+          trend={metrics.visits}
+        />
+
+        <TrendCard
+          label="Waiting Time"
+          trend={metrics.waiting}
+          inverse
+          suffix="p"
+          decimals={1}
+        />
+
+        <TrendCard
+          label="Handling Time"
+          trend={metrics.handling}
+          inverse
+          suffix="p"
+          decimals={1}
+        />
+      </div>
+    </div>
+  );
+}
+
+function SimpleTrendChart({
+  data,
+}: {
+  data: Array<{
+    date: string;
+    tickets: number;
+    completed: number;
+  }>;
+}) {
+  if (!data.length) {
+    return (
+      <div className="flex h-64 items-center justify-center text-sm text-ink/40">
+        Chưa có dữ liệu
+      </div>
+    );
+  }
+
+  const maxValue = Math.max(
+    ...data.map((item) =>
+      Math.max(item.tickets, item.completed)
+    ),
+    1
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-5 font-body text-xs text-ink/60">
+        <div className="flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-brand-700" />
+          Tickets
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-brand-300" />
+          Completed
+        </div>
+      </div>
+
+      <div className="flex h-64 items-end gap-1 overflow-x-auto border-b border-line px-2">
+        {data.map((item) => {
+          const ticketHeight =
+            Math.max(
+              4,
+              (item.tickets / maxValue) * 220
+            );
+
+          const completedHeight =
+            Math.max(
+              4,
+              (item.completed / maxValue) * 220
+            );
+
+          return (
+            <div
+              key={item.date}
+              className="flex min-w-[28px] flex-1 items-end justify-center gap-0.5"
+              title={`${item.date}: ${item.tickets} tickets / ${item.completed} completed`}
+            >
+              <div
+                className="w-2 rounded-t bg-brand-700 transition-all"
+                style={{ height: `${ticketHeight}px` }}
+              />
+
+              <div
+                className="w-2 rounded-t bg-brand-300 transition-all"
+                style={{ height: `${completedHeight}px` }}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex justify-between px-2 font-body text-[10px] text-ink/40">
+        <span>{data[0]?.date}</span>
+        <span>{data[data.length - 1]?.date}</span>
+      </div>
+    </div>
+  );
+}
 
 export default function SupervisorDashboardPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
 
-  const [rows, setRows] = useState<QueueRowExtended[]>([]);
-  const [summaryRows, setSummaryRows] = useState<DailySummary[]>([]);
-  const [feedback, setFeedback] = useState<FeedbackRow[]>([]);
-  const [counters, setCounters] = useState<Counter[]>([]);
-  const [colleagues, setColleagues] = useState<AgentOption[]>([]);
+  const [rows, setRows] = useState<AgentQueueRow[]>([]);
+  const [summary, setSummary] =
+    useState<DailySummary | null>(null);
+
+  const [feedback, setFeedback] =
+    useState<FeedbackRow[]>([]);
+
+  const [counters, setCounters] =
+    useState<Counter[]>([]);
+
+  const [colleagues, setColleagues] =
+    useState<AgentOption[]>([]);
+
+  const [trendMetrics, setTrendMetrics] =
+    useState<{
+      dod: TrendMetrics | null;
+      wow: TrendMetrics | null;
+      mom: TrendMetrics | null;
+    }>({
+      dod: null,
+      wow: null,
+      mom: null,
+    });
+
+  const [chartData, setChartData] = useState<
+    Array<{
+      date: string;
+      tickets: number;
+      completed: number;
+    }>
+  >([]);
 
   const [loading, setLoading] = useState(true);
 
-  // ==========================================================
-  // FILTER
-  // ==========================================================
+  const [categoryFilter, setCategoryFilter] =
+    useState("");
 
-  const today = new Date().toISOString().slice(0, 10);
+  const [statusFilter, setStatusFilter] =
+    useState("");
 
-  const [fromDate, setFromDate] = useState(today);
-  const [toDate, setToDate] = useState(today);
-
-  const [agentFilter, setAgentFilter] = useState("");
-  const [branchFilter, setBranchFilter] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-
-  const [appliedFilters, setAppliedFilters] = useState({
-    fromDate: today,
-    toDate: today,
-    agent: "",
-    branch: "",
-    category: "",
-    status: "",
-  });
+  const [agentFilter, setAgentFilter] =
+    useState("");
 
   const [reassignOpenFor, setReassignOpenFor] =
     useState<string | null>(null);
 
-  // ==========================================================
-  // LOAD DATA
-  // ==========================================================
-
   const load = useCallback(async () => {
     setLoading(true);
 
-    const currentProfile = await getCurrentProfile();
+    const today = startOfDay(new Date());
+
+    const todayStr = dateToString(today);
+
+    const yesterdayStr = dateToString(
+      addDays(today, -1)
+    );
+
+    const weekAgoStr = dateToString(
+      addDays(today, -7)
+    );
+
+    const monthAgoDate = getPreviousMonthSamePeriod(
+      today
+    );
+
+    const monthAgoStr =
+      dateToString(monthAgoDate);
+
+    const chartStart = dateToString(
+      addDays(today, -29)
+    );
 
     const [
       { data: queueData },
@@ -92,6 +479,8 @@ export default function SupervisorDashboardPage() {
       { data: feedbackData },
       { data: counterData },
       { data: colleagueData },
+      { data: trendData },
+      { data: chartSummaryData },
     ] = await Promise.all([
       supabase
         .from("v_agent_queue")
@@ -101,12 +490,11 @@ export default function SupervisorDashboardPage() {
       supabase
         .from("v_report_daily_summary")
         .select("*")
-        .gte("business_date", appliedFilters.fromDate)
-        .lte("business_date", appliedFilters.toDate),
+        .eq("business_date", todayStr),
 
       supabase
         .from("v_report_feedback")
-        .select("rating"),
+        .select("rating, created_at"),
 
       supabase
         .from("counters")
@@ -116,45 +504,306 @@ export default function SupervisorDashboardPage() {
 
       supabase
         .from("profiles")
-        .select("id, full_name, email, role")
+        .select(
+          "id, full_name, email, role"
+        )
         .eq("role", "agent"),
+
+      supabase
+        .from("v_report_daily_summary")
+        .select("*")
+        .gte("business_date", monthAgoStr)
+        .lte("business_date", todayStr)
+        .order("business_date", {
+          ascending: true,
+        }),
+
+      supabase
+        .from("v_report_daily_summary")
+        .select("*")
+        .gte("business_date", chartStart)
+        .lte("business_date", todayStr)
+        .order("business_date", {
+          ascending: true,
+        }),
     ]);
 
     setRows(
-      ((queueData ?? []) as QueueRowExtended[]) ?? []
+      (queueData as AgentQueueRow[]) ?? []
     );
 
-    setSummaryRows(
-      ((summaryData ?? []) as DailySummary[]) ?? []
+    setSummary(
+      ((summaryData as DailySummary[]) ?? [])[0] ??
+        null
     );
 
     setFeedback(
-      ((feedbackData ?? []) as FeedbackRow[]) ?? []
+      (feedbackData as FeedbackRow[]) ?? []
     );
 
     setCounters(
-      ((counterData ?? []) as Counter[]) ?? []
+      (counterData as Counter[]) ?? []
     );
 
     setColleagues(
-      ((colleagueData ?? []) as AgentOption[]) ?? []
+      (colleagueData as AgentOption[]) ?? []
     );
 
-    setProfile(currentProfile);
+    const summaries =
+      (trendData as DailySummary[]) ?? [];
+
+    const chartSummaries =
+      (chartSummaryData as DailySummary[]) ?? [];
+
+    const getDateSummary = (
+      date: string
+    ) =>
+      summaries.filter(
+        (row) => row.business_date === date
+      );
+
+    const todaySummary =
+      aggregateSummaries(
+        getDateSummary(todayStr)
+      );
+
+    const yesterdaySummary =
+      aggregateSummaries(
+        getDateSummary(yesterdayStr)
+      );
+
+    const weekSummary =
+      aggregateSummaries(
+        getDateSummary(weekAgoStr)
+      );
+
+    const monthSummary =
+      aggregateSummaries(
+        getDateSummary(monthAgoStr)
+      );
+
+    const feedbackByDate = (
+      start: string,
+      end: string
+    ) => {
+      return feedback.filter((item) => {
+        if (!item.created_at) return false;
+
+        const date =
+          item.created_at.slice(0, 10);
+
+        return date >= start && date <= end;
+      });
+    };
+
+    const todayFeedback =
+      feedbackByDate(
+        todayStr,
+        todayStr
+      );
+
+    const yesterdayFeedback =
+      feedbackByDate(
+        yesterdayStr,
+        yesterdayStr
+      );
+
+    const weekFeedback =
+      feedbackByDate(
+        weekAgoStr,
+        weekAgoStr
+      );
+
+    const monthFeedback =
+      feedbackByDate(
+        monthAgoStr,
+        monthAgoStr
+      );
+
+    const todayCsat =
+      todayFeedback.length
+        ? todayFeedback.reduce(
+            (sum, item) =>
+              sum + item.rating,
+            0
+          ) / todayFeedback.length
+        : null;
+
+    const yesterdayCsat =
+      yesterdayFeedback.length
+        ? yesterdayFeedback.reduce(
+            (sum, item) =>
+              sum + item.rating,
+            0
+          ) / yesterdayFeedback.length
+        : null;
+
+    const weekCsat =
+      weekFeedback.length
+        ? weekFeedback.reduce(
+            (sum, item) =>
+              sum + item.rating,
+            0
+          ) / weekFeedback.length
+        : null;
+
+    const monthCsat =
+      monthFeedback.length
+        ? monthFeedback.reduce(
+            (sum, item) =>
+              sum + item.rating,
+            0
+          ) / monthFeedback.length
+        : null;
+
+    setTrendMetrics({
+      dod: {
+        tickets: buildTrend(
+          todaySummary.tickets,
+          yesterdaySummary.tickets
+        ),
+        completed: buildTrend(
+          todaySummary.completed,
+          yesterdaySummary.completed
+        ),
+        visits: buildTrend(
+          todaySummary.visits,
+          yesterdaySummary.visits
+        ),
+        uniqueDrivers: buildTrend(
+          todaySummary.uniqueDrivers,
+          yesterdaySummary.uniqueDrivers
+        ),
+        waiting: buildTrend(
+          todaySummary.waiting,
+          yesterdaySummary.waiting
+        ),
+        handling: buildTrend(
+          todaySummary.handling,
+          yesterdaySummary.handling
+        ),
+        csat: buildTrend(
+          todayCsat,
+          yesterdayCsat
+        ),
+      },
+
+      wow: {
+        tickets: buildTrend(
+          todaySummary.tickets,
+          weekSummary.tickets
+        ),
+        completed: buildTrend(
+          todaySummary.completed,
+          weekSummary.completed
+        ),
+        visits: buildTrend(
+          todaySummary.visits,
+          weekSummary.visits
+        ),
+        uniqueDrivers: buildTrend(
+          todaySummary.uniqueDrivers,
+          weekSummary.uniqueDrivers
+        ),
+        waiting: buildTrend(
+          todaySummary.waiting,
+          weekSummary.waiting
+        ),
+        handling: buildTrend(
+          todaySummary.handling,
+          weekSummary.handling
+        ),
+        csat: buildTrend(
+          todayCsat,
+          weekCsat
+        ),
+      },
+
+      mom: {
+        tickets: buildTrend(
+          todaySummary.tickets,
+          monthSummary.tickets
+        ),
+        completed: buildTrend(
+          todaySummary.completed,
+          monthSummary.completed
+        ),
+        visits: buildTrend(
+          todaySummary.visits,
+          monthSummary.visits
+        ),
+        uniqueDrivers: buildTrend(
+          todaySummary.uniqueDrivers,
+          monthSummary.uniqueDrivers
+        ),
+        waiting: buildTrend(
+          todaySummary.waiting,
+          monthSummary.waiting
+        ),
+        handling: buildTrend(
+          todaySummary.handling,
+          monthSummary.handling
+        ),
+        csat: buildTrend(
+          todayCsat,
+          monthCsat
+        ),
+      },
+    });
+
+    const groupedChart = new Map<
+      string,
+      {
+        date: string;
+        tickets: number;
+        completed: number;
+      }
+    >();
+
+    chartSummaries.forEach((row) => {
+      const existing =
+        groupedChart.get(
+          row.business_date
+        );
+
+      if (existing) {
+        existing.tickets += Number(
+          row.total_tickets || 0
+        );
+
+        existing.completed += Number(
+          row.completed_tickets || 0
+        );
+      } else {
+        groupedChart.set(
+          row.business_date,
+          {
+            date: row.business_date,
+            tickets: Number(
+              row.total_tickets || 0
+            ),
+            completed: Number(
+              row.completed_tickets || 0
+            ),
+          }
+        );
+      }
+    });
+
+    setChartData(
+      Array.from(groupedChart.values()).sort(
+        (a, b) =>
+          a.date.localeCompare(b.date)
+      )
+    );
 
     setLoading(false);
-  }, [
-    appliedFilters.fromDate,
-    appliedFilters.toDate,
-  ]);
+  }, [feedback]);
 
   useEffect(() => {
+    getCurrentProfile().then(setProfile);
     load();
   }, [load]);
-
-  // ==========================================================
-  // REALTIME
-  // ==========================================================
 
   useEffect(() => {
     const channel = supabase
@@ -197,308 +846,117 @@ export default function SupervisorDashboardPage() {
     };
   }, [load]);
 
-  // ==========================================================
-  // FILTER ACTION
-  // ==========================================================
-
-  function handleApplyFilters() {
-    if (!fromDate || !toDate) {
-      return;
-    }
-
-    if (fromDate > toDate) {
-      window.alert(
-        "Ngày bắt đầu không được lớn hơn ngày kết thúc."
-      );
-      return;
-    }
-
-    setAppliedFilters({
-      fromDate,
-      toDate,
-      agent: agentFilter,
-      branch: branchFilter,
-      category: categoryFilter,
-      status: statusFilter,
-    });
-  }
-
-  function handleResetFilters() {
-    setFromDate(today);
-    setToDate(today);
-    setAgentFilter("");
-    setBranchFilter("");
-    setCategoryFilter("");
-    setStatusFilter("");
-
-    setAppliedFilters({
-      fromDate: today,
-      toDate: today,
-      agent: "",
-      branch: "",
-      category: "",
-      status: "",
-    });
-  }
-
-  // ==========================================================
-  // COUNTER
-  // ==========================================================
-
-  async function handleToggleCounter(counter: Counter) {
+  async function handleToggleCounter(
+    counter: Counter
+  ) {
     const next =
       counter.status === "AVAILABLE"
         ? "CLOSED"
         : "AVAILABLE";
 
-    await supabase.rpc("set_counter_status", {
-      p_counter_id: counter.id,
-      p_status: next,
-    });
+    await supabase.rpc(
+      "set_counter_status",
+      {
+        p_counter_id: counter.id,
+        p_status: next,
+      }
+    );
 
     load();
   }
-
-  // ==========================================================
-  // REASSIGN
-  // ==========================================================
 
   async function handleReassign(
     caseId: string,
     toAgentId: string
   ) {
-    await supabase.rpc("reassign_case", {
-      p_case_id: caseId,
-      p_to_agent_id: toAgentId,
-    });
+    await supabase.rpc(
+      "reassign_case",
+      {
+        p_case_id: caseId,
+        p_to_agent_id: toAgentId,
+      }
+    );
 
     setReassignOpenFor(null);
     load();
   }
 
-  // ==========================================================
-  // FILTER OPTIONS
-  // ==========================================================
-
-  const categories = useMemo(() => {
-    return Array.from(
-      new Set(
-        rows
-          .map((r) => r.category_name)
-          .filter(Boolean)
-      )
-    ).sort();
-  }, [rows]);
-
-  const branches = useMemo(() => {
-    const result = new Map<string, string>();
-
-    rows.forEach((row) => {
-      const extended = row as QueueRowExtended;
-
-      if (
-        extended.branch_id &&
-        extended.branch_name
-      ) {
-        result.set(
-          extended.branch_id,
-          extended.branch_name
-        );
-      }
-    });
-
-    counters.forEach((counter) => {
-      if (counter.branch_id) {
-        result.set(
-          counter.branch_id,
-          counter.branch_id
-        );
-      }
-    });
-
-    return Array.from(result.entries());
-  }, [rows, counters]);
-
-  // ==========================================================
-  // FILTER TICKETS
-  // ==========================================================
-
   const filtered = useMemo(() => {
-    return rows.filter((row) => {
-      const extended = row as QueueRowExtended;
-
-      const matchCategory =
-        !appliedFilters.category ||
-        row.category_name === appliedFilters.category;
-
-      const matchStatus =
-        !appliedFilters.status ||
-        row.status === appliedFilters.status;
-
-      const matchAgent =
-        !appliedFilters.agent ||
-        extended.assigned_agent_id ===
-          appliedFilters.agent;
-
-      const matchBranch =
-        !appliedFilters.branch ||
-        extended.branch_id ===
-          appliedFilters.branch;
-
-      let matchDate = true;
-
-      if (extended.created_at) {
-        const createdDate =
-          new Date(extended.created_at)
-            .toISOString()
-            .slice(0, 10);
-
-        matchDate =
-          createdDate >= appliedFilters.fromDate &&
-          createdDate <= appliedFilters.toDate;
-      }
-
-      return (
-        matchCategory &&
-        matchStatus &&
-        matchAgent &&
-        matchBranch &&
-        matchDate
-      );
-    });
-  }, [rows, appliedFilters]);
-
-  // ==========================================================
-  // SUMMARY
-  // ==========================================================
-
-  const summary = useMemo<DailySummary | null>(() => {
-    if (summaryRows.length === 0) {
-      return null;
-    }
-
-    const totalVisits = summaryRows.reduce(
-      (sum, row) => sum + (row.total_visits ?? 0),
-      0
+    return rows.filter(
+      (r) =>
+        (!categoryFilter ||
+          r.category_name ===
+            categoryFilter) &&
+        (!statusFilter ||
+          r.status === statusFilter) &&
+        (!agentFilter ||
+          r.agent_name === agentFilter)
     );
+  }, [
+    rows,
+    categoryFilter,
+    statusFilter,
+    agentFilter,
+  ]);
 
-    const uniqueDrivers = summaryRows.reduce(
-      (sum, row) => sum + (row.unique_drivers ?? 0),
-      0
-    );
+  const categories = Array.from(
+    new Set(
+      rows
+        .map((r) => r.category_name)
+        .filter(Boolean)
+    )
+  );
 
-    const totalTickets = summaryRows.reduce(
-      (sum, row) => sum + (row.total_tickets ?? 0),
-      0
-    );
+  const agents = Array.from(
+    new Set(
+      rows
+        .map((r) => r.agent_name)
+        .filter(Boolean)
+    )
+  );
 
-    const completedTickets = summaryRows.reduce(
-      (sum, row) =>
-        sum + (row.completed_tickets ?? 0),
-      0
-    );
-
-    const waitingValues = summaryRows
-      .map((row) => row.avg_waiting_time_min)
-      .filter(
-        (value): value is number =>
-          value != null
-      );
-
-    const handlingValues = summaryRows
-      .map((row) => row.avg_handling_time_min)
-      .filter(
-        (value): value is number =>
-          value != null
-      );
-
-    const avgWaiting =
-      waitingValues.length > 0
-        ? waitingValues.reduce(
-            (sum, value) => sum + value,
-            0
-          ) / waitingValues.length
-        : null;
-
-    const avgHandling =
-      handlingValues.length > 0
-        ? handlingValues.reduce(
-            (sum, value) => sum + value,
-            0
-          ) / handlingValues.length
-        : null;
-
-    return {
-      branch: "ALL",
-      business_date: appliedFilters.fromDate,
-      total_visits: totalVisits,
-      unique_drivers: uniqueDrivers,
-      total_tickets: totalTickets,
-      completed_tickets: completedTickets,
-      avg_waiting_time_min:
-        avgWaiting !== null
-          ? Number(avgWaiting.toFixed(1))
-          : null,
-      avg_handling_time_min:
-        avgHandling !== null
-          ? Number(avgHandling.toFixed(1))
-          : null,
-    };
-  }, [summaryRows, appliedFilters.fromDate]);
-
-  // ==========================================================
-  // LIVE KPI FROM FILTERED TICKETS
-  // ==========================================================
-
-  const waiting = filtered.filter(
+  const waiting = rows.filter(
     (r) => r.status === "WAITING"
   ).length;
 
-  const processing = filtered.filter(
+  const processing = rows.filter(
     (r) => r.status === "PROCESSING"
   ).length;
 
-  const pending = filtered.filter(
+  const pending = rows.filter(
     (r) => r.status === "PENDING"
   ).length;
 
-  const overSla = filtered.filter((r) => {
-    return (
+  const overSla = rows.filter(
+    (r) =>
       r.sla_due_at &&
       new Date(r.sla_due_at).getTime() <
         Date.now() &&
       !r.resolved_at &&
       !r.closed_at &&
       r.status !== "PENDING"
-    );
-  }).length;
+  ).length;
 
-  const completed = filtered.filter((r) =>
-    ["RESOLVED", "CLOSED"].includes(r.status)
+  const completed = rows.filter(
+    (r) =>
+      ["RESOLVED", "CLOSED"].includes(
+        r.status
+      )
   ).length;
 
   const avgCsat =
     feedback.length > 0
       ? (
           feedback.reduce(
-            (sum, row) => sum + row.rating,
+            (a, b) => a + b.rating,
             0
           ) / feedback.length
         ).toFixed(1)
       : "—";
 
-  const slaCompliance =
-    summary && summary.total_tickets > 0
-      ? Math.round(
-          (completed /
-            summary.total_tickets) *
-            100
-        )
-      : null;
-
-  // ==========================================================
-  // RENDER
-  // ==========================================================
+  const dod = trendMetrics.dod;
+  const wow = trendMetrics.wow;
+  const mom = trendMetrics.mom;
 
   return (
     <div className="space-y-8">
@@ -511,224 +969,38 @@ export default function SupervisorDashboardPage() {
         </h1>
 
         <p className="font-body text-sm text-ink/50">
-          Theo dõi vận hành và hiệu suất xử lý
-          ticket.
+          Theo dõi vận hành và xu hướng
+          hiệu suất theo ngày, tuần và tháng.
         </p>
       </div>
 
-      {/* ======================================================
-          FILTER
-      ====================================================== */}
-
-      <div className="rounded-card border border-line bg-white p-5">
-        <div className="mb-4">
-          <p className="font-body text-sm font-semibold uppercase tracking-wide text-ink/50">
-            Bộ lọc
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <div>
-            <label className="mb-1 block font-body text-sm text-ink/70">
-              Từ ngày
-            </label>
-
-            <input
-              type="date"
-              value={fromDate}
-              onChange={(e) =>
-                setFromDate(e.target.value)
-              }
-              className="w-full rounded-lg border-2 border-line px-3 py-2 font-body text-sm focus:border-brand-700"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block font-body text-sm text-ink/70">
-              Đến ngày
-            </label>
-
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) =>
-                setToDate(e.target.value)
-              }
-              className="w-full rounded-lg border-2 border-line px-3 py-2 font-body text-sm focus:border-brand-700"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block font-body text-sm text-ink/70">
-              Agent
-            </label>
-
-            <select
-              value={agentFilter}
-              onChange={(e) =>
-                setAgentFilter(e.target.value)
-              }
-              className="w-full rounded-lg border-2 border-line bg-white px-3 py-2 font-body text-sm focus:border-brand-700"
-            >
-              <option value="">
-                Tất cả Agent
-              </option>
-
-              {colleagues.map((agent) => (
-                <option
-                  key={agent.id}
-                  value={agent.id}
-                >
-                  {agent.full_name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1 block font-body text-sm text-ink/70">
-              VP
-            </label>
-
-            <select
-              value={branchFilter}
-              onChange={(e) =>
-                setBranchFilter(e.target.value)
-              }
-              className="w-full rounded-lg border-2 border-line bg-white px-3 py-2 font-body text-sm focus:border-brand-700"
-            >
-              <option value="">
-                Tất cả VP
-              </option>
-
-              {branches.map(
-                ([id, name]) => (
-                  <option key={id} value={id}>
-                    {name}
-                  </option>
-                )
-              )}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1 block font-body text-sm text-ink/70">
-              Category
-            </label>
-
-            <select
-              value={categoryFilter}
-              onChange={(e) =>
-                setCategoryFilter(e.target.value)
-              }
-              className="w-full rounded-lg border-2 border-line bg-white px-3 py-2 font-body text-sm focus:border-brand-700"
-            >
-              <option value="">
-                Tất cả Category
-              </option>
-
-              {categories.map((category) => (
-                <option
-                  key={category}
-                  value={category}
-                >
-                  {category}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-end gap-4">
-          <div>
-            <label className="mb-1 block font-body text-sm text-ink/70">
-              Trạng thái
-            </label>
-
-            <select
-              value={statusFilter}
-              onChange={(e) =>
-                setStatusFilter(e.target.value)
-              }
-              className="min-w-[200px] rounded-lg border-2 border-line bg-white px-3 py-2 font-body text-sm focus:border-brand-700"
-            >
-              <option value="">
-                Tất cả trạng thái
-              </option>
-              <option value="WAITING">
-                Đang chờ
-              </option>
-              <option value="CALLED">
-                Đã gọi
-              </option>
-              <option value="PROCESSING">
-                Đang xử lý
-              </option>
-              <option value="PENDING">
-                Tạm hoãn
-              </option>
-              <option value="TRANSFERRED">
-                Đã chuyển
-              </option>
-              <option value="RESOLVED">
-                Đã giải quyết
-              </option>
-              <option value="CLOSED">
-                Đã đóng
-              </option>
-            </select>
-          </div>
-
-          <div className="flex gap-3">
-            <PrimaryButton
-              onClick={handleApplyFilters}
-              disabled={loading}
-            >
-              ÁP DỤNG
-            </PrimaryButton>
-
-            <SecondaryButton
-              onClick={handleResetFilters}
-              disabled={loading}
-            >
-              RESET
-            </SecondaryButton>
-          </div>
-        </div>
-      </div>
-
-      {/* ======================================================
-          SUMMARY
-      ====================================================== */}
+      {/* ================= TODAY ================= */}
 
       <div>
-        <div className="mb-3 flex items-center justify-between">
-          <p className="font-body text-sm font-semibold uppercase tracking-wide text-ink/50">
-            Tổng quan
-          </p>
-
-          <p className="font-body text-xs text-ink/40">
-            {appliedFilters.fromDate ===
-            appliedFilters.toDate
-              ? appliedFilters.fromDate
-              : `${appliedFilters.fromDate} → ${appliedFilters.toDate}`}
-          </p>
-        </div>
+        <p className="mb-3 font-body text-sm font-semibold uppercase tracking-wide text-ink/50">
+          Hôm nay
+        </p>
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-8">
           <StatCard
             label="Total Visits"
-            value={summary?.total_visits ?? 0}
+            value={
+              summary?.total_visits ?? 0
+            }
           />
 
           <StatCard
             label="Unique Drivers"
-            value={summary?.unique_drivers ?? 0}
+            value={
+              summary?.unique_drivers ?? 0
+            }
           />
 
           <StatCard
             label="Total Tickets"
-            value={summary?.total_tickets ?? 0}
+            value={
+              summary?.total_tickets ?? 0
+            }
           />
 
           <StatCard
@@ -760,47 +1032,99 @@ export default function SupervisorDashboardPage() {
         </div>
       </div>
 
-      {/* ======================================================
-          PERFORMANCE KPI
-      ====================================================== */}
+      {/* ================= OPERATION KPI ================= */}
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard
-          label="Avg Waiting Time"
-          value={
-            summary?.avg_waiting_time_min != null
-              ? `${summary.avg_waiting_time_min}p`
-              : "—"
-          }
-        />
+      <div>
+        <p className="mb-3 font-body text-sm font-semibold uppercase tracking-wide text-ink/50">
+          Operation KPI
+        </p>
 
-        <StatCard
-          label="Avg Handling Time"
-          value={
-            summary?.avg_handling_time_min != null
-              ? `${summary.avg_handling_time_min}p`
-              : "—"
-          }
-        />
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <StatCard
+            label="Avg Waiting Time"
+            value={
+              summary?.avg_waiting_time_min !=
+              null
+                ? `${summary.avg_waiting_time_min}p`
+                : "—"
+            }
+          />
 
-        <StatCard
-          label="SLA Compliance"
-          value={
-            slaCompliance !== null
-              ? `${slaCompliance}%`
-              : "—"
-          }
-        />
+          <StatCard
+            label="Avg Handling Time"
+            value={
+              summary?.avg_handling_time_min !=
+              null
+                ? `${summary.avg_handling_time_min}p`
+                : "—"
+            }
+          />
 
-        <StatCard
-          label="CSAT"
-          value={avgCsat}
-        />
+          <StatCard
+            label="SLA Compliance"
+            value={
+              summary &&
+              summary.total_tickets > 0
+                ? `${Math.round(
+                    (completed /
+                      summary.total_tickets) *
+                      100
+                  )}%`
+                : "—"
+            }
+          />
+
+          <StatCard
+            label="CSAT"
+            value={avgCsat}
+          />
+        </div>
       </div>
 
-      {/* ======================================================
-          COUNTERS
-      ====================================================== */}
+      {/* ================= DOD ================= */}
+
+      {dod && (
+        <BenchmarkSection
+          title="DoD — So với hôm qua"
+          metrics={dod}
+        />
+      )}
+
+      {/* ================= WOW ================= */}
+
+      {wow && (
+        <BenchmarkSection
+          title="WoW — So với cùng ngày tuần trước"
+          metrics={wow}
+        />
+      )}
+
+      {/* ================= MOM ================= */}
+
+      {mom && (
+        <BenchmarkSection
+          title="MoM — So với cùng kỳ tháng trước"
+          metrics={mom}
+        />
+      )}
+
+      {/* ================= CHART ================= */}
+
+      <div className="rounded-card border border-line bg-white p-5">
+        <div className="mb-5">
+          <p className="font-body text-sm font-semibold uppercase tracking-wide text-ink/50">
+            Ticket Trend
+          </p>
+
+          <p className="mt-1 font-body text-xs text-ink/45">
+            Xu hướng 30 ngày gần nhất
+          </p>
+        </div>
+
+        <SimpleTrendChart data={chartData} />
+      </div>
+
+      {/* ================= COUNTERS ================= */}
 
       <div>
         <p className="mb-3 font-body text-sm font-semibold uppercase tracking-wide text-ink/50">
@@ -808,30 +1132,29 @@ export default function SupervisorDashboardPage() {
         </p>
 
         <div className="flex flex-wrap gap-3">
-          {counters.map((counter) => (
+          {counters.map((c) => (
             <div
-              key={counter.id}
+              key={c.id}
               className="flex items-center gap-3 rounded-card border border-line bg-white px-4 py-3"
             >
               <span className="font-body text-sm font-semibold text-ink">
-                {counter.counter_name}
+                {c.counter_name}
               </span>
 
               <StatusCounterBadge
-                status={counter.status}
+                status={c.status}
               />
 
-              {(counter.status ===
+              {(c.status ===
                 "AVAILABLE" ||
-                counter.status === "CLOSED") && (
+                c.status === "CLOSED") && (
                 <SecondaryButton
                   onClick={() =>
-                    handleToggleCounter(counter)
+                    handleToggleCounter(c)
                   }
                   className="px-3 py-1 text-xs"
                 >
-                  {counter.status ===
-                  "AVAILABLE"
+                  {c.status === "AVAILABLE"
                     ? "Đóng"
                     : "Mở"}
                 </SecondaryButton>
@@ -841,12 +1164,10 @@ export default function SupervisorDashboardPage() {
         </div>
       </div>
 
-      {/* ======================================================
-          TICKET LIST
-      ====================================================== */}
+      {/* ================= TICKET LIST ================= */}
 
       <div>
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="font-body text-sm font-semibold uppercase tracking-wide text-ink/50">
               Tất cả ticket
@@ -855,6 +1176,94 @@ export default function SupervisorDashboardPage() {
             <p className="mt-1 font-body text-xs text-ink/40">
               {filtered.length} ticket
             </p>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <select
+              value={agentFilter}
+              onChange={(e) =>
+                setAgentFilter(e.target.value)
+              }
+              className="rounded-lg border-2 border-line px-3 py-1.5 font-body text-sm"
+            >
+              <option value="">
+                Tất cả agent
+              </option>
+
+              {agents.map((agent) => (
+                <option
+                  key={agent}
+                  value={agent}
+                >
+                  {agent}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={categoryFilter}
+              onChange={(e) =>
+                setCategoryFilter(
+                  e.target.value
+                )
+              }
+              className="rounded-lg border-2 border-line px-3 py-1.5 font-body text-sm"
+            >
+              <option value="">
+                Tất cả category
+              </option>
+
+              {categories.map((c) => (
+                <option
+                  key={c}
+                  value={c}
+                >
+                  {c}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={statusFilter}
+              onChange={(e) =>
+                setStatusFilter(
+                  e.target.value
+                )
+              }
+              className="rounded-lg border-2 border-line px-3 py-1.5 font-body text-sm"
+            >
+              <option value="">
+                Tất cả trạng thái
+              </option>
+
+              <option value="WAITING">
+                Đang chờ
+              </option>
+
+              <option value="CALLED">
+                Đã gọi
+              </option>
+
+              <option value="PROCESSING">
+                Đang xử lý
+              </option>
+
+              <option value="PENDING">
+                Tạm hoãn
+              </option>
+
+              <option value="TRANSFERRED">
+                Đã chuyển
+              </option>
+
+              <option value="RESOLVED">
+                Đã giải quyết
+              </option>
+
+              <option value="CLOSED">
+                Đã đóng
+              </option>
+            </select>
           </div>
         </div>
 
@@ -872,11 +1281,11 @@ export default function SupervisorDashboardPage() {
                   </th>
 
                   <th className="px-4 py-3">
-                    Nhu cầu
+                    Agent
                   </th>
 
                   <th className="px-4 py-3">
-                    Agent
+                    Nhu cầu
                   </th>
 
                   <th className="px-4 py-3">
@@ -910,110 +1319,106 @@ export default function SupervisorDashboardPage() {
                     <tr>
                       <td
                         colSpan={7}
-                        className="px-4 py-10 text-center text-ink/40"
+                        className="px-4 py-8 text-center text-ink/40"
                       >
-                        Không có ticket phù hợp
-                        với bộ lọc.
+                        Không có ticket
+                        phù hợp.
                       </td>
                     </tr>
                   )}
 
                 {!loading &&
-                  filtered.map((row) => {
-                    const extended =
-                      row as QueueRowExtended;
+                  filtered.map((r) => (
+                    <tr
+                      key={r.ticket_id}
+                      className="border-b border-line last:border-0"
+                    >
+                      <td className="px-4 py-3 font-display font-bold text-brand-900">
+                        {r.queue_number}
+                      </td>
 
-                    return (
-                      <tr
-                        key={row.ticket_id}
-                        className="border-b border-line last:border-0"
-                      >
-                        <td className="px-4 py-3 font-display font-bold text-brand-900">
-                          {row.queue_number}
-                        </td>
+                      <td className="px-4 py-3">
+                        {r.driver_name}
+                      </td>
 
-                        <td className="px-4 py-3">
-                          {row.driver_name}
-                        </td>
+                      <td className="px-4 py-3">
+                        {r.agent_name ||
+                          "—"}
+                      </td>
 
-                        <td className="px-4 py-3">
-                          {row.category_name}
-                        </td>
+                      <td className="px-4 py-3">
+                        {r.category_name}
+                      </td>
 
-                        <td className="px-4 py-3">
-                          {extended.assigned_agent_name ??
-                            colleagues.find(
-                              (agent) =>
-                                agent.id ===
-                                extended.assigned_agent_id
-                            )?.full_name ??
-                            "—"}
-                        </td>
+                      <td className="px-4 py-3">
+                        <SlaBadge
+                          slaDueAt={
+                            r.sla_due_at
+                          }
+                        />
+                      </td>
 
-                        <td className="px-4 py-3">
-                          <SlaBadge
-                            slaDueAt={
-                              row.sla_due_at
+                      <td className="px-4 py-3">
+                        <StatusBadge
+                          status={r.status}
+                        />
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {reassignOpenFor ===
+                        r.case_id ? (
+                          <select
+                            autoFocus
+                            onChange={(e) =>
+                              e.target
+                                .value &&
+                              handleReassign(
+                                r.case_id,
+                                e.target
+                                  .value
+                              )
                             }
-                          />
-                        </td>
+                            onBlur={() =>
+                              setReassignOpenFor(
+                                null
+                              )
+                            }
+                            className="rounded-lg border-2 border-line px-2 py-1 font-body text-xs"
+                          >
+                            <option value="">
+                              -- Chọn agent --
+                            </option>
 
-                        <td className="px-4 py-3">
-                          <StatusBadge
-                            status={row.status}
-                          />
-                        </td>
-
-                        <td className="px-4 py-3">
-                          {reassignOpenFor ===
-                          row.case_id ? (
-                            <select
-                              autoFocus
-                              onChange={(e) =>
-                                e.target.value &&
-                                handleReassign(
-                                  row.case_id,
-                                  e.target.value
-                                )
-                              }
-                              onBlur={() =>
-                                setReassignOpenFor(
-                                  null
-                                )
-                              }
-                              className="rounded-lg border-2 border-line px-2 py-1 font-body text-xs"
-                            >
-                              <option value="">
-                                -- Chọn agent --
-                              </option>
-
-                              {colleagues.map(
-                                (agent) => (
-                                  <option
-                                    key={agent.id}
-                                    value={agent.id}
-                                  >
-                                    {agent.full_name}
-                                  </option>
-                                )
-                              )}
-                            </select>
-                          ) : (
-                            <SecondaryButton
-                              onClick={() =>
-                                setReassignOpenFor(
-                                  row.case_id
-                                )
-                              }
-                              className="px-3 py-1 text-xs"
-                            >
-                              Reassign
-                            </SecondaryButton>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                            {colleagues.map(
+                              (a) => (
+                                <option
+                                  key={a.id}
+                                  value={
+                                    a.id
+                                  }
+                                >
+                                  {
+                                    a.full_name
+                                  }
+                                </option>
+                              )
+                            )}
+                          </select>
+                        ) : (
+                          <SecondaryButton
+                            onClick={() =>
+                              setReassignOpenFor(
+                                r.case_id
+                              )
+                            }
+                            className="px-3 py-1 text-xs"
+                          >
+                            Reassign
+                          </SecondaryButton>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
