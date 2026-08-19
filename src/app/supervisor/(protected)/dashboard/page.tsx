@@ -48,16 +48,6 @@ type TrendMetrics = {
   csat: TrendValue;
 };
 
-type PeriodSummary = {
-  tickets: number;
-  completed: number;
-  visits: number;
-  uniqueDrivers: number;
-  waiting: number | null;
-  handling: number | null;
-  csat: number | null;
-};
-
 function dateToString(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -76,10 +66,6 @@ function addDays(date: Date, days: number) {
   const d = new Date(date);
   d.setDate(d.getDate() + days);
   return d;
-}
-
-function getMonthStart(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
 function getPreviousMonthSamePeriod(date: Date) {
@@ -110,10 +96,15 @@ function percentChange(
   current: number | null,
   previous: number | null
 ): number | null {
-  if (current == null || previous == null) return null;
+  if (current == null || previous == null) {
+    return null;
+  }
 
   if (previous === 0) {
-    if (current === 0) return 0;
+    if (current === 0) {
+      return 0;
+    }
+
     return null;
   }
 
@@ -132,14 +123,19 @@ function buildTrend(
 }
 
 function formatChange(change: number | null) {
-  if (change == null) return "—";
+  if (change == null) {
+    return "—";
+  }
 
-  const rounded = Math.abs(change) >= 10
-    ? change.toFixed(1)
-    : change.toFixed(1);
+  const rounded = change.toFixed(1);
 
-  if (change > 0) return `+${rounded}%`;
-  if (change < 0) return `${rounded}%`;
+  if (change > 0) {
+    return `+${rounded}%`;
+  }
+
+  if (change < 0) {
+    return `${rounded}%`;
+  }
 
   return "0.0%";
 }
@@ -152,13 +148,20 @@ function trendColor(
     return "text-ink/50";
   }
 
-  const positive = inverse ? change < 0 : change > 0;
+  const positive = inverse
+    ? change < 0
+    : change > 0;
 
-  return positive ? "text-brand-700" : "text-danger";
+  return positive
+    ? "text-brand-700"
+    : "text-danger";
 }
 
 function trendArrow(change: number | null) {
-  if (change == null || change === 0) return "→";
+  if (change == null || change === 0) {
+    return "→";
+  }
+
   return change > 0 ? "↑" : "↓";
 }
 
@@ -176,7 +179,8 @@ function TrendBadge({
         inverse
       )}`}
     >
-      {trendArrow(value.change)} {formatChange(value.change)}
+      {trendArrow(value.change)}{" "}
+      {formatChange(value.change)}
     </span>
   );
 }
@@ -185,49 +189,62 @@ function average(
   values: Array<number | null>
 ): number | null {
   const valid = values.filter(
-    (value): value is number => value != null
+    (value): value is number =>
+      value != null &&
+      !Number.isNaN(Number(value))
   );
 
-  if (!valid.length) return null;
+  if (!valid.length) {
+    return null;
+  }
 
-  return valid.reduce((sum, value) => sum + value, 0) / valid.length;
+  return (
+    valid.reduce(
+      (sum, value) => sum + value,
+      0
+    ) / valid.length
+  );
 }
 
 function aggregateSummaries(
   summaries: DailySummary[]
-): PeriodSummary {
-  const tickets = summaries.reduce(
-    (sum, row) => sum + Number(row.total_tickets || 0),
-    0
-  );
-
-  const completed = summaries.reduce(
-    (sum, row) => sum + Number(row.completed_tickets || 0),
-    0
-  );
-
-  const visits = summaries.reduce(
-    (sum, row) => sum + Number(row.total_visits || 0),
-    0
-  );
-
-  const uniqueDrivers = summaries.reduce(
-    (sum, row) => sum + Number(row.unique_drivers || 0),
-    0
-  );
-
+) {
   return {
-    tickets,
-    completed,
-    visits,
-    uniqueDrivers,
+    tickets: summaries.reduce(
+      (sum, row) =>
+        sum + Number(row.total_tickets || 0),
+      0
+    ),
+
+    completed: summaries.reduce(
+      (sum, row) =>
+        sum + Number(row.completed_tickets || 0),
+      0
+    ),
+
+    visits: summaries.reduce(
+      (sum, row) =>
+        sum + Number(row.total_visits || 0),
+      0
+    ),
+
+    uniqueDrivers: summaries.reduce(
+      (sum, row) =>
+        sum + Number(row.unique_drivers || 0),
+      0
+    ),
+
     waiting: average(
-      summaries.map((row) => row.avg_waiting_time_min)
+      summaries.map(
+        (row) => row.avg_waiting_time_min
+      )
     ),
+
     handling: average(
-      summaries.map((row) => row.avg_handling_time_min)
+      summaries.map(
+        (row) => row.avg_handling_time_min
+      )
     ),
-    csat: null,
   };
 }
 
@@ -251,7 +268,10 @@ function TrendCard({
           {label}
         </span>
 
-        <TrendBadge value={trend} inverse={inverse} />
+        <TrendBadge
+          value={trend}
+          inverse={inverse}
+        />
       </div>
 
       <div className="font-display text-xl font-bold text-brand-900">
@@ -260,7 +280,8 @@ function TrendCard({
       </div>
 
       <div className="mt-1 font-body text-xs text-ink/45">
-        Previous: {trend.previous.toFixed(decimals)}
+        Previous:{" "}
+        {trend.previous.toFixed(decimals)}
         {suffix}
       </div>
     </div>
@@ -276,13 +297,13 @@ function BenchmarkSection({
 }) {
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3">
         <p className="font-body text-sm font-semibold uppercase tracking-wide text-ink/50">
           {title}
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         <TrendCard
           label="Tickets"
           trend={metrics.tickets}
@@ -296,6 +317,11 @@ function BenchmarkSection({
         <TrendCard
           label="Visits"
           trend={metrics.visits}
+        />
+
+        <TrendCard
+          label="Drivers"
+          trend={metrics.uniqueDrivers}
         />
 
         <TrendCard
@@ -337,7 +363,10 @@ function SimpleTrendChart({
 
   const maxValue = Math.max(
     ...data.map((item) =>
-      Math.max(item.tickets, item.completed)
+      Math.max(
+        item.tickets,
+        item.completed
+      )
     ),
     1
   );
@@ -358,17 +387,15 @@ function SimpleTrendChart({
 
       <div className="flex h-64 items-end gap-1 overflow-x-auto border-b border-line px-2">
         {data.map((item) => {
-          const ticketHeight =
-            Math.max(
-              4,
-              (item.tickets / maxValue) * 220
-            );
+          const ticketHeight = Math.max(
+            4,
+            (item.tickets / maxValue) * 220
+          );
 
-          const completedHeight =
-            Math.max(
-              4,
-              (item.completed / maxValue) * 220
-            );
+          const completedHeight = Math.max(
+            4,
+            (item.completed / maxValue) * 220
+          );
 
           return (
             <div
@@ -378,12 +405,16 @@ function SimpleTrendChart({
             >
               <div
                 className="w-2 rounded-t bg-brand-700 transition-all"
-                style={{ height: `${ticketHeight}px` }}
+                style={{
+                  height: `${ticketHeight}px`,
+                }}
               />
 
               <div
                 className="w-2 rounded-t bg-brand-300 transition-all"
-                style={{ height: `${completedHeight}px` }}
+                style={{
+                  height: `${completedHeight}px`,
+                }}
               />
             </div>
           );
@@ -392,16 +423,21 @@ function SimpleTrendChart({
 
       <div className="flex justify-between px-2 font-body text-[10px] text-ink/40">
         <span>{data[0]?.date}</span>
-        <span>{data[data.length - 1]?.date}</span>
+        <span>
+          {data[data.length - 1]?.date}
+        </span>
       </div>
     </div>
   );
 }
 
 export default function SupervisorDashboardPage() {
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] =
+    useState<Profile | null>(null);
 
-  const [rows, setRows] = useState<AgentQueueRow[]>([]);
+  const [rows, setRows] =
+    useState<AgentQueueRow[]>([]);
+
   const [summary, setSummary] =
     useState<DailySummary | null>(null);
 
@@ -425,15 +461,17 @@ export default function SupervisorDashboardPage() {
       mom: null,
     });
 
-  const [chartData, setChartData] = useState<
-    Array<{
-      date: string;
-      tickets: number;
-      completed: number;
-    }>
-  >([]);
+  const [chartData, setChartData] =
+    useState<
+      Array<{
+        date: string;
+        tickets: number;
+        completed: number;
+      }>
+    >([]);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] =
+    useState(true);
 
   const [categoryFilter, setCategoryFilter] =
     useState("");
@@ -462,9 +500,8 @@ export default function SupervisorDashboardPage() {
       addDays(today, -7)
     );
 
-    const monthAgoDate = getPreviousMonthSamePeriod(
-      today
-    );
+    const monthAgoDate =
+      getPreviousMonthSamePeriod(today);
 
     const monthAgoStr =
       dateToString(monthAgoDate);
@@ -474,7 +511,7 @@ export default function SupervisorDashboardPage() {
     );
 
     const [
-      { data: queueData },
+      { data: queueData, error: queueError },
       { data: summaryData },
       { data: feedbackData },
       { data: counterData },
@@ -485,7 +522,9 @@ export default function SupervisorDashboardPage() {
       supabase
         .from("v_agent_queue")
         .select("*")
-        .order("created_at", { ascending: true }),
+        .order("created_at", {
+          ascending: true,
+        }),
 
       supabase
         .from("v_report_daily_summary")
@@ -512,8 +551,14 @@ export default function SupervisorDashboardPage() {
       supabase
         .from("v_report_daily_summary")
         .select("*")
-        .gte("business_date", monthAgoStr)
-        .lte("business_date", todayStr)
+        .gte(
+          "business_date",
+          monthAgoStr
+        )
+        .lte(
+          "business_date",
+          todayStr
+        )
         .order("business_date", {
           ascending: true,
         }),
@@ -521,25 +566,49 @@ export default function SupervisorDashboardPage() {
       supabase
         .from("v_report_daily_summary")
         .select("*")
-        .gte("business_date", chartStart)
-        .lte("business_date", todayStr)
+        .gte(
+          "business_date",
+          chartStart
+        )
+        .lte(
+          "business_date",
+          todayStr
+        )
         .order("business_date", {
           ascending: true,
         }),
     ]);
 
-    setRows(
-      (queueData as AgentQueueRow[]) ?? []
-    );
+    if (queueError) {
+      console.error(
+        "Failed to load queue:",
+        queueError
+      );
+    }
+
+    /*
+     * AgentQueueRow hiện tại không khai báo agent_name.
+     * View thực tế có thể trả về agent_name.
+     * Normalize ở đây để tránh phá type gốc.
+     */
+    const normalizedRows =
+      ((queueData as Array<
+        AgentQueueRow & {
+          agent_name?: string | null;
+        }
+      >) ?? []) as AgentQueueRow[];
+
+    setRows(normalizedRows);
 
     setSummary(
       ((summaryData as DailySummary[]) ?? [])[0] ??
         null
     );
 
-    setFeedback(
-      (feedbackData as FeedbackRow[]) ?? []
-    );
+    const loadedFeedback =
+      (feedbackData as FeedbackRow[]) ?? [];
+
+    setFeedback(loadedFeedback);
 
     setCounters(
       (counterData as Counter[]) ?? []
@@ -559,7 +628,8 @@ export default function SupervisorDashboardPage() {
       date: string
     ) =>
       summaries.filter(
-        (row) => row.business_date === date
+        (row) =>
+          row.business_date === date
       );
 
     const todaySummary =
@@ -586,75 +656,83 @@ export default function SupervisorDashboardPage() {
       start: string,
       end: string
     ) => {
-      return feedback.filter((item) => {
-        if (!item.created_at) return false;
+      return loadedFeedback.filter(
+        (item) => {
+          if (!item.created_at) {
+            return false;
+          }
 
-        const date =
-          item.created_at.slice(0, 10);
+          const date =
+            item.created_at.slice(0, 10);
 
-        return date >= start && date <= end;
-      });
+          return (
+            date >= start &&
+            date <= end
+          );
+        }
+      );
     };
 
-    const todayFeedback =
-      feedbackByDate(
-        todayStr,
-        todayStr
-      );
+    const calculateCsat = (
+      items: FeedbackRow[]
+    ) => {
+      if (!items.length) {
+        return null;
+      }
 
-    const yesterdayFeedback =
-      feedbackByDate(
-        yesterdayStr,
-        yesterdayStr
-      );
+      const validRatings = items
+        .map((item) =>
+          Number(item.rating)
+        )
+        .filter(
+          (rating) =>
+            !Number.isNaN(rating)
+        );
 
-    const weekFeedback =
-      feedbackByDate(
-        weekAgoStr,
-        weekAgoStr
-      );
+      if (!validRatings.length) {
+        return null;
+      }
 
-    const monthFeedback =
-      feedbackByDate(
-        monthAgoStr,
-        monthAgoStr
+      return (
+        validRatings.reduce(
+          (sum, rating) =>
+            sum + rating,
+          0
+        ) / validRatings.length
       );
+    };
 
     const todayCsat =
-      todayFeedback.length
-        ? todayFeedback.reduce(
-            (sum, item) =>
-              sum + item.rating,
-            0
-          ) / todayFeedback.length
-        : null;
+      calculateCsat(
+        feedbackByDate(
+          todayStr,
+          todayStr
+        )
+      );
 
     const yesterdayCsat =
-      yesterdayFeedback.length
-        ? yesterdayFeedback.reduce(
-            (sum, item) =>
-              sum + item.rating,
-            0
-          ) / yesterdayFeedback.length
-        : null;
+      calculateCsat(
+        feedbackByDate(
+          yesterdayStr,
+          yesterdayStr
+        )
+      );
 
     const weekCsat =
-      weekFeedback.length
-        ? weekFeedback.reduce(
-            (sum, item) =>
-              sum + item.rating,
-            0
-          ) / weekFeedback.length
-        : null;
+      calculateCsat(
+        feedbackByDate(
+          weekAgoStr,
+          weekAgoStr
+        )
+      );
 
     const monthCsat =
-      monthFeedback.length
-        ? monthFeedback.reduce(
-            (sum, item) =>
-              sum + item.rating,
-            0
-          ) / monthFeedback.length
-        : null;
+      calculateCsat(
+        feedbackByDate(
+          monthAgoStr,
+          monthAgoStr
+        )
+      );
 
     setTrendMetrics({
       dod: {
@@ -662,26 +740,32 @@ export default function SupervisorDashboardPage() {
           todaySummary.tickets,
           yesterdaySummary.tickets
         ),
+
         completed: buildTrend(
           todaySummary.completed,
           yesterdaySummary.completed
         ),
+
         visits: buildTrend(
           todaySummary.visits,
           yesterdaySummary.visits
         ),
+
         uniqueDrivers: buildTrend(
           todaySummary.uniqueDrivers,
           yesterdaySummary.uniqueDrivers
         ),
+
         waiting: buildTrend(
           todaySummary.waiting,
           yesterdaySummary.waiting
         ),
+
         handling: buildTrend(
           todaySummary.handling,
           yesterdaySummary.handling
         ),
+
         csat: buildTrend(
           todayCsat,
           yesterdayCsat
@@ -693,26 +777,32 @@ export default function SupervisorDashboardPage() {
           todaySummary.tickets,
           weekSummary.tickets
         ),
+
         completed: buildTrend(
           todaySummary.completed,
           weekSummary.completed
         ),
+
         visits: buildTrend(
           todaySummary.visits,
           weekSummary.visits
         ),
+
         uniqueDrivers: buildTrend(
           todaySummary.uniqueDrivers,
           weekSummary.uniqueDrivers
         ),
+
         waiting: buildTrend(
           todaySummary.waiting,
           weekSummary.waiting
         ),
+
         handling: buildTrend(
           todaySummary.handling,
           weekSummary.handling
         ),
+
         csat: buildTrend(
           todayCsat,
           weekCsat
@@ -724,26 +814,32 @@ export default function SupervisorDashboardPage() {
           todaySummary.tickets,
           monthSummary.tickets
         ),
+
         completed: buildTrend(
           todaySummary.completed,
           monthSummary.completed
         ),
+
         visits: buildTrend(
           todaySummary.visits,
           monthSummary.visits
         ),
+
         uniqueDrivers: buildTrend(
           todaySummary.uniqueDrivers,
           monthSummary.uniqueDrivers
         ),
+
         waiting: buildTrend(
           todaySummary.waiting,
           monthSummary.waiting
         ),
+
         handling: buildTrend(
           todaySummary.handling,
           monthSummary.handling
         ),
+
         csat: buildTrend(
           todayCsat,
           monthCsat
@@ -791,17 +887,21 @@ export default function SupervisorDashboardPage() {
     });
 
     setChartData(
-      Array.from(groupedChart.values()).sort(
-        (a, b) =>
-          a.date.localeCompare(b.date)
+      Array.from(
+        groupedChart.values()
+      ).sort((a, b) =>
+        a.date.localeCompare(b.date)
       )
     );
 
     setLoading(false);
-  }, [feedback]);
+  }, []);
 
   useEffect(() => {
     getCurrentProfile().then(setProfile);
+  }, []);
+
+  useEffect(() => {
     load();
   }, [load]);
 
@@ -816,7 +916,9 @@ export default function SupervisorDashboardPage() {
           schema: "public",
           table: "queue_tickets",
         },
-        load
+        () => {
+          load();
+        }
       )
 
       .on(
@@ -826,7 +928,9 @@ export default function SupervisorDashboardPage() {
           schema: "public",
           table: "service_cases",
         },
-        load
+        () => {
+          load();
+        }
       )
 
       .on(
@@ -836,13 +940,17 @@ export default function SupervisorDashboardPage() {
           schema: "public",
           table: "counters",
         },
-        load
+        () => {
+          load();
+        }
       )
 
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(
+        channel
+      );
     };
   }, [load]);
 
@@ -881,17 +989,29 @@ export default function SupervisorDashboardPage() {
     load();
   }
 
+  /*
+   * Không dùng r.agent_name trực tiếp vì
+   * AgentQueueRow hiện chưa khai báo field này.
+   */
   const filtered = useMemo(() => {
-    return rows.filter(
-      (r) =>
+    return rows.filter((r) => {
+      const row =
+        r as AgentQueueRow & {
+          agent_name?: string | null;
+        };
+
+      return (
         (!categoryFilter ||
           r.category_name ===
             categoryFilter) &&
         (!statusFilter ||
-          r.status === statusFilter) &&
+          r.status ===
+            statusFilter) &&
         (!agentFilter ||
-          r.agent_name === agentFilter)
-    );
+          row.agent_name ===
+            agentFilter)
+      );
+    });
   }, [
     rows,
     categoryFilter,
@@ -910,27 +1030,39 @@ export default function SupervisorDashboardPage() {
   const agents = Array.from(
     new Set(
       rows
-        .map((r) => r.agent_name)
-        .filter(Boolean)
+        .map(
+          (r) =>
+            (
+              r as AgentQueueRow & {
+                agent_name?: string | null;
+              }
+            ).agent_name
+        )
+        .filter(Boolean) as string[]
     )
   );
 
   const waiting = rows.filter(
-    (r) => r.status === "WAITING"
+    (r) =>
+      r.status === "WAITING"
   ).length;
 
   const processing = rows.filter(
-    (r) => r.status === "PROCESSING"
+    (r) =>
+      r.status === "PROCESSING"
   ).length;
 
   const pending = rows.filter(
-    (r) => r.status === "PENDING"
+    (r) =>
+      r.status === "PENDING"
   ).length;
 
   const overSla = rows.filter(
     (r) =>
       r.sla_due_at &&
-      new Date(r.sla_due_at).getTime() <
+      new Date(
+        r.sla_due_at
+      ).getTime() <
         Date.now() &&
       !r.resolved_at &&
       !r.closed_at &&
@@ -939,16 +1071,19 @@ export default function SupervisorDashboardPage() {
 
   const completed = rows.filter(
     (r) =>
-      ["RESOLVED", "CLOSED"].includes(
-        r.status
-      )
+      [
+        "RESOLVED",
+        "CLOSED",
+      ].includes(r.status)
   ).length;
 
   const avgCsat =
     feedback.length > 0
       ? (
           feedback.reduce(
-            (a, b) => a + b.rating,
+            (a, b) =>
+              a +
+              Number(b.rating || 0),
             0
           ) / feedback.length
         ).toFixed(1)
@@ -1081,7 +1216,7 @@ export default function SupervisorDashboardPage() {
         </div>
       </div>
 
-      {/* ================= DOD ================= */}
+      {/* ================= BENCHMARK ================= */}
 
       {dod && (
         <BenchmarkSection
@@ -1090,16 +1225,12 @@ export default function SupervisorDashboardPage() {
         />
       )}
 
-      {/* ================= WOW ================= */}
-
       {wow && (
         <BenchmarkSection
           title="WoW — So với cùng ngày tuần trước"
           metrics={wow}
         />
       )}
-
-      {/* ================= MOM ================= */}
 
       {mom && (
         <BenchmarkSection
@@ -1121,7 +1252,9 @@ export default function SupervisorDashboardPage() {
           </p>
         </div>
 
-        <SimpleTrendChart data={chartData} />
+        <SimpleTrendChart
+          data={chartData}
+        />
       </div>
 
       {/* ================= COUNTERS ================= */}
@@ -1147,14 +1280,18 @@ export default function SupervisorDashboardPage() {
 
               {(c.status ===
                 "AVAILABLE" ||
-                c.status === "CLOSED") && (
+                c.status ===
+                  "CLOSED") && (
                 <SecondaryButton
                   onClick={() =>
-                    handleToggleCounter(c)
+                    handleToggleCounter(
+                      c
+                    )
                   }
                   className="px-3 py-1 text-xs"
                 >
-                  {c.status === "AVAILABLE"
+                  {c.status ===
+                  "AVAILABLE"
                     ? "Đóng"
                     : "Mở"}
                 </SecondaryButton>
@@ -1182,7 +1319,9 @@ export default function SupervisorDashboardPage() {
             <select
               value={agentFilter}
               onChange={(e) =>
-                setAgentFilter(e.target.value)
+                setAgentFilter(
+                  e.target.value
+                )
               }
               className="rounded-lg border-2 border-line px-3 py-1.5 font-body text-sm"
             >
@@ -1190,14 +1329,16 @@ export default function SupervisorDashboardPage() {
                 Tất cả agent
               </option>
 
-              {agents.map((agent) => (
-                <option
-                  key={agent}
-                  value={agent}
-                >
-                  {agent}
-                </option>
-              ))}
+              {agents.map(
+                (agent) => (
+                  <option
+                    key={agent}
+                    value={agent}
+                  >
+                    {agent}
+                  </option>
+                )
+              )}
             </select>
 
             <select
@@ -1213,14 +1354,16 @@ export default function SupervisorDashboardPage() {
                 Tất cả category
               </option>
 
-              {categories.map((c) => (
-                <option
-                  key={c}
-                  value={c}
-                >
-                  {c}
-                </option>
-              ))}
+              {categories.map(
+                (category) => (
+                  <option
+                    key={category}
+                    value={category}
+                  >
+                    {category}
+                  </option>
+                )
+              )}
             </select>
 
             <select
@@ -1315,7 +1458,8 @@ export default function SupervisorDashboardPage() {
                 )}
 
                 {!loading &&
-                  filtered.length === 0 && (
+                  filtered.length ===
+                    0 && (
                     <tr>
                       <td
                         colSpan={7}
@@ -1328,97 +1472,108 @@ export default function SupervisorDashboardPage() {
                   )}
 
                 {!loading &&
-                  filtered.map((r) => (
-                    <tr
-                      key={r.ticket_id}
-                      className="border-b border-line last:border-0"
-                    >
-                      <td className="px-4 py-3 font-display font-bold text-brand-900">
-                        {r.queue_number}
-                      </td>
+                  filtered.map((r) => {
+                    const row =
+                      r as AgentQueueRow & {
+                        agent_name?: string | null;
+                      };
 
-                      <td className="px-4 py-3">
-                        {r.driver_name}
-                      </td>
+                    return (
+                      <tr
+                        key={r.ticket_id}
+                        className="border-b border-line last:border-0"
+                      >
+                        <td className="px-4 py-3 font-display font-bold text-brand-900">
+                          {r.queue_number}
+                        </td>
 
-                      <td className="px-4 py-3">
-                        {r.agent_name ||
-                          "—"}
-                      </td>
+                        <td className="px-4 py-3">
+                          {r.driver_name}
+                        </td>
 
-                      <td className="px-4 py-3">
-                        {r.category_name}
-                      </td>
+                        <td className="px-4 py-3">
+                          {row.agent_name ||
+                            "—"}
+                        </td>
 
-                      <td className="px-4 py-3">
-                        <SlaBadge
-                          slaDueAt={
-                            r.sla_due_at
-                          }
-                        />
-                      </td>
+                        <td className="px-4 py-3">
+                          {r.category_name}
+                        </td>
 
-                      <td className="px-4 py-3">
-                        <StatusBadge
-                          status={r.status}
-                        />
-                      </td>
+                        <td className="px-4 py-3">
+                          <SlaBadge
+                            slaDueAt={
+                              r.sla_due_at
+                            }
+                          />
+                        </td>
 
-                      <td className="px-4 py-3">
-                        {reassignOpenFor ===
-                        r.case_id ? (
-                          <select
-                            autoFocus
-                            onChange={(e) =>
-                              e.target
-                                .value &&
-                              handleReassign(
-                                r.case_id,
+                        <td className="px-4 py-3">
+                          <StatusBadge
+                            status={
+                              r.status
+                            }
+                          />
+                        </td>
+
+                        <td className="px-4 py-3">
+                          {reassignOpenFor ===
+                          r.case_id ? (
+                            <select
+                              autoFocus
+                              onChange={(e) =>
                                 e.target
-                                  .value
-                              )
-                            }
-                            onBlur={() =>
-                              setReassignOpenFor(
-                                null
-                              )
-                            }
-                            className="rounded-lg border-2 border-line px-2 py-1 font-body text-xs"
-                          >
-                            <option value="">
-                              -- Chọn agent --
-                            </option>
+                                  .value &&
+                                handleReassign(
+                                  r.case_id,
+                                  e.target
+                                    .value
+                                )
+                              }
+                              onBlur={() =>
+                                setReassignOpenFor(
+                                  null
+                                )
+                              }
+                              className="rounded-lg border-2 border-line px-2 py-1 font-body text-xs"
+                            >
+                              <option value="">
+                                -- Chọn agent --
+                              </option>
 
-                            {colleagues.map(
-                              (a) => (
-                                <option
-                                  key={a.id}
-                                  value={
-                                    a.id
-                                  }
-                                >
-                                  {
-                                    a.full_name
-                                  }
-                                </option>
-                              )
-                            )}
-                          </select>
-                        ) : (
-                          <SecondaryButton
-                            onClick={() =>
-                              setReassignOpenFor(
-                                r.case_id
-                              )
-                            }
-                            className="px-3 py-1 text-xs"
-                          >
-                            Reassign
-                          </SecondaryButton>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                              {colleagues.map(
+                                (a) => (
+                                  <option
+                                    key={
+                                      a.id
+                                    }
+                                    value={
+                                      a.id
+                                    }
+                                  >
+                                    {
+                                      a.full_name
+                                    }
+                                  </option>
+                                )
+                              )}
+                            </select>
+                          ) : (
+                            <SecondaryButton
+                              onClick={() =>
+                                setReassignOpenFor(
+                                  r.case_id
+                                )
+                              }
+                              className="px-3 py-1 text-xs"
+                            >
+                              Reassign
+                            </SecondaryButton>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
