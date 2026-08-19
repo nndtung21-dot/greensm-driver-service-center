@@ -281,7 +281,7 @@ decimals?: number;
 return ( <div className="rounded-xl border border-line bg-paper/30 px-4 py-3"> <div className="mb-1 flex items-center justify-between gap-2"> <span className="font-body text-xs text-ink/50">
 {label} </span>
 
-```
+
     <span
       className={`font-body text-xs font-bold ${trendColor(
         value.change,
@@ -306,7 +306,6 @@ return ( <div className="rounded-xl border border-line bg-paper/30 px-4 py-3"> <
     )}
   </div>
 </div>
-```
 
 );
 }
@@ -320,7 +319,6 @@ metrics: TrendMetrics;
 }) {
 return ( <div> <div className="mb-2 flex items-center gap-2"> <span className="h-1.5 w-1.5 rounded-full bg-brand-700" />
 
-```
     <span className="font-body text-xs font-bold uppercase tracking-wide text-ink/55">
       {title}
     </span>
@@ -362,7 +360,7 @@ return ( <div> <div className="mb-2 flex items-center gap-2"> <span className="h
     />
   </div>
 </div>
-```
+
 
 );
 }
@@ -395,7 +393,7 @@ const value = Math.round(
 100
 );
 
-```
+
           return (
             <div
               key={percentage}
@@ -465,7 +463,7 @@ const value = Math.round(
     17:30
   </div>
 </div>
-```
+
 
 );
 }
@@ -522,7 +520,7 @@ chartWidth / 2
 (data.length - 1)) *
 chartWidth;
 
-```
+
   const y =
     paddingTop +
     chartHeight -
@@ -535,7 +533,7 @@ chartWidth;
     y,
   };
 }
-```
+
 
 );
 
@@ -570,7 +568,7 @@ chartHeight -
 (percentage / 100) *
 chartHeight;
 
-```
+
           const value = Math.round(
             (maxValue *
               percentage) /
@@ -666,7 +664,7 @@ chartHeight;
     </svg>
   </div>
 </div>
-```
+
 
 );
 }
@@ -749,7 +747,7 @@ useState<string | null>(null);
 const load = useCallback(async () => {
 setLoading(true);
 
-```
+
 try {
   const today = startOfDay(
     new Date()
@@ -1253,7 +1251,7 @@ try {
 } finally {
   setLoading(false);
 }
-```
+
 
 }, []);
 
@@ -1262,9 +1260,9 @@ getCurrentProfile().then(
 setProfile
 );
 
-```
+
 load();
-```
+
 
 }, [load]);
 
@@ -1306,13 +1304,13 @@ load
 )
 .subscribe();
 
-```
+
 return () => {
   supabase.removeChannel(
     channel
   );
 };
-```
+
 
 }, [load]);
 
@@ -1325,7 +1323,7 @@ counter.status ===
 ? "CLOSED"
 : "AVAILABLE";
 
-```
+
 await supabase.rpc(
   "set_counter_status",
   {
@@ -1336,7 +1334,7 @@ await supabase.rpc(
 );
 
 load();
-```
+
 
 }
 
@@ -1353,13 +1351,13 @@ toAgentId,
 }
 );
 
-```
+
 setReassignOpenFor(
   null
 );
 
 load();
-```
+
 
 }
 
@@ -1505,7 +1503,7 @@ return ( <div className="space-y-8">
 HEADER
 ===================================================== */}
 
-```
+
   <div>
     <h1 className="font-display text-2xl font-bold text-brand-900">
       Dashboard{" "}
@@ -2116,7 +2114,7 @@ HEADER
     </div>
   </section>
 </div>
-```
+
 
 );
 }
