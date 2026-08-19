@@ -134,10 +134,9 @@ export default function TicketDetailPage() {
     setCounters(
       rawCounters.map((counter) => ({
         ...counter,
-        default_agent_name:
-          counter.default_agent_id
-            ? agentMap.get(counter.default_agent_id) ?? null
-            : null,
+        default_agent_name: counter.default_agent_id
+          ? agentMap.get(counter.default_agent_id) ?? null
+          : null,
       })) as CounterOption[]
     );
   }, []);
@@ -195,7 +194,7 @@ export default function TicketDetailPage() {
     }
 
     after?.();
-    load();
+    await load();
   }
 
   const handleStartProcessing = () =>
@@ -231,6 +230,24 @@ export default function TicketDetailPage() {
       p_case_id: params.id,
     });
 
+  const handleSetPending = () => {
+    if (!pendingReason.trim() || !pendingNextStep.trim()) {
+      setErrorMessage("Vui lòng nhập lý do và bước tiếp theo.");
+      return;
+    }
+
+    runRpc(
+      "set_case_pending",
+      {
+        p_case_id: params.id,
+        p_reason: pendingReason.trim(),
+        p_next_step: pendingNextStep.trim(),
+        p_expected_date: pendingExpected || null,
+      },
+      () => setShowPending(false)
+    );
+  };
+
   async function handleTransferToCounter() {
     if (!detail) return;
 
@@ -248,8 +265,20 @@ export default function TicketDetailPage() {
       return;
     }
 
+    if (targetCounter.status === "CLOSED") {
+      setErrorMessage("Không thể chuyển sang quầy đang đóng.");
+      return;
+    }
+
+    if (!targetCounter.default_agent_id) {
+      setErrorMessage("Quầy đích chưa được gán Agent.");
+      return;
+    }
+
     const confirmed = window.confirm(
-      `Chuyển ticket ${detail.queue_number} sang ${targetCounter.counter_name}${
+      `Chuyển ticket ${detail.queue_number} sang ${
+        targetCounter.counter_name
+      }${
         targetCounter.default_agent_name
           ? ` - ${targetCounter.default_agent_name}`
           : ""
@@ -436,6 +465,12 @@ export default function TicketDetailPage() {
                   {HISTORY_LABELS[h.action] ?? h.action}
                   {h.new_status ? ` → ${h.new_status}` : ""}
                 </p>
+
+                {h.note && (
+                  <p className="mt-1 text-ink/60">
+                    {h.note}
+                  </p>
+                )}
               </li>
             ))}
           </ol>
@@ -541,21 +576,28 @@ export default function TicketDetailPage() {
                 </PrimaryButton>
 
                 <SecondaryButton
-                  onClick={() => setShowPending((v) => !v)}
+                  onClick={() => {
+                    setShowPending((v) => !v);
+                    setShowTransfer(false);
+                    setErrorMessage(null);
+                  }}
                   disabled={busy}
                 >
                   Đặt Pending
                 </SecondaryButton>
 
-                <SecondaryButton
-                  onClick={() => {
-                    setShowTransfer((v) => !v);
-                    setErrorMessage(null);
-                  }}
-                  disabled={busy}
-                >
-                  Chuyển ticket
-                </SecondaryButton>
+                {canTransfer && (
+                  <SecondaryButton
+                    onClick={() => {
+                      setShowTransfer((v) => !v);
+                      setShowPending(false);
+                      setErrorMessage(null);
+                    }}
+                    disabled={busy}
+                  >
+                    Chuyển ticket
+                  </SecondaryButton>
+                )}
               </div>
             </div>
           </Panel>
@@ -580,6 +622,7 @@ export default function TicketDetailPage() {
                     onChange={(e) =>
                       setPendingNextStep(e.target.value)
                     }
+                    placeholder="Ví dụ: Kiểm tra lại giao dịch với Finance."
                     className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
                   />
                 </Field>
@@ -596,19 +639,7 @@ export default function TicketDetailPage() {
                 </Field>
 
                 <PrimaryButton
-                  onClick={() =>
-                    runRpc(
-                      "set_case_pending",
-                      {
-                        p_case_id: params.id,
-                        p_reason: pendingReason.trim(),
-                        p_next_step: pendingNextStep.trim(),
-                        p_expected_date:
-                          pendingExpected || null,
-                      },
-                      () => setShowPending(false)
-                    )
-                  }
+                  onClick={handleSetPending}
                   disabled={busy}
                 >
                   XÁC NHẬN PENDING
@@ -755,45 +786,45 @@ export default function TicketDetailPage() {
       )}
 
       {detail.status === "CLOSED" && (
-        <div className="rounded-2xl border border-brand-200 bg-brand-50 p-5">
-          <div className="flex flex-col items-center gap-4 text-center">
-            <div>
-              <h3 className="text-lg font-semibold text-ink">
-                Đánh giá dịch vụ
-              </h3>
+        <>
+          <div className="rounded-2xl border border-brand-200 bg-brand-50 p-5">
+            <div className="flex flex-col items-center gap-4 text-center">
+              <div>
+                <h3 className="text-lg font-semibold text-ink">
+                  Đánh giá dịch vụ
+                </h3>
 
-              <p className="mt-1 text-sm text-ink/60">
-                Mời tài xế quét mã QR để đánh giá dịch vụ.
+                <p className="mt-1 text-sm text-ink/60">
+                  Mời tài xế quét mã QR để đánh giá dịch vụ.
+                </p>
+              </div>
+
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
+                  `${window.location.origin}/feedback/${encodeURIComponent(
+                    detail.ticket_code
+                  )}`
+                )}`}
+                alt="QR đánh giá dịch vụ"
+                className="h-64 w-64 rounded-xl border border-gray-200 bg-white p-2"
+              />
+
+              <p className="text-sm font-medium text-ink">
+                Ticket: {detail.ticket_code}
               </p>
             </div>
-
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
-                `${window.location.origin}/feedback/${encodeURIComponent(
-                  detail.ticket_code
-                )}`
-              )}`}
-              alt="QR đánh giá dịch vụ"
-              className="h-64 w-64 rounded-xl border border-gray-200 bg-white p-2"
-            />
-
-            <p className="text-sm font-medium text-ink">
-              Ticket: {detail.ticket_code}
-            </p>
           </div>
-        </div>
-      )}
 
-      {detail.status === "CLOSED" && (
-        <Panel title="Kết quả xử lý">
-          <p className="font-body text-sm text-ink/80">
-            {detail.resolution}
-          </p>
+          <Panel title="Kết quả xử lý">
+            <p className="font-body text-sm text-ink/80">
+              {detail.resolution}
+            </p>
 
-          <p className="mt-2 font-body text-xs text-ink/40">
-            Đã đóng lúc {fmt(detail.closed_at)}
-          </p>
-        </Panel>
+            <p className="mt-2 font-body text-xs text-ink/40">
+              Đã đóng lúc {fmt(detail.closed_at)}
+            </p>
+          </Panel>
+        </>
       )}
 
       {detail.status === "NO_SHOW" && (
