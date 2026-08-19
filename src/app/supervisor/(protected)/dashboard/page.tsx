@@ -1,3 +1,4 @@
+```tsx
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -316,8 +317,400 @@ function BenchmarkGroup({
 }
 
 /* =========================================================
-   TREND CHARTS
+   COMBINED TREND CHART
 ========================================================= */
+
+type TrendSeries = {
+  key: string;
+  label: string;
+  color: string;
+  getValue: (row: ChartRow) => number | null;
+};
+
+const TREND_SERIES: TrendSeries[] = [
+  {
+    key: "tickets",
+    label: "Tickets",
+    color: "#0F766E",
+    getValue: (row) => row.tickets,
+  },
+  {
+    key: "completed",
+    label: "Completed",
+    color: "#22C55E",
+    getValue: (row) => row.completed,
+  },
+  {
+    key: "visits",
+    label: "Visits",
+    color: "#2563EB",
+    getValue: (row) => row.visits,
+  },
+  {
+    key: "uniqueDrivers",
+    label: "Unique Drivers",
+    color: "#8B5CF6",
+    getValue: (row) => row.uniqueDrivers,
+  },
+  {
+    key: "waiting",
+    label: "Waiting",
+    color: "#F59E0B",
+    getValue: (row) => row.waiting,
+  },
+  {
+    key: "handling",
+    label: "Handling",
+    color: "#EF4444",
+    getValue: (row) => row.handling,
+  },
+  {
+    key: "csat",
+    label: "CSAT",
+    color: "#EC4899",
+    getValue: (row) => row.csat,
+  },
+];
+
+function normalizeToIndex(
+  data: ChartRow[],
+  getValue: (row: ChartRow) => number | null
+) {
+  const valid = data
+    .map((row) => getValue(row))
+    .filter(
+      (value): value is number =>
+        value != null &&
+        Number.isFinite(value) &&
+        value > 0
+    );
+
+  const base = valid[0];
+
+  if (!base || base === 0) {
+    return data.map(() => null);
+  }
+
+  return data.map((row) => {
+    const value = getValue(row);
+
+    if (
+      value == null ||
+      !Number.isFinite(value)
+    ) {
+      return null;
+    }
+
+    return (value / base) * 100;
+  });
+}
+
+function CombinedTrendChart({
+  data,
+}: {
+  data: ChartRow[];
+}) {
+  const [hidden, setHidden] = useState<string[]>([]);
+
+  const chartWidth = 1000;
+  const chartHeight = 340;
+
+  const paddingLeft = 55;
+  const paddingRight = 25;
+  const paddingTop = 25;
+  const paddingBottom = 45;
+
+  const innerWidth =
+    chartWidth - paddingLeft - paddingRight;
+
+  const innerHeight =
+    chartHeight - paddingTop - paddingBottom;
+
+  const normalized = useMemo(() => {
+    return TREND_SERIES.map((series) => ({
+      ...series,
+      values: normalizeToIndex(
+        data,
+        series.getValue
+      ),
+    }));
+  }, [data]);
+
+  if (!data.length) {
+    return (
+      <div className="flex h-80 items-center justify-center text-sm text-ink/40">
+        Chưa có dữ liệu
+      </div>
+    );
+  }
+
+  const visibleSeries = normalized.filter(
+    (series) => !hidden.includes(series.key)
+  );
+
+  const allValues = visibleSeries.flatMap(
+    (series) =>
+      series.values.filter(
+        (value): value is number =>
+          value != null && Number.isFinite(value)
+      )
+  );
+
+  const minValue =
+    allValues.length > 0
+      ? Math.min(...allValues)
+      : 0;
+
+  const maxValue =
+    allValues.length > 0
+      ? Math.max(...allValues)
+      : 100;
+
+  const chartMin = Math.max(
+    0,
+    Math.floor((minValue - 10) / 10) * 10
+  );
+
+  const chartMax = Math.max(
+    120,
+    Math.ceil((maxValue + 10) / 10) * 10
+  );
+
+  const yTicks = [0, 25, 50, 75, 100, 125, 150].filter(
+    (value) =>
+      value >= chartMin &&
+      value <= chartMax
+  );
+
+  function getX(index: number) {
+    if (data.length <= 1) {
+      return paddingLeft;
+    }
+
+    return (
+      paddingLeft +
+      (index / (data.length - 1)) *
+        innerWidth
+    );
+  }
+
+  function getY(value: number) {
+    return (
+      paddingTop +
+      innerHeight -
+      ((value - chartMin) /
+        (chartMax - chartMin)) *
+        innerHeight
+    );
+  }
+
+  function buildPath(
+    values: Array<number | null>
+  ) {
+    let path = "";
+    let started = false;
+
+    values.forEach((value, index) => {
+      if (value == null) {
+        started = false;
+        return;
+      }
+
+      const x = getX(index);
+      const y = getY(value);
+
+      if (!started) {
+        path += `M ${x} ${y}`;
+        started = true;
+      } else {
+        path += ` L ${x} ${y}`;
+      }
+    });
+
+    return path;
+  }
+
+  const dateIndexes = [
+    0,
+    Math.floor((data.length - 1) / 2),
+    data.length - 1,
+  ].filter(
+    (value, index, array) =>
+      array.indexOf(value) === index
+  );
+
+  return (
+    <div>
+      {/* Legend */}
+      <div className="mb-5 flex flex-wrap gap-x-5 gap-y-2">
+        {TREND_SERIES.map((series) => {
+          const isHidden = hidden.includes(
+            series.key
+          );
+
+          return (
+            <button
+              key={series.key}
+              type="button"
+              onClick={() => {
+                setHidden((current) =>
+                  current.includes(series.key)
+                    ? current.filter(
+                        (key) =>
+                          key !== series.key
+                      )
+                    : [
+                        ...current,
+                        series.key,
+                      ]
+                );
+              }}
+              className={`flex items-center gap-2 rounded-full px-2 py-1 text-xs transition ${
+                isHidden
+                  ? "opacity-30"
+                  : "opacity-100"
+              }`}
+            >
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{
+                  backgroundColor:
+                    series.color,
+                }}
+              />
+
+              <span className="font-body text-ink/60">
+                {series.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Chart */}
+      <div className="w-full overflow-x-auto">
+        <svg
+          viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+          className="h-[340px] min-w-[760px] w-full"
+          preserveAspectRatio="none"
+        >
+          {/* Horizontal grid */}
+          {yTicks.map((tick) => {
+            const y = getY(tick);
+
+            return (
+              <g key={tick}>
+                <line
+                  x1={paddingLeft}
+                  x2={chartWidth - paddingRight}
+                  y1={y}
+                  y2={y}
+                  stroke="#E5E7EB"
+                  strokeWidth="1"
+                />
+
+                <text
+                  x={paddingLeft - 10}
+                  y={y + 4}
+                  textAnchor="end"
+                  fontSize="11"
+                  fill="#9CA3AF"
+                >
+                  {tick}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* 100 baseline */}
+          {100 >= chartMin &&
+            100 <= chartMax && (
+              <line
+                x1={paddingLeft}
+                x2={chartWidth - paddingRight}
+                y1={getY(100)}
+                y2={getY(100)}
+                stroke="#94A3B8"
+                strokeWidth="1.5"
+                strokeDasharray="5 5"
+              />
+            )}
+
+          {/* Lines */}
+          {visibleSeries.map((series) => (
+            <path
+              key={series.key}
+              d={buildPath(series.values)}
+              fill="none"
+              stroke={series.color}
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ))}
+
+          {/* Points */}
+          {visibleSeries.map((series) =>
+            series.values.map(
+              (value, index) => {
+                if (value == null) return null;
+
+                return (
+                  <circle
+                    key={`${series.key}-${index}`}
+                    cx={getX(index)}
+                    cy={getY(value)}
+                    r="3.5"
+                    fill="white"
+                    stroke={series.color}
+                    strokeWidth="2"
+                  >
+                    <title>
+                      {`${series.label} · ${
+                        data[index]?.date
+                      } · ${value.toFixed(
+                        1
+                      )}`}
+                    </title>
+                  </circle>
+                );
+              }
+            )
+          )}
+
+          {/* X axis labels */}
+          {dateIndexes.map((index) => (
+            <text
+              key={index}
+              x={getX(index)}
+              y={
+                chartHeight -
+                paddingBottom +
+                22
+              }
+              textAnchor="middle"
+              fontSize="11"
+              fill="#9CA3AF"
+            >
+              {data[index]?.date}
+            </text>
+          ))}
+        </svg>
+      </div>
+
+      {/* Explanation */}
+      <div className="mt-3 flex items-center justify-between">
+        <p className="font-body text-[11px] text-ink/40">
+          Chỉ số được chuẩn hóa: ngày đầu tiên = 100
+        </p>
+
+        <p className="font-body text-[11px] text-ink/40">
+          100 = mức tham chiếu
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function ChartHeader({
   title,
@@ -335,344 +728,6 @@ function ChartHeader({
       <p className="mt-1 font-body text-xs text-ink/45">
         {description}
       </p>
-    </div>
-  );
-}
-
-function VolumeChart({
-  data,
-}: {
-  data: ChartRow[];
-}) {
-  if (!data.length) {
-    return (
-      <div className="flex h-64 items-center justify-center text-sm text-ink/40">
-        Chưa có dữ liệu
-      </div>
-    );
-  }
-
-  const maxValue = Math.max(
-    ...data.map((row) =>
-      Math.max(row.tickets, row.completed)
-    ),
-    1
-  );
-
-  return (
-    <div>
-      <div className="mb-4 flex items-center gap-5 text-xs text-ink/55">
-        <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-sm bg-brand-700" />
-          Total Tickets
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-sm bg-brand-300" />
-          Completed
-        </div>
-      </div>
-
-      <div className="relative h-64 border-b border-line">
-        <div className="absolute inset-x-0 bottom-0 flex h-[220px] items-end gap-1 overflow-x-auto px-1">
-          {data.map((row) => {
-            const ticketHeight =
-              (row.tickets / maxValue) * 210;
-
-            const completedHeight =
-              (row.completed / maxValue) * 210;
-
-            return (
-              <div
-                key={row.date}
-                className="flex h-full min-w-[24px] flex-1 items-end justify-center gap-[2px]"
-                title={`${row.date} · ${row.tickets} tickets · ${row.completed} completed`}
-              >
-                <div
-                  className="w-2.5 rounded-t bg-brand-700 transition-all"
-                  style={{
-                    height: `${Math.max(
-                      row.tickets > 0 ? 4 : 0,
-                      ticketHeight
-                    )}px`,
-                  }}
-                />
-
-                <div
-                  className="w-2.5 rounded-t bg-brand-300 transition-all"
-                  style={{
-                    height: `${Math.max(
-                      row.completed > 0 ? 4 : 0,
-                      completedHeight
-                    )}px`,
-                  }}
-                />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mt-2 flex justify-between px-1 text-[10px] text-ink/35">
-        <span>{data[0]?.date}</span>
-        <span>{data[data.length - 1]?.date}</span>
-      </div>
-    </div>
-  );
-}
-
-function TrafficChart({
-  data,
-}: {
-  data: ChartRow[];
-}) {
-  if (!data.length) {
-    return (
-      <div className="flex h-64 items-center justify-center text-sm text-ink/40">
-        Chưa có dữ liệu
-      </div>
-    );
-  }
-
-  const maxValue = Math.max(
-    ...data.map((row) =>
-      Math.max(
-        row.visits,
-        row.uniqueDrivers
-      )
-    ),
-    1
-  );
-
-  return (
-    <div>
-      <div className="mb-4 flex items-center gap-5 text-xs text-ink/55">
-        <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-sm bg-brand-700" />
-          Visits
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-sm bg-brand-300" />
-          Unique Drivers
-        </div>
-      </div>
-
-      <div className="relative h-64 border-b border-line">
-        <div className="absolute inset-x-0 bottom-0 flex h-[220px] items-end gap-1 overflow-x-auto px-1">
-          {data.map((row) => {
-            const visitHeight =
-              (row.visits / maxValue) * 210;
-
-            const driverHeight =
-              (row.uniqueDrivers / maxValue) *
-              210;
-
-            return (
-              <div
-                key={row.date}
-                className="flex h-full min-w-[24px] flex-1 items-end justify-center gap-[2px]"
-                title={`${row.date} · ${row.visits} visits · ${row.uniqueDrivers} drivers`}
-              >
-                <div
-                  className="w-2.5 rounded-t bg-brand-700"
-                  style={{
-                    height: `${Math.max(
-                      row.visits > 0 ? 4 : 0,
-                      visitHeight
-                    )}px`,
-                  }}
-                />
-
-                <div
-                  className="w-2.5 rounded-t bg-brand-300"
-                  style={{
-                    height: `${Math.max(
-                      row.uniqueDrivers > 0
-                        ? 4
-                        : 0,
-                      driverHeight
-                    )}px`,
-                  }}
-                />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mt-2 flex justify-between px-1 text-[10px] text-ink/35">
-        <span>{data[0]?.date}</span>
-        <span>{data[data.length - 1]?.date}</span>
-      </div>
-    </div>
-  );
-}
-
-function PerformanceChart({
-  data,
-}: {
-  data: ChartRow[];
-}) {
-  if (!data.length) {
-    return (
-      <div className="flex h-64 items-center justify-center text-sm text-ink/40">
-        Chưa có dữ liệu
-      </div>
-    );
-  }
-
-  const valid = data.filter(
-    (row) =>
-      row.waiting != null ||
-      row.handling != null
-  );
-
-  if (!valid.length) {
-    return (
-      <div className="flex h-64 items-center justify-center text-sm text-ink/40">
-        Chưa có dữ liệu thời gian xử lý
-      </div>
-    );
-  }
-
-  const maxValue = Math.max(
-    ...valid.flatMap((row) => [
-      row.waiting ?? 0,
-      row.handling ?? 0,
-    ]),
-    1
-  );
-
-  return (
-    <div>
-      <div className="mb-4 flex items-center gap-5 text-xs text-ink/55">
-        <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-sm bg-brand-700" />
-          Waiting
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-sm bg-brand-300" />
-          Handling
-        </div>
-      </div>
-
-      <div className="relative h-64 border-b border-line">
-        <div className="absolute inset-x-0 bottom-0 flex h-[220px] items-end gap-1 overflow-x-auto px-1">
-          {valid.map((row) => {
-            const waitingHeight =
-              ((row.waiting ?? 0) / maxValue) *
-              210;
-
-            const handlingHeight =
-              ((row.handling ?? 0) / maxValue) *
-              210;
-
-            return (
-              <div
-                key={row.date}
-                className="flex h-full min-w-[24px] flex-1 items-end justify-center gap-[2px]"
-                title={`${row.date} · Waiting ${(
-                  row.waiting ?? 0
-                ).toFixed(1)}p · Handling ${(
-                  row.handling ?? 0
-                ).toFixed(1)}p`}
-              >
-                <div
-                  className="w-2.5 rounded-t bg-brand-700"
-                  style={{
-                    height: `${Math.max(
-                      row.waiting != null ? 4 : 0,
-                      waitingHeight
-                    )}px`,
-                  }}
-                />
-
-                <div
-                  className="w-2.5 rounded-t bg-brand-300"
-                  style={{
-                    height: `${Math.max(
-                      row.handling != null
-                        ? 4
-                        : 0,
-                      handlingHeight
-                    )}px`,
-                  }}
-                />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mt-2 flex justify-between px-1 text-[10px] text-ink/35">
-        <span>{valid[0]?.date}</span>
-        <span>{valid[valid.length - 1]?.date}</span>
-      </div>
-    </div>
-  );
-}
-
-function CsATChart({
-  data,
-}: {
-  data: ChartRow[];
-}) {
-  const valid = data.filter(
-    (row) => row.csat != null
-  );
-
-  if (!valid.length) {
-    return (
-      <div className="flex h-64 items-center justify-center text-sm text-ink/40">
-        Chưa có dữ liệu rating
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className="mb-4 flex items-center gap-2 text-xs text-ink/55">
-        <span className="h-2.5 w-2.5 rounded-sm bg-brand-700" />
-        CSAT / Rating
-      </div>
-
-      <div className="relative h-64 border-b border-line">
-        <div className="absolute inset-x-0 bottom-0 flex h-[220px] items-end gap-1 overflow-x-auto px-1">
-          {valid.map((row) => {
-            const value = row.csat ?? 0;
-
-            const height =
-              Math.max(4, (value / 5) * 210);
-
-            return (
-              <div
-                key={row.date}
-                className="flex h-full min-w-[24px] flex-1 items-end justify-center"
-                title={`${row.date} · Rating ${value.toFixed(
-                  1
-                )}/5`}
-              >
-                <div
-                  className="w-3 rounded-t bg-brand-700"
-                  style={{
-                    height: `${height}px`,
-                  }}
-                />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mt-2 flex justify-between px-1 text-[10px] text-ink/35">
-        <span>{valid[0]?.date}</span>
-
-        <span>
-          {valid[valid.length - 1]?.date}
-        </span>
-      </div>
     </div>
   );
 }
@@ -704,7 +759,9 @@ export default function SupervisorDashboardPage() {
   const [profile, setProfile] =
     useState<Profile | null>(null);
 
-  const [rows, setRows] = useState<QueueRow[]>([]);
+  const [rows, setRows] =
+    useState<QueueRow[]>([]);
+
   const [summary, setSummary] =
     useState<DailySummary | null>(null);
 
@@ -810,8 +867,14 @@ export default function SupervisorDashboardPage() {
       supabase
         .from("v_report_daily_summary")
         .select("*")
-        .gte("business_date", monthAgoStr)
-        .lte("business_date", todayStr)
+        .gte(
+          "business_date",
+          monthAgoStr
+        )
+        .lte(
+          "business_date",
+          todayStr
+        )
         .order("business_date", {
           ascending: true,
         }),
@@ -819,43 +882,45 @@ export default function SupervisorDashboardPage() {
       supabase
         .from("v_report_daily_summary")
         .select("*")
-        .gte("business_date", chartStart)
-        .lte("business_date", todayStr)
+        .gte(
+          "business_date",
+          chartStart
+        )
+        .lte(
+          "business_date",
+          todayStr
+        )
         .order("business_date", {
           ascending: true,
         }),
     ]);
 
-    const nextRows =
-      (queueData as QueueRow[]) ?? [];
+    setRows(
+      ((queueData as QueueRow[]) ?? [])
+    );
 
-    const nextSummary =
-      (summaryData as DailySummary[]) ?? [];
+    setSummary(
+      ((summaryData as DailySummary[]) ?? [])[0] ??
+        null
+    );
 
-    const nextFeedback =
-      (feedbackData as FeedbackRow[]) ?? [];
+    setFeedback(
+      (feedbackData as FeedbackRow[]) ?? []
+    );
 
-    const nextCounters =
-      (counterData as Counter[]) ?? [];
+    setCounters(
+      (counterData as Counter[]) ?? []
+    );
 
-    const nextColleagues =
-      (colleagueData as AgentOption[]) ?? [];
+    setColleagues(
+      (colleagueData as AgentOption[]) ?? []
+    );
 
     const summaries =
       (trendData as DailySummary[]) ?? [];
 
     const chartSummaries =
       (chartSummaryData as DailySummary[]) ?? [];
-
-    setRows(nextRows);
-
-    setSummary(nextSummary[0] ?? null);
-
-    setFeedback(nextFeedback);
-
-    setCounters(nextCounters);
-
-    setColleagues(nextColleagues);
 
     const getDateSummary = (
       date: string
@@ -889,7 +954,7 @@ export default function SupervisorDashboardPage() {
       start: string,
       end: string
     ) =>
-      nextFeedback.filter((item) => {
+      feedback.filter((item) => {
         if (!item.created_at) return false;
 
         const date =
@@ -907,7 +972,8 @@ export default function SupervisorDashboardPage() {
       items.length
         ? items.reduce(
             (sum, item) =>
-              sum + Number(item.rating || 0),
+              sum +
+              Number(item.rating || 0),
             0
           ) / items.length
         : null;
@@ -997,9 +1063,11 @@ export default function SupervisorDashboardPage() {
       ),
     });
 
-    /* =======================================================
-       BUILD 30-DAY CHART
-    ======================================================= */
+    /*
+     * ============================
+     * BUILD 30-DAY CHART
+     * ============================
+     */
 
     const groupedChart =
       new Map<string, ChartRow>();
@@ -1027,27 +1095,24 @@ export default function SupervisorDashboardPage() {
           row.unique_drivers || 0
         );
 
-        /*
-         * Weighted-average is not available
-         * from the current view, so keep the
-         * first non-null daily value.
-         */
         if (
-          existing.waiting == null &&
-          row.avg_waiting_time_min != null
+          row.avg_waiting_time_min !=
+          null
         ) {
-          existing.waiting = Number(
-            row.avg_waiting_time_min
-          );
+          existing.waiting =
+            Number(
+              row.avg_waiting_time_min
+            );
         }
 
         if (
-          existing.handling == null &&
-          row.avg_handling_time_min != null
+          row.avg_handling_time_min !=
+          null
         ) {
-          existing.handling = Number(
-            row.avg_handling_time_min
-          );
+          existing.handling =
+            Number(
+              row.avg_handling_time_min
+            );
         }
       } else {
         groupedChart.set(date, {
@@ -1070,14 +1135,16 @@ export default function SupervisorDashboardPage() {
           ),
 
           waiting:
-            row.avg_waiting_time_min != null
+            row.avg_waiting_time_min !=
+            null
               ? Number(
                   row.avg_waiting_time_min
                 )
               : null,
 
           handling:
-            row.avg_handling_time_min != null
+            row.avg_handling_time_min !=
+            null
               ? Number(
                   row.avg_handling_time_min
                 )
@@ -1088,12 +1155,14 @@ export default function SupervisorDashboardPage() {
       }
     });
 
-    /* =======================================================
-       ADD CSAT BY DATE
-    ======================================================= */
+    /*
+     * ============================
+     * ADD CSAT BY DATE
+     * ============================
+     */
 
     const chartFeedback =
-      nextFeedback.filter((item) => {
+      feedback.filter((item) => {
         if (!item.created_at) return false;
 
         const date =
@@ -1121,7 +1190,10 @@ export default function SupervisorDashboardPage() {
         Number(item.rating || 0)
       );
 
-      feedbackMap.set(date, current);
+      feedbackMap.set(
+        date,
+        current
+      );
     });
 
     feedbackMap.forEach(
@@ -1129,7 +1201,7 @@ export default function SupervisorDashboardPage() {
         const row =
           groupedChart.get(date);
 
-        if (!row || !ratings.length) return;
+        if (!row) return;
 
         row.csat =
           ratings.reduce(
@@ -1149,19 +1221,18 @@ export default function SupervisorDashboardPage() {
     );
 
     setLoading(false);
-  }, []);
+  }, [feedback]);
 
   useEffect(() => {
     getCurrentProfile().then(setProfile);
-  }, []);
-
-  useEffect(() => {
     load();
   }, [load]);
 
   useEffect(() => {
     const channel = supabase
-      .channel("supervisor-dashboard")
+      .channel(
+        "supervisor-dashboard"
+      )
 
       .on(
         "postgres_changes",
@@ -1196,7 +1267,9 @@ export default function SupervisorDashboardPage() {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(
+        channel
+      );
     };
   }, [load]);
 
@@ -1232,7 +1305,6 @@ export default function SupervisorDashboardPage() {
     );
 
     setReassignOpenFor(null);
-
     load();
   }
 
@@ -1245,7 +1317,8 @@ export default function SupervisorDashboardPage() {
         (!statusFilter ||
           r.status === statusFilter) &&
         (!agentFilter ||
-          r.agent_name === agentFilter)
+          r.agent_name ===
+            agentFilter)
       );
     });
   }, [
@@ -1255,51 +1328,47 @@ export default function SupervisorDashboardPage() {
     agentFilter,
   ]);
 
-  /*
-   * IMPORTANT:
-   * Explicitly narrow null/undefined values
-   * so TypeScript knows these are string[].
-   */
-  const categories: string[] = Array.from(
+  const categories = Array.from(
     new Set(
       rows
-        .map((r) => r.category_name)
-        .filter(
-          (value): value is string =>
-            typeof value === "string" &&
-            value.trim().length > 0
+        .map(
+          (r) => r.category_name
         )
+        .filter(Boolean)
     )
   );
 
-  const agents: string[] = Array.from(
+  const agents = Array.from(
     new Set(
       rows
-        .map((r) => r.agent_name)
-        .filter(
-          (value): value is string =>
-            typeof value === "string" &&
-            value.trim().length > 0
+        .map(
+          (r) => r.agent_name
         )
+        .filter(Boolean)
     )
   );
 
   const waiting = rows.filter(
-    (r) => r.status === "WAITING"
+    (r) =>
+      r.status === "WAITING"
   ).length;
 
   const processing = rows.filter(
-    (r) => r.status === "PROCESSING"
+    (r) =>
+      r.status === "PROCESSING"
   ).length;
 
   const pending = rows.filter(
-    (r) => r.status === "PENDING"
+    (r) =>
+      r.status === "PENDING"
   ).length;
 
   const overSla = rows.filter(
     (r) =>
       r.sla_due_at &&
-      new Date(r.sla_due_at).getTime() <
+      new Date(
+        r.sla_due_at
+      ).getTime() <
         Date.now() &&
       !r.resolved_at &&
       !r.closed_at &&
@@ -1308,9 +1377,10 @@ export default function SupervisorDashboardPage() {
 
   const completed = rows.filter(
     (r) =>
-      ["RESOLVED", "CLOSED"].includes(
-        r.status
-      )
+      [
+        "RESOLVED",
+        "CLOSED",
+      ].includes(r.status)
   ).length;
 
   const avgCsat =
@@ -1318,15 +1388,23 @@ export default function SupervisorDashboardPage() {
       ? (
           feedback.reduce(
             (sum, item) =>
-              sum + Number(item.rating || 0),
+              sum +
+              Number(
+                item.rating || 0
+              ),
             0
           ) / feedback.length
         ).toFixed(1)
       : "—";
 
-  const dod = trendMetrics.dod;
-  const wow = trendMetrics.wow;
-  const mom = trendMetrics.mom;
+  const dod =
+    trendMetrics.dod;
+
+  const wow =
+    trendMetrics.wow;
+
+  const mom =
+    trendMetrics.mom;
 
   return (
     <div className="space-y-8">
@@ -1337,14 +1415,14 @@ export default function SupervisorDashboardPage() {
       <div>
         <h1 className="font-display text-2xl font-bold text-brand-900">
           Dashboard{" "}
-          {profile?.role === "admin"
+          {profile?.role ===
+          "admin"
             ? "(toàn hệ thống)"
             : ""}
         </h1>
 
         <p className="mt-1 font-body text-sm text-ink/50">
-          Theo dõi vận hành, hiệu suất và xu
-          hướng trung tâm dịch vụ.
+          Theo dõi vận hành, hiệu suất và xu hướng trung tâm dịch vụ.
         </p>
       </div>
 
@@ -1367,21 +1445,24 @@ export default function SupervisorDashboardPage() {
           <StatCard
             label="Total Visits"
             value={
-              summary?.total_visits ?? 0
+              summary?.total_visits ??
+              0
             }
           />
 
           <StatCard
             label="Unique Drivers"
             value={
-              summary?.unique_drivers ?? 0
+              summary?.unique_drivers ??
+              0
             }
           />
 
           <StatCard
             label="Total Tickets"
             value={
-              summary?.total_tickets ?? 0
+              summary?.total_tickets ??
+              0
             }
           />
 
@@ -1452,7 +1533,8 @@ export default function SupervisorDashboardPage() {
             label="Completion Rate"
             value={
               summary &&
-              summary.total_tickets > 0
+              summary.total_tickets >
+                0
                 ? `${Math.round(
                     (completed /
                       summary.total_tickets) *
@@ -1476,58 +1558,23 @@ export default function SupervisorDashboardPage() {
       <section>
         <div className="mb-4">
           <p className="font-body text-sm font-bold uppercase tracking-wide text-ink/50">
-            Trend theo chủ đề
+            Trend theo nhóm chủ đề
           </p>
 
           <p className="mt-1 font-body text-xs text-ink/40">
-            Diễn biến 30 ngày gần nhất
+            Diễn biến 30 ngày gần nhất · click vào từng nhóm để ẩn/hiện
           </p>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-card border border-line bg-white p-5">
-            <ChartHeader
-              title="Ticket Volume"
-              description="Khối lượng ticket và số ticket đã hoàn tất"
-            />
+        <div className="rounded-card border border-line bg-white p-5">
+          <ChartHeader
+            title="Service Center Trend"
+            description="So sánh xu hướng Volume, Traffic, Performance và CSAT trên cùng một biểu đồ"
+          />
 
-            <VolumeChart
-              data={chartData}
-            />
-          </div>
-
-          <div className="rounded-card border border-line bg-white p-5">
-            <ChartHeader
-              title="Traffic"
-              description="Lượt ghé quầy và số tài xế duy nhất"
-            />
-
-            <TrafficChart
-              data={chartData}
-            />
-          </div>
-
-          <div className="rounded-card border border-line bg-white p-5">
-            <ChartHeader
-              title="Service Performance"
-              description="Thời gian chờ và thời gian xử lý trung bình"
-            />
-
-            <PerformanceChart
-              data={chartData}
-            />
-          </div>
-
-          <div className="rounded-card border border-line bg-white p-5">
-            <ChartHeader
-              title="Customer Satisfaction"
-              description="Rating trung bình theo ngày"
-            />
-
-            <CsATChart
-              data={chartData}
-            />
-          </div>
+          <CombinedTrendChart
+            data={chartData}
+          />
         </div>
       </section>
 
@@ -1542,8 +1589,7 @@ export default function SupervisorDashboardPage() {
           </p>
 
           <p className="mt-1 font-body text-xs text-ink/40">
-            So sánh hiệu suất hôm nay với các mốc
-            tham chiếu
+            So sánh hiệu suất hôm nay với các mốc tham chiếu
           </p>
         </div>
 
@@ -1581,38 +1627,45 @@ export default function SupervisorDashboardPage() {
         </p>
 
         <div className="flex flex-wrap gap-3">
-          {counters.map((counter) => (
-            <div
-              key={counter.id}
-              className="flex items-center gap-3 rounded-card border border-line bg-white px-4 py-3"
-            >
-              <span className="font-body text-sm font-semibold text-ink">
-                {counter.counter_name}
-              </span>
-
-              <StatusCounterBadge
-                status={counter.status}
-              />
-
-              {(counter.status ===
-                "AVAILABLE" ||
-                counter.status === "CLOSED") && (
-                <SecondaryButton
-                  onClick={() =>
-                    handleToggleCounter(
-                      counter
-                    )
+          {counters.map(
+            (counter) => (
+              <div
+                key={counter.id}
+                className="flex items-center gap-3 rounded-card border border-line bg-white px-4 py-3"
+              >
+                <span className="font-body text-sm font-semibold text-ink">
+                  {
+                    counter.counter_name
                   }
-                  className="px-3 py-1 text-xs"
-                >
-                  {counter.status ===
-                  "AVAILABLE"
-                    ? "Đóng"
-                    : "Mở"}
-                </SecondaryButton>
-              )}
-            </div>
-          ))}
+                </span>
+
+                <StatusCounterBadge
+                  status={
+                    counter.status
+                  }
+                />
+
+                {(counter.status ===
+                  "AVAILABLE" ||
+                  counter.status ===
+                    "CLOSED") && (
+                  <SecondaryButton
+                    onClick={() =>
+                      handleToggleCounter(
+                        counter
+                      )
+                    }
+                    className="px-3 py-1 text-xs"
+                  >
+                    {counter.status ===
+                    "AVAILABLE"
+                      ? "Đóng"
+                      : "Mở"}
+                  </SecondaryButton>
+                )}
+              </div>
+            )
+          )}
         </div>
       </section>
 
@@ -1634,7 +1687,9 @@ export default function SupervisorDashboardPage() {
 
           <div className="flex flex-wrap gap-3">
             <select
-              value={agentFilter}
+              value={
+                agentFilter
+              }
               onChange={(e) =>
                 setAgentFilter(
                   e.target.value
@@ -1646,18 +1701,22 @@ export default function SupervisorDashboardPage() {
                 Tất cả agent
               </option>
 
-              {agents.map((agent) => (
-                <option
-                  key={agent}
-                  value={agent}
-                >
-                  {agent}
-                </option>
-              ))}
+              {agents.map(
+                (agent) => (
+                  <option
+                    key={agent}
+                    value={agent}
+                  >
+                    {agent}
+                  </option>
+                )
+              )}
             </select>
 
             <select
-              value={categoryFilter}
+              value={
+                categoryFilter
+              }
               onChange={(e) =>
                 setCategoryFilter(
                   e.target.value
@@ -1669,18 +1728,22 @@ export default function SupervisorDashboardPage() {
                 Tất cả category
               </option>
 
-              {categories.map((category) => (
-                <option
-                  key={category}
-                  value={category}
-                >
-                  {category}
-                </option>
-              ))}
+              {categories.map(
+                (category) => (
+                  <option
+                    key={category}
+                    value={category}
+                  >
+                    {category}
+                  </option>
+                )
+              )}
             </select>
 
             <select
-              value={statusFilter}
+              value={
+                statusFilter
+              }
               onChange={(e) =>
                 setStatusFilter(
                   e.target.value
@@ -1771,7 +1834,8 @@ export default function SupervisorDashboardPage() {
                 )}
 
                 {!loading &&
-                  filtered.length === 0 && (
+                  filtered.length ===
+                    0 && (
                     <tr>
                       <td
                         colSpan={7}
@@ -1784,98 +1848,120 @@ export default function SupervisorDashboardPage() {
                   )}
 
                 {!loading &&
-                  filtered.map((r) => (
-                    <tr
-                      key={r.ticket_id}
-                      className="border-b border-line last:border-0"
-                    >
-                      <td className="px-4 py-3 font-display font-bold text-brand-900">
-                        {r.queue_number}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {r.driver_name}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {r.agent_name || "—"}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {r.category_name}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <SlaBadge
-                          slaDueAt={
-                            r.sla_due_at
+                  filtered.map(
+                    (r) => (
+                      <tr
+                        key={
+                          r.ticket_id
+                        }
+                        className="border-b border-line last:border-0"
+                      >
+                        <td className="px-4 py-3 font-display font-bold text-brand-900">
+                          {
+                            r.queue_number
                           }
-                        />
-                      </td>
+                        </td>
 
-                      <td className="px-4 py-3">
-                        <StatusBadge
-                          status={r.status}
-                        />
-                      </td>
+                        <td className="px-4 py-3">
+                          {
+                            r.driver_name
+                          }
+                        </td>
 
-                      <td className="px-4 py-3">
-                        {reassignOpenFor ===
-                        r.case_id ? (
-                          <select
-                            autoFocus
-                            onChange={(e) =>
-                              e.target
-                                .value &&
-                              handleReassign(
-                                r.case_id,
-                                e.target
-                                  .value
-                              )
-                            }
-                            onBlur={() =>
-                              setReassignOpenFor(
-                                null
-                              )
-                            }
-                            className="rounded-lg border-2 border-line px-2 py-1 font-body text-xs"
-                          >
-                            <option value="">
-                              -- Chọn agent --
-                            </option>
+                        <td className="px-4 py-3">
+                          {
+                            r.agent_name ||
+                            "—"
+                          }
+                        </td>
 
-                            {colleagues.map(
-                              (agent) => (
-                                <option
-                                  key={
-                                    agent.id
-                                  }
-                                  value={
-                                    agent.id
-                                  }
-                                >
-                                  {
-                                    agent.full_name
-                                  }
-                                </option>
-                              )
-                            )}
-                          </select>
-                        ) : (
-                          <SecondaryButton
-                            onClick={() =>
-                              setReassignOpenFor(
-                                r.case_id
-                              )
+                        <td className="px-4 py-3">
+                          {
+                            r.category_name
+                          }
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <SlaBadge
+                            slaDueAt={
+                              r.sla_due_at
                             }
-                            className="px-3 py-1 text-xs"
-                          >
-                            Reassign
-                          </SecondaryButton>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                          />
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <StatusBadge
+                            status={
+                              r.status
+                            }
+                          />
+                        </td>
+
+                        <td className="px-4 py-3">
+                          {reassignOpenFor ===
+                          r.case_id ? (
+                            <select
+                              autoFocus
+                              onChange={(
+                                e
+                              ) =>
+                                e
+                                  .target
+                                  .value &&
+                                handleReassign(
+                                  r.case_id,
+                                  e
+                                    .target
+                                    .value
+                                )
+                              }
+                              onBlur={() =>
+                                setReassignOpenFor(
+                                  null
+                                )
+                              }
+                              className="rounded-lg border-2 border-line px-2 py-1 font-body text-xs"
+                            >
+                              <option value="">
+                                -- Chọn
+                                agent --
+                              </option>
+
+                              {colleagues.map(
+                                (
+                                  agent
+                                ) => (
+                                  <option
+                                    key={
+                                      agent.id
+                                    }
+                                    value={
+                                      agent.id
+                                    }
+                                  >
+                                    {
+                                      agent.full_name
+                                    }
+                                  </option>
+                                )
+                              )}
+                            </select>
+                          ) : (
+                            <SecondaryButton
+                              onClick={() =>
+                                setReassignOpenFor(
+                                  r.case_id
+                                )
+                              }
+                              className="px-3 py-1 text-xs"
+                            >
+                              Reassign
+                            </SecondaryButton>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  )}
               </tbody>
             </table>
           </div>
@@ -1884,3 +1970,4 @@ export default function SupervisorDashboardPage() {
     </div>
   );
 }
+```
