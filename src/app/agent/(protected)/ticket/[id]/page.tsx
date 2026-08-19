@@ -58,22 +58,24 @@ export default function TicketDetailPage() {
   const [pendingExpected, setPendingExpected] = useState("");
 
   const load = useCallback(async () => {
-    const [{ data: caseData, error: caseError }, { data: historyData }] =
-      await Promise.all([
-        supabase
-          .from("v_case_detail")
-          .select("*")
-          .eq("case_id", params.id)
-          .maybeSingle(),
+    const [
+      { data: caseData, error: caseError },
+      { data: historyData },
+    ] = await Promise.all([
+      supabase
+        .from("v_case_detail")
+        .select("*")
+        .eq("case_id", params.id)
+        .maybeSingle(),
 
-        supabase
-          .from("case_history")
-          .select(
-            "id, action, old_status, new_status, note, created_at, performed_by"
-          )
-          .eq("case_id", params.id)
-          .order("created_at", { ascending: true }),
-      ]);
+      supabase
+        .from("case_history")
+        .select(
+          "id, action, old_status, new_status, note, created_at, performed_by"
+        )
+        .eq("case_id", params.id)
+        .order("created_at", { ascending: true }),
+    ]);
 
     if (caseError) {
       setErrorMessage(caseError.message);
@@ -126,7 +128,10 @@ export default function TicketDetailPage() {
         .in("id", agentIds);
 
       agentMap = new Map(
-        (agents ?? []).map((agent) => [agent.id, agent.full_name])
+        (agents ?? []).map((agent) => [
+          agent.id,
+          agent.full_name,
+        ])
       );
     }
 
@@ -193,7 +198,7 @@ export default function TicketDetailPage() {
     }
 
     after?.();
-    load();
+    await load();
   }
 
   const handleStartProcessing = () =>
@@ -231,7 +236,9 @@ export default function TicketDetailPage() {
 
   const handleSetPending = () => {
     if (!pendingReason.trim() || !pendingNextStep.trim()) {
-      setErrorMessage("Vui lòng nhập lý do và bước tiếp theo.");
+      setErrorMessage(
+        "Vui lòng nhập lý do và bước tiếp theo."
+      );
       return;
     }
 
@@ -243,10 +250,25 @@ export default function TicketDetailPage() {
         p_next_step: pendingNextStep.trim(),
         p_expected_date: pendingExpected || null,
       },
-      () => setShowPending(false)
+      () => {
+        setShowPending(false);
+        setPendingReason("");
+        setPendingNextStep("");
+        setPendingExpected("");
+      }
     );
   };
 
+  /*
+   * Chuyển ticket sang quầy khác.
+   *
+   * QUAN TRỌNG:
+   * - Không gọi start_processing
+   * - Không gọi call ticket
+   * - Không force CALLED
+   * - RPC chỉ chuyển ticket về WAITING của quầy đích
+   * - Agent quầy đích sẽ tự gọi ticket từ hàng chờ
+   */
   async function handleTransferToCounter() {
     if (!detail) return;
 
@@ -265,23 +287,21 @@ export default function TicketDetailPage() {
     }
 
     if (targetCounter.status === "CLOSED") {
-      setErrorMessage("Quầy đích đang đóng.");
+      setErrorMessage(
+        "Quầy đang đóng, không thể chuyển ticket."
+      );
       return;
     }
 
     if (!targetCounter.default_agent_id) {
-      setErrorMessage("Quầy đích chưa được gán Agent.");
+      setErrorMessage(
+        "Quầy chưa có Agent mặc định."
+      );
       return;
     }
 
     const confirmed = window.confirm(
-      `Chuyển ticket ${detail.queue_number} sang ${
-        targetCounter.counter_name
-      }${
-        targetCounter.default_agent_name
-          ? ` - ${targetCounter.default_agent_name}`
-          : ""
-      }?`
+      `Chuyển ticket ${detail.queue_number} sang ${targetCounter.counter_name}?`
     );
 
     if (!confirmed) return;
@@ -293,7 +313,7 @@ export default function TicketDetailPage() {
       "transfer_ticket_to_counter",
       {
         p_ticket_id: detail.ticket_id,
-        p_target_counter_id: targetCounterId,
+        p_target_counter_id: targetCounter.id,
       }
     );
 
@@ -308,7 +328,6 @@ export default function TicketDetailPage() {
     setTargetCounterId("");
 
     await load();
-    await loadCounters();
 
     router.push("/agent/queue");
   }
@@ -329,7 +348,8 @@ export default function TicketDetailPage() {
     );
   }
 
-  const isMine = detail.assigned_agent_id === profile?.id;
+  const isMine =
+    detail.assigned_agent_id === profile?.id;
 
   const canAct =
     isMine ||
@@ -426,10 +446,25 @@ export default function TicketDetailPage() {
 
         <Panel title="Thông tin Visit">
           <dl className="space-y-2 font-body text-sm">
-            <Row label="Visit ID" value={detail.visit_code} />
-            <Row label="VP" value={detail.branch_name} />
-            <Row label="Check-in" value={fmt(detail.checkin_at)} />
-            <Row label="Số queue" value={detail.queue_number} />
+            <Row
+              label="Visit ID"
+              value={detail.visit_code}
+            />
+
+            <Row
+              label="VP"
+              value={detail.branch_name}
+            />
+
+            <Row
+              label="Check-in"
+              value={fmt(detail.checkin_at)}
+            />
+
+            <Row
+              label="Số queue"
+              value={detail.queue_number}
+            />
           </dl>
         </Panel>
 
@@ -442,7 +477,9 @@ export default function TicketDetailPage() {
 
             <Row
               label="Subcategory"
-              value={detail.subcategory_name ?? "—"}
+              value={
+                detail.subcategory_name ?? "—"
+              }
             />
           </dl>
 
@@ -465,8 +502,12 @@ export default function TicketDetailPage() {
                 </p>
 
                 <p className="font-medium text-ink">
-                  {HISTORY_LABELS[h.action] ?? h.action}
-                  {h.new_status ? ` → ${h.new_status}` : ""}
+                  {HISTORY_LABELS[h.action] ??
+                    h.action}
+
+                  {h.new_status
+                    ? ` → ${h.new_status}`
+                    : ""}
                 </p>
               </li>
             ))}
@@ -474,18 +515,27 @@ export default function TicketDetailPage() {
         </Panel>
       </div>
 
-      {(detail.status === "CALLED" ||
-        detail.status === "TRANSFERRED") &&
+      {/* =========================
+          CALLED / PROCESSING
+          ========================= */}
+
+      {["CALLED", "PROCESSING"].includes(
+        detail.status
+      ) &&
         canAct && (
           <Panel>
             <div className="flex flex-wrap gap-3">
-              <PrimaryButton
-                onClick={handleStartProcessing}
-                disabled={busy}
-              >
-                BẮT ĐẦU XỬ LÝ
-              </PrimaryButton>
+              {/* CALLED mới được bắt đầu xử lý */}
+              {detail.status === "CALLED" && (
+                <PrimaryButton
+                  onClick={handleStartProcessing}
+                  disabled={busy}
+                >
+                  BẮT ĐẦU XỬ LÝ
+                </PrimaryButton>
+              )}
 
+              {/* CALLED mới có NO_SHOW */}
               {detail.status === "CALLED" && (
                 <SecondaryButton
                   onClick={handleNoShow}
@@ -494,26 +544,47 @@ export default function TicketDetailPage() {
                   Tài xế không đến (NO_SHOW)
                 </SecondaryButton>
               )}
+
+              {/* CALLED + PROCESSING đều được chuyển */}
+              <SecondaryButton
+                onClick={() => {
+                  setShowTransfer((v) => !v);
+                  setErrorMessage(null);
+                }}
+                disabled={busy || transferring}
+              >
+                Chuyển ticket
+              </SecondaryButton>
             </div>
           </Panel>
         )}
+
+      {/* =========================
+          PENDING
+          ========================= */}
 
       {detail.status === "PENDING" && (
         <Panel title="Đang tạm hoãn (Pending)">
           <dl className="mb-4 space-y-2 font-body text-sm">
             <Row
               label="Lý do"
-              value={detail.pending_reason ?? "—"}
+              value={
+                detail.pending_reason ?? "—"
+              }
             />
 
             <Row
               label="Bước tiếp theo"
-              value={detail.pending_next_step ?? "—"}
+              value={
+                detail.pending_next_step ?? "—"
+              }
             />
 
             <Row
               label="Ngày dự kiến"
-              value={detail.pending_expected_at ?? "—"}
+              value={
+                detail.pending_expected_at ?? "—"
+              }
             />
           </dl>
 
@@ -528,222 +599,265 @@ export default function TicketDetailPage() {
         </Panel>
       )}
 
-      {detail.status === "PROCESSING" && canAct && (
-        <>
-          <Panel title="Hoàn tất xử lý">
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1 block font-body text-sm text-ink/70">
-                  Kết quả xử lý
-                </label>
+      {/* =========================
+          PROCESSING
+          ========================= */}
 
-                <textarea
-                  rows={3}
-                  value={resolution}
-                  onChange={(e) =>
-                    setResolution(e.target.value)
-                  }
-                  placeholder="Ví dụ: Đã kiểm tra trạng thái thanh toán và hướng dẫn tài xế."
-                  className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block font-body text-sm text-ink/70">
-                  Ghi chú nội bộ
-                </label>
-
-                <textarea
-                  rows={2}
-                  value={internalNote}
-                  onChange={(e) =>
-                    setInternalNote(e.target.value)
-                  }
-                  placeholder="Ví dụ: Tài xế đã xác nhận hiểu."
-                  className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
-                />
-              </div>
-
-              <div className="flex flex-wrap gap-3">
-                <PrimaryButton
-                  onClick={handleResolve}
-                  disabled={busy}
-                >
-                  HOÀN TẤT XỬ LÝ
-                </PrimaryButton>
-
-                <SecondaryButton
-                  onClick={() =>
-                    setShowPending((v) => !v)
-                  }
-                  disabled={busy}
-                >
-                  Đặt Pending
-                </SecondaryButton>
-
-                <SecondaryButton
-                  onClick={() => {
-                    setShowTransfer((v) => !v);
-                    setErrorMessage(null);
-                  }}
-                  disabled={busy}
-                >
-                  Chuyển ticket
-                </SecondaryButton>
-              </div>
-            </div>
-          </Panel>
-
-          {showPending && (
-            <Panel title="Đặt Pending">
+      {detail.status === "PROCESSING" &&
+        canAct && (
+          <>
+            <Panel title="Hoàn tất xử lý">
               <div className="space-y-4">
-                <Field label="Lý do Pending *">
-                  <input
-                    value={pendingReason}
+                <div>
+                  <label className="mb-1 block font-body text-sm text-ink/70">
+                    Kết quả xử lý
+                  </label>
+
+                  <textarea
+                    rows={3}
+                    value={resolution}
                     onChange={(e) =>
-                      setPendingReason(e.target.value)
+                      setResolution(
+                        e.target.value
+                      )
                     }
-                    placeholder="Ví dụ: Đang chờ Finance xác nhận giao dịch."
+                    placeholder="Ví dụ: Đã kiểm tra trạng thái thanh toán và hướng dẫn tài xế."
                     className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
                   />
-                </Field>
-
-                <Field label="Bước tiếp theo *">
-                  <input
-                    value={pendingNextStep}
-                    onChange={(e) =>
-                      setPendingNextStep(e.target.value)
-                    }
-                    placeholder="Ví dụ: Chờ Finance xác nhận."
-                    className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
-                  />
-                </Field>
-
-                <Field label="Ngày dự kiến xử lý (tuỳ chọn)">
-                  <input
-                    type="date"
-                    value={pendingExpected}
-                    onChange={(e) =>
-                      setPendingExpected(e.target.value)
-                    }
-                    className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
-                  />
-                </Field>
-
-                <PrimaryButton
-                  onClick={handleSetPending}
-                  disabled={busy}
-                >
-                  XÁC NHẬN PENDING
-                </PrimaryButton>
-              </div>
-            </Panel>
-          )}
-
-          {showTransfer && (
-            <Panel title="Chuyển ticket sang quầy khác">
-              <div className="space-y-4">
-                <div className="rounded-lg bg-orange-50 px-4 py-3 font-body text-sm text-orange-800">
-                  Ticket sẽ quay lại <b>hàng chờ</b> và được
-                  phân cho Agent mặc định của quầy bạn chọn.
-                  <br />
-                  <span className="font-semibold">
-                    Quầy đang BUSY vẫn có thể nhận ticket.
-                  </span>
                 </div>
 
-                <Field label="Chọn quầy nhận ticket *">
-                  <select
-                    value={targetCounterId}
+                <div>
+                  <label className="mb-1 block font-body text-sm text-ink/70">
+                    Ghi chú nội bộ
+                  </label>
+
+                  <textarea
+                    rows={2}
+                    value={internalNote}
                     onChange={(e) =>
-                      setTargetCounterId(e.target.value)
+                      setInternalNote(
+                        e.target.value
+                      )
                     }
-                    className="w-full rounded-lg border-2 border-line bg-white px-4 py-3 font-body text-sm focus:border-brand-700"
-                  >
-                    <option value="">
-                      -- Chọn quầy --
-                    </option>
+                    placeholder="Ví dụ: Tài xế đã xác nhận hiểu."
+                    className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
+                  />
+                </div>
 
-                    {counters.map((counter) => (
-                      <option
-                        key={counter.id}
-                        value={counter.id}
-                        disabled={
-                          counter.status === "CLOSED" ||
-                          !counter.default_agent_id
-                        }
-                      >
-                        {counter.counter_name} -{" "}
-                        {counter.default_agent_name ??
-                          "Chưa có Agent"}{" "}
-                        - {counter.status}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-
-                {targetCounterId && (
-                  <div className="rounded-lg border border-line bg-paper px-4 py-3 font-body text-sm">
-                    {(() => {
-                      const selected = counters.find(
-                        (counter) =>
-                          counter.id === targetCounterId
-                      );
-
-                      if (!selected) return null;
-
-                      return (
-                        <>
-                          <p className="font-semibold text-ink">
-                            {selected.counter_name}
-                          </p>
-
-                          <p className="mt-1 text-ink/60">
-                            Agent nhận:{" "}
-                            {selected.default_agent_name ??
-                              "Chưa có Agent"}
-                          </p>
-
-                          <p className="text-ink/60">
-                            Trạng thái quầy:{" "}
-                            <span className="font-semibold">
-                              {selected.status}
-                            </span>
-                          </p>
-                        </>
-                      );
-                    })()}
-                  </div>
-                )}
-
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-3">
                   <PrimaryButton
-                    onClick={handleTransferToCounter}
-                    disabled={
-                      transferring || !targetCounterId
-                    }
+                    onClick={handleResolve}
+                    disabled={busy}
                   >
-                    {transferring
-                      ? "ĐANG CHUYỂN..."
-                      : "XÁC NHẬN CHUYỂN"}
+                    HOÀN TẤT XỬ LÝ
                   </PrimaryButton>
 
                   <SecondaryButton
-                    onClick={() => {
-                      setShowTransfer(false);
-                      setTargetCounterId("");
-                      setErrorMessage(null);
-                    }}
-                    disabled={transferring}
+                    onClick={() =>
+                      setShowPending(
+                        (v) => !v
+                      )
+                    }
+                    disabled={busy}
                   >
-                    HỦY
+                    Đặt Pending
                   </SecondaryButton>
                 </div>
               </div>
             </Panel>
-          )}
-        </>
-      )}
+
+            {/* PENDING FORM */}
+            {showPending && (
+              <Panel title="Đặt Pending">
+                <div className="space-y-4">
+                  <Field label="Lý do Pending *">
+                    <input
+                      value={pendingReason}
+                      onChange={(e) =>
+                        setPendingReason(
+                          e.target.value
+                        )
+                      }
+                      placeholder="Ví dụ: Đang chờ Finance xác nhận giao dịch."
+                      className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
+                    />
+                  </Field>
+
+                  <Field label="Bước tiếp theo *">
+                    <input
+                      value={pendingNextStep}
+                      onChange={(e) =>
+                        setPendingNextStep(
+                          e.target.value
+                        )
+                      }
+                      className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
+                    />
+                  </Field>
+
+                  <Field label="Ngày dự kiến xử lý (tuỳ chọn)">
+                    <input
+                      type="date"
+                      value={pendingExpected}
+                      onChange={(e) =>
+                        setPendingExpected(
+                          e.target.value
+                        )
+                      }
+                      className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
+                    />
+                  </Field>
+
+                  <PrimaryButton
+                    onClick={handleSetPending}
+                    disabled={busy}
+                  >
+                    XÁC NHẬN PENDING
+                  </PrimaryButton>
+                </div>
+              </Panel>
+            )}
+          </>
+        )}
+
+      {/* =========================
+          TRANSFER FORM
+          CALLED + PROCESSING
+          ========================= */}
+
+      {["CALLED", "PROCESSING"].includes(
+        detail.status
+      ) &&
+        canAct &&
+        showTransfer && (
+          <Panel title="Chuyển ticket sang quầy khác">
+            <div className="space-y-4">
+              <div className="rounded-lg bg-orange-50 px-4 py-3 font-body text-sm text-orange-800">
+                <p>
+                  Ticket sẽ được chuyển về{" "}
+                  <b>HÀNG CHỜ</b> của quầy được
+                  chọn.
+                </p>
+
+                <p className="mt-1">
+                  Agent tại quầy đích sẽ tự gọi
+                  ticket từ hàng chờ.
+                </p>
+
+                <p className="mt-2 font-semibold">
+                  Không tự động gọi ticket.
+                </p>
+              </div>
+
+              <Field label="Chọn quầy nhận ticket *">
+                <select
+                  value={targetCounterId}
+                  onChange={(e) =>
+                    setTargetCounterId(
+                      e.target.value
+                    )
+                  }
+                  className="w-full rounded-lg border-2 border-line bg-white px-4 py-3 font-body text-sm focus:border-brand-700"
+                >
+                  <option value="">
+                    -- Chọn quầy --
+                  </option>
+
+                  {counters.map((counter) => (
+                    <option
+                      key={counter.id}
+                      value={counter.id}
+                      disabled={
+                        counter.status ===
+                          "CLOSED" ||
+                        !counter.default_agent_id
+                      }
+                    >
+                      {counter.counter_name}
+                      {" - "}
+                      {counter.default_agent_name ??
+                        "Chưa có Agent"}
+                      {" - "}
+                      {counter.status}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              {targetCounterId && (
+                <div className="rounded-lg border border-line bg-paper px-4 py-3 font-body text-sm">
+                  {(() => {
+                    const selected =
+                      counters.find(
+                        (counter) =>
+                          counter.id ===
+                          targetCounterId
+                      );
+
+                    if (!selected) return null;
+
+                    return (
+                      <>
+                        <p className="font-semibold text-ink">
+                          {selected.counter_name}
+                        </p>
+
+                        <p className="mt-1 text-ink/60">
+                          Agent mặc định:{" "}
+                          {selected.default_agent_name ??
+                            "Chưa có Agent"}
+                        </p>
+
+                        <p className="text-ink/60">
+                          Trạng thái quầy:{" "}
+                          <span className="font-semibold">
+                            {selected.status}
+                          </span>
+                        </p>
+
+                        <p className="mt-2 font-semibold text-orange-700">
+                          Ticket sau khi chuyển sẽ
+                          nằm trong hàng chờ.
+                        </p>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <PrimaryButton
+                  onClick={
+                    handleTransferToCounter
+                  }
+                  disabled={
+                    transferring ||
+                    !targetCounterId
+                  }
+                >
+                  {transferring
+                    ? "ĐANG CHUYỂN..."
+                    : "XÁC NHẬN CHUYỂN"}
+                </PrimaryButton>
+
+                <SecondaryButton
+                  onClick={() => {
+                    setShowTransfer(false);
+                    setTargetCounterId("");
+                    setErrorMessage(null);
+                  }}
+                  disabled={transferring}
+                >
+                  HỦY
+                </SecondaryButton>
+              </div>
+            </div>
+          </Panel>
+        )}
+
+      {/* =========================
+          RESOLVED
+          ========================= */}
 
       {detail.status === "RESOLVED" && (
         <Panel title="Kết quả xử lý">
@@ -753,7 +867,8 @@ export default function TicketDetailPage() {
 
           {detail.internal_note && (
             <p className="mt-2 font-body text-sm text-ink/50">
-              Ghi chú nội bộ: {detail.internal_note}
+              Ghi chú nội bộ:{" "}
+              {detail.internal_note}
             </p>
           )}
 
@@ -770,53 +885,63 @@ export default function TicketDetailPage() {
         </Panel>
       )}
 
-      {detail.status === "CLOSED" && (
-        <div className="rounded-2xl border border-brand-200 bg-brand-50 p-5">
-          <div className="flex flex-col items-center gap-4 text-center">
-            <div>
-              <h3 className="text-lg font-semibold text-ink">
-                Đánh giá dịch vụ
-              </h3>
+      {/* =========================
+          CLOSED - FEEDBACK
+          ========================= */}
 
-              <p className="mt-1 text-sm text-ink/60">
-                Mời tài xế quét mã QR để đánh giá dịch vụ.
+      {detail.status === "CLOSED" && (
+        <>
+          <div className="rounded-2xl border border-brand-200 bg-brand-50 p-5">
+            <div className="flex flex-col items-center gap-4 text-center">
+              <div>
+                <h3 className="text-lg font-semibold text-ink">
+                  Đánh giá dịch vụ
+                </h3>
+
+                <p className="mt-1 text-sm text-ink/60">
+                  Mời tài xế quét mã QR để đánh
+                  giá dịch vụ.
+                </p>
+              </div>
+
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
+                  `${window.location.origin}/feedback/${encodeURIComponent(
+                    detail.ticket_code
+                  )}`
+                )}`}
+                alt="QR đánh giá dịch vụ"
+                className="h-64 w-64 rounded-xl border border-gray-200 bg-white p-2"
+              />
+
+              <p className="text-sm font-medium text-ink">
+                Ticket: {detail.ticket_code}
               </p>
             </div>
-
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
-                `${window.location.origin}/feedback/${encodeURIComponent(
-                  detail.ticket_code
-                )}`
-              )}`}
-              alt="QR đánh giá dịch vụ"
-              className="h-64 w-64 rounded-xl border border-gray-200 bg-white p-2"
-            />
-
-            <p className="text-sm font-medium text-ink">
-              Ticket: {detail.ticket_code}
-            </p>
           </div>
-        </div>
+
+          <Panel title="Kết quả xử lý">
+            <p className="font-body text-sm text-ink/80">
+              {detail.resolution}
+            </p>
+
+            <p className="mt-2 font-body text-xs text-ink/40">
+              Đã đóng lúc{" "}
+              {fmt(detail.closed_at)}
+            </p>
+          </Panel>
+        </>
       )}
 
-      {detail.status === "CLOSED" && (
-        <Panel title="Kết quả xử lý">
-          <p className="font-body text-sm text-ink/80">
-            {detail.resolution}
-          </p>
-
-          <p className="mt-2 font-body text-xs text-ink/40">
-            Đã đóng lúc {fmt(detail.closed_at)}
-          </p>
-        </Panel>
-      )}
+      {/* =========================
+          NO SHOW
+          ========================= */}
 
       {detail.status === "NO_SHOW" && (
         <Panel title="Tài xế không đến">
           <p className="font-body text-sm text-ink/70">
-            Ticket đã được gọi nhưng tài xế không có mặt tại
-            quầy.
+            Ticket đã được gọi nhưng tài xế
+            không có mặt tại quầy.
           </p>
         </Panel>
       )}
@@ -833,7 +958,9 @@ function Row({
 }) {
   return (
     <div className="flex justify-between gap-4">
-      <dt className="text-ink/50">{label}</dt>
+      <dt className="text-ink/50">
+        {label}
+      </dt>
 
       <dd className="text-right font-medium text-ink">
         {value}
