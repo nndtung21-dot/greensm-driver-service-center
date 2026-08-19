@@ -25,6 +25,7 @@ export default function TicketDetailPage() {
   const [history, setHistory] = useState<CaseHistoryEntry[]>([]);
   const [colleagues, setColleagues] = useState<AgentOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [transferring, setTransferring] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -149,8 +150,6 @@ export default function TicketDetailPage() {
 
   const isMine = detail.assigned_agent_id === profile?.id;
   const canAct = isMine || profile?.role === "supervisor" || profile?.role === "admin";
-  const [transferring, setTransferring] = useState(false);
-
   async function handleTransferToWaiting() {
     if (!detail) return;
     if (!confirm("Chuyển ticket này về hàng chờ?")) return;
