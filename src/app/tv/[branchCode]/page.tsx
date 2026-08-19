@@ -75,10 +75,18 @@ function counterNumberToWords(counterCode: string): string {
   return [...counterCode].map((ch) => DIGIT_WORD[ch] ?? ch).join(" ");
 }
 
-function buildAnnouncementText(queueNumber: string, counterCode: string): string {
-  const qWords = [...queueNumber.toUpperCase()].map((ch) => DIGIT_WORD[ch] ?? ch).join(" ");
+function buildAnnouncementText(
+  queueNumber: string,
+  driverName: string,
+  counterCode: string
+): string {
+  const qWords = [...queueNumber.toUpperCase()]
+    .map((ch) => DIGIT_WORD[ch] ?? ch)
+    .join(" ");
+
   const cWords = counterNumberToWords(counterCode);
-  return `Kính mời tài xế có số ${qWords} đến quầy số ${cWords}`;
+
+  return `Kính mời tài xế có số ${qWords}, ${driverName}, đến quầy số ${cWords}`;
 }
 
 // Hàng đợi thông báo: mỗi lượt gọi số ưu tiên thử giọng Google (tự nhiên hơn)
@@ -160,10 +168,10 @@ function useAnnouncer() {
   }, []);
 
   const enqueue = useCallback(
-    (queueNumber: string, counterCode: string) => {
+    (queueNumber: string, driverName: string, counterCode: string) => {
       queueRef.current.push(async () => {
         try {
-          const text = buildAnnouncementText(queueNumber, counterCode);
+          const text = buildAnnouncementText(queueNumber, driverName, counterCode);
           const res = await fetch(`/api/tts?text=${encodeURIComponent(text)}`);
           if (!res.ok) throw new Error("tts route failed");
           const blob = await res.blob();
@@ -218,7 +226,13 @@ export default function TvDisplayPage() {
       .sort((a, b) => (a.called_at! < b.called_at! ? -1 : 1));
 
     for (const c of newlyCalled) {
-      enqueueAudio(c.queue_number!, c.counter_code);
+      const driverName = c.driver_name?.trim() || "tài xế";
+
+      // Gọi 2 lần: mỗi lần có đầy đủ số queue + họ tên + quầy
+      enqueueAudio(c.queue_number!, driverName, c.counter_code);
+      setTimeout(() => {
+        enqueueAudio(c.queue_number!, driverName, c.counter_code);
+      }, 2500);
     }
     if (newlyCalled.length > 0) {
       lastAnnouncedAt.current = newlyCalled[newlyCalled.length - 1].called_at;
