@@ -299,9 +299,10 @@ export function SuccessStep({
         .rpc("lookup_ticket_for_feedback", { p_ticket_code: ticketCode })
         .maybeSingle();
       if (!active || !data) return;
-      setStatus(data.status);
-      setCaseId(data.case_id);
-      setAlreadyRated(data.already_rated);
+      const row = data as { case_id: string; status: string; already_rated: boolean };
+      setStatus(row.status);
+      setCaseId(row.case_id);
+      setAlreadyRated(row.already_rated);
     }
     poll();
     const interval = setInterval(poll, 6000);
