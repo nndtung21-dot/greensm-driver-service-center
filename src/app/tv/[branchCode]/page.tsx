@@ -268,21 +268,32 @@ export default function TvDisplayPage() {
       .filter((c) => !lastAnnouncedAt.current || c.called_at! > lastAnnouncedAt.current!)
       .sort((a, b) => (a.called_at! < b.called_at! ? -1 : 1));
 
+    let lastSuccessfullyAnnouncedAt = lastAnnouncedAt.current;
+
     for (const c of newlyCalled) {
       const driver = (queueData as AgentQueueRow[] | null)?.find(
-        (q) => q.queue_number === c.queue_number
+        (q) =>
+          q.queue_number.trim().toUpperCase() ===
+          c.queue_number!.trim().toUpperCase()
       );
 
-      const driverName = driver?.driver_name?.trim() || "tài xế";
+      // Chưa lấy được tên tài xế thì chưa đánh dấu đã đọc.
+      // Lần load tiếp theo sẽ thử lại.
+      if (!driver?.driver_name?.trim()) {
+        continue;
+      }
 
       enqueueAudio(
         c.queue_number!,
-        driverName,
+        driver.driver_name.trim(),
         c.counter_code
       );
+
+      lastSuccessfullyAnnouncedAt = c.called_at;
     }
-    if (newlyCalled.length > 0) {
-      lastAnnouncedAt.current = newlyCalled[newlyCalled.length - 1].called_at;
+
+    if (lastSuccessfullyAnnouncedAt) {
+      lastAnnouncedAt.current = lastSuccessfullyAnnouncedAt;
     }
   }, [params.branchCode, enqueueAudio]);
 
