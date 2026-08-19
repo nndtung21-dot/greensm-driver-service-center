@@ -127,7 +127,8 @@ language sql security definer set search_path = public stable as $$
   join visits v on v.id = qt.visit_id
   join drivers d on d.id = v.driver_id
   join branches b on b.id = qt.branch_id
-  where b.branch_code = p_branch_code and qt.status = 'WAITING'
+  where b.branch_code = p_branch_code
+    and qt.status in ('WAITING', 'CALLED', 'PROCESSING')
   order by qt.created_at;
 $$;
 revoke all on function tv_agent_queue_list(text) from public;
