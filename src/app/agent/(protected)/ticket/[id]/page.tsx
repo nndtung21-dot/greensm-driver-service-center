@@ -93,14 +93,16 @@ export default function TicketDetailPage() {
 
     const { data, error } = await supabase
       .from("counters")
-      .select(`
-        id,
-        counter_code,
-        counter_name,
-        status,
-        default_agent_id,
-        current_agent_id
-      `)
+      .select(
+        `
+          id,
+          counter_code,
+          counter_name,
+          status,
+          default_agent_id,
+          current_agent_id
+        `
+      )
       .eq("branch_id", currentProfile.branch_id)
       .order("counter_code", { ascending: true });
 
@@ -118,15 +120,10 @@ export default function TicketDetailPage() {
     let agentMap = new Map<string, string>();
 
     if (agentIds.length > 0) {
-      const { data: agents, error: agentError } = await supabase
+      const { data: agents } = await supabase
         .from("profiles")
         .select("id, full_name")
         .in("id", agentIds);
-
-      if (agentError) {
-        setErrorMessage(agentError.message);
-        return;
-      }
 
       agentMap = new Map(
         (agents ?? []).map((agent) => [agent.id, agent.full_name])
@@ -168,7 +165,6 @@ export default function TicketDetailPage() {
           event: "*",
           schema: "public",
           table: "queue_tickets",
-          filter: `id=eq.${detail?.ticket_id ?? ""}`,
         },
         load
       )
@@ -177,7 +173,7 @@ export default function TicketDetailPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [params.id, detail?.ticket_id, load]);
+  }, [params.id, load]);
 
   async function runRpc(
     name: string,
@@ -197,7 +193,7 @@ export default function TicketDetailPage() {
     }
 
     after?.();
-    await load();
+    load();
   }
 
   const handleStartProcessing = () =>
@@ -247,12 +243,7 @@ export default function TicketDetailPage() {
         p_next_step: pendingNextStep.trim(),
         p_expected_date: pendingExpected || null,
       },
-      () => {
-        setShowPending(false);
-        setPendingReason("");
-        setPendingNextStep("");
-        setPendingExpected("");
-      }
+      () => setShowPending(false)
     );
   };
 
@@ -317,6 +308,7 @@ export default function TicketDetailPage() {
     setTargetCounterId("");
 
     await load();
+    await loadCounters();
 
     router.push("/agent/queue");
   }
@@ -344,14 +336,9 @@ export default function TicketDetailPage() {
     profile?.role === "supervisor" ||
     profile?.role === "admin";
 
-  const canTransfer =
-    canAct &&
-    ["CALLED", "PROCESSING"].includes(detail.status);
-
   return (
     <div className="max-w-4xl space-y-6">
       <button
-        type="button"
         onClick={() => router.push("/agent/queue")}
         className="font-body text-sm text-brand-700 underline underline-offset-2"
       >
@@ -439,25 +426,10 @@ export default function TicketDetailPage() {
 
         <Panel title="Thông tin Visit">
           <dl className="space-y-2 font-body text-sm">
-            <Row
-              label="Visit ID"
-              value={detail.visit_code}
-            />
-
-            <Row
-              label="VP"
-              value={detail.branch_name}
-            />
-
-            <Row
-              label="Check-in"
-              value={fmt(detail.checkin_at)}
-            />
-
-            <Row
-              label="Số queue"
-              value={detail.queue_number}
-            />
+            <Row label="Visit ID" value={detail.visit_code} />
+            <Row label="VP" value={detail.branch_name} />
+            <Row label="Check-in" value={fmt(detail.checkin_at)} />
+            <Row label="Số queue" value={detail.queue_number} />
           </dl>
         </Panel>
 
@@ -494,16 +466,8 @@ export default function TicketDetailPage() {
 
                 <p className="font-medium text-ink">
                   {HISTORY_LABELS[h.action] ?? h.action}
-                  {h.new_status
-                    ? ` → ${h.new_status}`
-                    : ""}
+                  {h.new_status ? ` → ${h.new_status}` : ""}
                 </p>
-
-                {h.note && (
-                  <p className="mt-1 text-ink/60">
-                    {h.note}
-                  </p>
-                )}
               </li>
             ))}
           </ol>
@@ -617,17 +581,15 @@ export default function TicketDetailPage() {
                   Đặt Pending
                 </SecondaryButton>
 
-                {canTransfer && (
-                  <SecondaryButton
-                    onClick={() => {
-                      setShowTransfer((v) => !v);
-                      setErrorMessage(null);
-                    }}
-                    disabled={busy || transferring}
-                  >
-                    Chuyển ticket
-                  </SecondaryButton>
-                )}
+                <SecondaryButton
+                  onClick={() => {
+                    setShowTransfer((v) => !v);
+                    setErrorMessage(null);
+                  }}
+                  disabled={busy}
+                >
+                  Chuyển ticket
+                </SecondaryButton>
               </div>
             </div>
           </Panel>
@@ -652,7 +614,7 @@ export default function TicketDetailPage() {
                     onChange={(e) =>
                       setPendingNextStep(e.target.value)
                     }
-                    placeholder="Ví dụ: Kiểm tra lại giao dịch với Finance."
+                    placeholder="Ví dụ: Chờ Finance xác nhận."
                     className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
                   />
                 </Field>
@@ -668,34 +630,22 @@ export default function TicketDetailPage() {
                   />
                 </Field>
 
-                <div className="flex gap-3">
-                  <PrimaryButton
-                    onClick={handleSetPending}
-                    disabled={busy}
-                  >
-                    XÁC NHẬN PENDING
-                  </PrimaryButton>
-
-                  <SecondaryButton
-                    onClick={() =>
-                      setShowPending(false)
-                    }
-                    disabled={busy}
-                  >
-                    HỦY
-                  </SecondaryButton>
-                </div>
+                <PrimaryButton
+                  onClick={handleSetPending}
+                  disabled={busy}
+                >
+                  XÁC NHẬN PENDING
+                </PrimaryButton>
               </div>
             </Panel>
           )}
 
-          {showTransfer && canTransfer && (
+          {showTransfer && (
             <Panel title="Chuyển ticket sang quầy khác">
               <div className="space-y-4">
                 <div className="rounded-lg bg-orange-50 px-4 py-3 font-body text-sm text-orange-800">
-                  Ticket sẽ quay lại{" "}
-                  <b>hàng chờ</b> và được phân cho
-                  Agent mặc định của quầy bạn chọn.
+                  Ticket sẽ quay lại <b>hàng chờ</b> và được
+                  phân cho Agent mặc định của quầy bạn chọn.
                   <br />
                   <span className="font-semibold">
                     Quầy đang BUSY vẫn có thể nhận ticket.
@@ -714,36 +664,23 @@ export default function TicketDetailPage() {
                       -- Chọn quầy --
                     </option>
 
-                    {counters
-                      .filter(
-                        (counter) =>
-                          counter.id !==
-                          detail.counter_id
-                      )
-                      .map((counter) => (
-                        <option
-                          key={counter.id}
-                          value={counter.id}
-                          disabled={
-                            counter.status === "CLOSED" ||
-                            !counter.default_agent_id
-                          }
-                        >
-                          {counter.counter_name} -{" "}
-                          {counter.default_agent_name ??
-                            "Chưa có Agent"}{" "}
-                          - {counter.status}
-                        </option>
-                      ))}
+                    {counters.map((counter) => (
+                      <option
+                        key={counter.id}
+                        value={counter.id}
+                        disabled={
+                          counter.status === "CLOSED" ||
+                          !counter.default_agent_id
+                        }
+                      >
+                        {counter.counter_name} -{" "}
+                        {counter.default_agent_name ??
+                          "Chưa có Agent"}{" "}
+                        - {counter.status}
+                      </option>
+                    ))}
                   </select>
                 </Field>
-
-                {counters.length === 0 && (
-                  <p className="rounded-lg bg-red-50 px-4 py-3 font-body text-sm text-danger">
-                    Không tìm thấy quầy nào trong văn phòng
-                    của bạn.
-                  </p>
-                )}
 
                 {targetCounterId && (
                   <div className="rounded-lg border border-line bg-paper px-4 py-3 font-body text-sm">
@@ -783,9 +720,7 @@ export default function TicketDetailPage() {
                   <PrimaryButton
                     onClick={handleTransferToCounter}
                     disabled={
-                      transferring ||
-                      busy ||
-                      !targetCounterId
+                      transferring || !targetCounterId
                     }
                   >
                     {transferring
@@ -836,52 +771,52 @@ export default function TicketDetailPage() {
       )}
 
       {detail.status === "CLOSED" && (
-        <>
-          <div className="rounded-2xl border border-brand-200 bg-brand-50 p-5">
-            <div className="flex flex-col items-center gap-4 text-center">
-              <div>
-                <h3 className="text-lg font-semibold text-ink">
-                  Đánh giá dịch vụ
-                </h3>
+        <div className="rounded-2xl border border-brand-200 bg-brand-50 p-5">
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div>
+              <h3 className="text-lg font-semibold text-ink">
+                Đánh giá dịch vụ
+              </h3>
 
-                <p className="mt-1 text-sm text-ink/60">
-                  Mời tài xế quét mã QR để đánh giá dịch vụ.
-                </p>
-              </div>
-
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
-                  `${window.location.origin}/feedback/${encodeURIComponent(
-                    detail.ticket_code
-                  )}`
-                )}`}
-                alt="QR đánh giá dịch vụ"
-                className="h-64 w-64 rounded-xl border border-gray-200 bg-white p-2"
-              />
-
-              <p className="text-sm font-medium text-ink">
-                Ticket: {detail.ticket_code}
+              <p className="mt-1 text-sm text-ink/60">
+                Mời tài xế quét mã QR để đánh giá dịch vụ.
               </p>
             </div>
+
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
+                `${window.location.origin}/feedback/${encodeURIComponent(
+                  detail.ticket_code
+                )}`
+              )}`}
+              alt="QR đánh giá dịch vụ"
+              className="h-64 w-64 rounded-xl border border-gray-200 bg-white p-2"
+            />
+
+            <p className="text-sm font-medium text-ink">
+              Ticket: {detail.ticket_code}
+            </p>
           </div>
+        </div>
+      )}
 
-          <Panel title="Kết quả xử lý">
-            <p className="font-body text-sm text-ink/80">
-              {detail.resolution}
-            </p>
+      {detail.status === "CLOSED" && (
+        <Panel title="Kết quả xử lý">
+          <p className="font-body text-sm text-ink/80">
+            {detail.resolution}
+          </p>
 
-            <p className="mt-2 font-body text-xs text-ink/40">
-              Đã đóng lúc {fmt(detail.closed_at)}
-            </p>
-          </Panel>
-        </>
+          <p className="mt-2 font-body text-xs text-ink/40">
+            Đã đóng lúc {fmt(detail.closed_at)}
+          </p>
+        </Panel>
       )}
 
       {detail.status === "NO_SHOW" && (
         <Panel title="Tài xế không đến">
           <p className="font-body text-sm text-ink/70">
-            Ticket đã được gọi nhưng tài xế không có mặt
-            tại quầy.
+            Ticket đã được gọi nhưng tài xế không có mặt tại
+            quầy.
           </p>
         </Panel>
       )}
