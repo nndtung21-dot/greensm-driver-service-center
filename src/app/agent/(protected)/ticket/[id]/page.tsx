@@ -36,6 +36,7 @@ export default function TicketDetailPage() {
   const [transferReason, setTransferReason] = useState("");
 
   const [showPending, setShowPending] = useState(false);
+  const [showFeedbackQr, setShowFeedbackQr] = useState(false);
   const [pendingReason, setPendingReason] = useState("");
   const [pendingNextStep, setPendingNextStep] = useState("");
   const [pendingExpected, setPendingExpected] = useState("");
@@ -73,7 +74,16 @@ export default function TicketDetailPage() {
         load
       )
       .subscribe();
-    return () => {
+    const feedbackUrl =
+    detail?.ticket_code
+      ? `${window.location.origin}/feedback/${encodeURIComponent(detail.ticket_code)}`
+      : "";
+
+  const feedbackQrUrl = feedbackUrl
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${encodeURIComponent(feedbackUrl)}`
+    : "";
+
+  return () => {
       supabase.removeChannel(channel);
     };
   }, [params.id, load]);
@@ -413,6 +423,65 @@ export default function TicketDetailPage() {
       )}
 
       {detail.status === "CLOSED" && (
+
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={() => setShowFeedbackQr(true)}
+            className="rounded-xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"
+          >
+            HIỆN QR ĐÁNH GIÁ
+          </button>
+        </div>
+
+        {showFeedbackQr && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+
+              <div className="text-center">
+
+                <h2 className="text-xl font-bold text-ink">
+                  Đánh giá dịch vụ
+                </h2>
+
+                <p className="mt-2 text-sm text-ink/60">
+                  Mời tài xế quét mã QR để đánh giá dịch vụ.
+                </p>
+
+                <div className="mt-5 flex justify-center">
+                  {feedbackQrUrl ? (
+                    <img
+                      src={feedbackQrUrl}
+                      alt="QR đánh giá dịch vụ"
+                      className="h-72 w-72 rounded-xl border border-line bg-white p-2"
+                    />
+                  ) : (
+                    <p className="text-sm text-red-600">
+                      Không tạo được QR.
+                    </p>
+                  )}
+                </div>
+
+                <p className="mt-4 text-sm font-semibold text-ink">
+                  Ticket: {detail?.ticket_code}
+                </p>
+
+                <div className="mt-5">
+                  <button
+                    type="button"
+                    onClick={() => setShowFeedbackQr(false)}
+                    className="rounded-xl border border-line px-5 py-2.5 text-sm font-semibold text-ink hover:bg-gray-50"
+                  >
+                    ĐÓNG
+                  </button>
+                </div>
+
+              </div>
+
+            </div>
+          </div>
+        )}
+
         <Panel title="Kết quả xử lý">
           <p className="font-body text-sm text-ink/80">{detail.resolution}</p>
           <p className="mt-2 font-body text-xs text-ink/40">
