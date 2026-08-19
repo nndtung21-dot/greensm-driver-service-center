@@ -149,6 +149,27 @@ export default function TicketDetailPage() {
 
   const isMine = detail.assigned_agent_id === profile?.id;
   const canAct = isMine || profile?.role === "supervisor" || profile?.role === "admin";
+  const [transferring, setTransferring] = useState(false);
+
+  async function handleTransferToWaiting() {
+    if (!detail) return;
+    if (!confirm("Chuyển ticket này về hàng chờ?")) return;
+
+    setTransferring(true);
+
+    const { error } = await supabase.rpc("transfer_ticket_to_waiting", {
+      p_ticket_id: detail.ticket_id,
+    });
+
+    setTransferring(false);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    router.push("/agent/queue");
+  }
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -411,6 +432,18 @@ export default function TicketDetailPage() {
           )}
         </Panel>
       )}
+
+      {canAct &&
+        ["CALLED", "PROCESSING"].includes(detail.status) && (
+          <button
+            type="button"
+            onClick={handleTransferToWaiting}
+            disabled={transferring}
+            className="rounded-lg border border-orange-300 bg-orange-50 px-4 py-2 font-body text-sm font-semibold text-orange-700 hover:bg-orange-100 disabled:opacity-50"
+          >
+            {transferring ? "Đang chuyển..." : "Chuyển ticket về hàng chờ"}
+          </button>
+        )}
 
       {detail.status === "CLOSED" && (
         <div className="rounded-2xl border border-brand-200 bg-brand-50 p-5">
