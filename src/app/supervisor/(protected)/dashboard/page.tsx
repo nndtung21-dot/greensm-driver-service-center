@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -59,7 +60,7 @@ type PeriodSummary = {
   csat: number | null;
 };
 
-type ChartRow = {
+type CategoryChartRow = {
   date: string;
   categories: Record<string, number>;
 };
@@ -67,6 +68,12 @@ type ChartRow = {
 type QueueRow = AgentQueueRow & {
   agent_name?: string | null;
 };
+
+type TrendMetricKey =
+  | "tickets"
+  | "completed"
+  | "visits"
+  | "uniqueDrivers";
 
 function dateToString(date: Date) {
   const year = date.getFullYear();
@@ -103,10 +110,7 @@ function getPreviousMonthSamePeriod(date: Date) {
     0
   ).getDate();
 
-  const day = Math.min(
-    currentDay,
-    previousMonthLastDay
-  );
+  const day = Math.min(currentDay, previousMonthLastDay);
 
   return new Date(
     previousMonthStart.getFullYear(),
@@ -126,11 +130,7 @@ function percentChange(
     return null;
   }
 
-  return (
-    ((current - previous) /
-      Math.abs(previous)) *
-    100
-  );
+  return ((current - previous) / Math.abs(previous)) * 100;
 }
 
 function buildTrend(
@@ -140,74 +140,46 @@ function buildTrend(
   return {
     current: current ?? 0,
     previous: previous ?? 0,
-    change: percentChange(
-      current,
-      previous
-    ),
+    change: percentChange(current, previous),
   };
 }
 
-function average(
-  values: Array<number | null>
-) {
+function average(values: Array<number | null>) {
   const valid = values.filter(
     (value): value is number =>
-      value != null &&
-      !Number.isNaN(Number(value))
+      value != null && !Number.isNaN(Number(value))
   );
 
   if (!valid.length) return null;
 
   return (
-    valid.reduce(
-      (sum, value) => sum + value,
-      0
-    ) / valid.length
+    valid.reduce((sum, value) => sum + value, 0) /
+    valid.length
   );
 }
 
 function aggregateSummaries(
   summaries: DailySummary[]
 ): PeriodSummary {
-  const tickets =
-    summaries.reduce(
-      (sum, row) =>
-        sum +
-        Number(
-          row.total_tickets || 0
-        ),
-      0
-    );
+  const tickets = summaries.reduce(
+    (sum, row) => sum + Number(row.total_tickets || 0),
+    0
+  );
 
-  const completed =
-    summaries.reduce(
-      (sum, row) =>
-        sum +
-        Number(
-          row.completed_tickets || 0
-        ),
-      0
-    );
+  const completed = summaries.reduce(
+    (sum, row) => sum + Number(row.completed_tickets || 0),
+    0
+  );
 
-  const visits =
-    summaries.reduce(
-      (sum, row) =>
-        sum +
-        Number(
-          row.total_visits || 0
-        ),
-      0
-    );
+  const visits = summaries.reduce(
+    (sum, row) => sum + Number(row.total_visits || 0),
+    0
+  );
 
-  const uniqueDrivers =
-    summaries.reduce(
-      (sum, row) =>
-        sum +
-        Number(
-          row.unique_drivers || 0
-        ),
-      0
-    );
+  const uniqueDrivers = summaries.reduce(
+    (sum, row) => sum + Number(row.unique_drivers || 0),
+    0
+  );
 
   return {
     tickets,
@@ -215,32 +187,19 @@ function aggregateSummaries(
     visits,
     uniqueDrivers,
     waiting: average(
-      summaries.map(
-        (row) =>
-          row.avg_waiting_time_min
-      )
+      summaries.map((row) => row.avg_waiting_time_min)
     ),
     handling: average(
-      summaries.map(
-        (row) =>
-          row.avg_handling_time_min
-      )
+      summaries.map((row) => row.avg_handling_time_min)
     ),
     csat: null,
   };
 }
 
-function formatChange(
-  change: number | null
-) {
+function formatChange(change: number | null) {
   if (change == null) return "—";
-
-  if (change > 0)
-    return `+${change.toFixed(1)}%`;
-
-  if (change < 0)
-    return `${change.toFixed(1)}%`;
-
+  if (change > 0) return `+${change.toFixed(1)}%`;
+  if (change < 0) return `${change.toFixed(1)}%`;
   return "0.0%";
 }
 
@@ -248,31 +207,17 @@ function trendColor(
   change: number | null,
   inverse = false
 ) {
-  if (
-    change == null ||
-    change === 0
-  ) {
+  if (change == null || change === 0) {
     return "text-ink/45";
   }
 
-  const positive = inverse
-    ? change < 0
-    : change > 0;
+  const positive = inverse ? change < 0 : change > 0;
 
-  return positive
-    ? "text-brand-700"
-    : "text-danger";
+  return positive ? "text-brand-700" : "text-danger";
 }
 
-function trendArrow(
-  change: number | null
-) {
-  if (
-    change == null ||
-    change === 0
-  )
-    return "→";
-
+function trendArrow(change: number | null) {
+  if (change == null || change === 0) return "→";
   return change > 0 ? "↑" : "↓";
 }
 
@@ -301,23 +246,16 @@ function BenchmarkItem({
           )}`}
         >
           {trendArrow(value.change)}{" "}
-          {formatChange(
-            value.change
-          )}
+          {formatChange(value.change)}
         </span>
       </div>
 
       <div className="font-display text-lg font-bold text-brand-900">
-        {value.current.toFixed(
-          decimals
-        )}
+        {value.current.toFixed(decimals)}
       </div>
 
       <div className="mt-0.5 font-body text-[11px] text-ink/40">
-        Trước:{" "}
-        {value.previous.toFixed(
-          decimals
-        )}
+        Trước: {value.previous.toFixed(decimals)}
       </div>
     </div>
   );
@@ -358,9 +296,7 @@ function BenchmarkGroup({
 
         <BenchmarkItem
           label="Unique Drivers"
-          value={
-            metrics.uniqueDrivers
-          }
+          value={metrics.uniqueDrivers}
         />
 
         <BenchmarkItem
@@ -393,257 +329,370 @@ const CATEGORY_COLORS = [
   "#EC4899",
   "#0891B2",
   "#EA580C",
-  "#65A30D",
-  "#7C3AED",
-  "#0F766E",
-  "#DC2626",
   "#4F46E5",
+  "#65A30D",
+  "#DC2626",
+  "#0F766E",
+  "#9333EA",
 ];
 
-function getCategoryColor(
-  index: number
-) {
-  return CATEGORY_COLORS[
-    index % CATEGORY_COLORS.length
-  ];
-}
+const trendMetricOptions: Array<{
+  key: TrendMetricKey;
+  label: string;
+}> = [
+  {
+    key: "tickets",
+    label: "Tickets",
+  },
+  {
+    key: "completed",
+    label: "Completed",
+  },
+  {
+    key: "visits",
+    label: "Visits",
+  },
+  {
+    key: "uniqueDrivers",
+    label: "Unique Drivers",
+  },
+];
 
-function formatChartDate(
-  date: string
-) {
-  const parts =
-    date.split("-");
+function formatShortDate(date: string) {
+  const parts = date.split("-");
 
-  if (parts.length !== 3)
-    return date;
+  if (parts.length !== 3) return date;
 
   return `${parts[2]}/${parts[1]}`;
+}
+
+function getMetricValue(
+  row: DailySummary,
+  metric: TrendMetricKey
+) {
+  switch (metric) {
+    case "tickets":
+      return Number(row.total_tickets || 0);
+
+    case "completed":
+      return Number(row.completed_tickets || 0);
+
+    case "visits":
+      return Number(row.total_visits || 0);
+
+    case "uniqueDrivers":
+      return Number(row.unique_drivers || 0);
+
+    default:
+      return 0;
+  }
 }
 
 function CategoryTrendChart({
   data,
   categories,
 }: {
-  data: ChartRow[];
+  data: DailySummary[];
   categories: string[];
 }) {
-  const [activeCategories, setActiveCategories] =
+  const [selectedCategories, setSelectedCategories] =
     useState<string[]>([]);
 
+  const [days, setDays] = useState(30);
+
+  const [metric, setMetric] =
+    useState<TrendMetricKey>("tickets");
+
   useEffect(() => {
-    if (!categories.length) {
-      setActiveCategories([]);
-      return;
-    }
+    setSelectedCategories((current) => {
+      const valid = current.filter((category) =>
+        categories.includes(category)
+      );
 
-    setActiveCategories(
-      (current) => {
-        const valid =
-          current.filter(
-            (item) =>
-              categories.includes(
-                item
-              )
-          );
+      if (valid.length > 0) return valid;
 
-        if (valid.length > 0)
-          return valid;
-
-        return categories.slice(
-          0,
-          Math.min(6, categories.length)
-        );
-      }
-    );
+      return categories.slice(0, 5);
+    });
   }, [categories]);
+
+  const filteredData = useMemo(() => {
+    const today = startOfDay(new Date());
+    const start = dateToString(
+      addDays(today, -(days - 1))
+    );
+
+    return data.filter(
+      (row) =>
+        row.business_date >= start &&
+        row.business_date <= dateToString(today)
+    );
+  }, [data, days]);
+
+  const chartData = useMemo<CategoryChartRow[]>(() => {
+    const grouped = new Map<
+      string,
+      Record<string, number>
+    >();
+
+    filteredData.forEach((row) => {
+      const category =
+        row.category_name?.trim();
+
+      if (!category) return;
+
+      if (!grouped.has(row.business_date)) {
+        grouped.set(row.business_date, {});
+      }
+
+      const dateData =
+        grouped.get(row.business_date)!;
+
+      dateData[category] =
+        (dateData[category] || 0) +
+        getMetricValue(row, metric);
+    });
+
+    return Array.from(grouped.entries())
+      .map(([date, categoryValues]) => ({
+        date,
+        categories: categoryValues,
+      }))
+      .sort((a, b) =>
+        a.date.localeCompare(b.date)
+      );
+  }, [filteredData, metric]);
+
+  const visibleCategories = useMemo(
+    () =>
+      categories.filter((category) =>
+        selectedCategories.includes(category)
+      ),
+    [categories, selectedCategories]
+  );
 
   const toggleCategory = (
     category: string
   ) => {
-    setActiveCategories(
-      (current) => {
-        if (
-          current.includes(
-            category
-          )
-        ) {
-          if (
-            current.length === 1
-          ) {
-            return current;
-          }
-
-          return current.filter(
-            (item) =>
-              item !== category
-          );
-        }
-
-        return [
-          ...current,
-          category,
-        ];
+    setSelectedCategories((current) => {
+      if (current.includes(category)) {
+        return current.filter(
+          (item) => item !== category
+        );
       }
-    );
+
+      return [...current, category];
+    });
   };
 
-  const visibleCategories =
-    categories.filter(
-      (category) =>
-        activeCategories.includes(
-          category
-        )
-    );
-
-  if (!data.length) {
-    return (
-      <div className="flex h-80 items-center justify-center text-sm text-ink/40">
-        Chưa có dữ liệu trend
-      </div>
-    );
-  }
-
-  if (!categories.length) {
-    return (
-      <div className="flex h-80 items-center justify-center text-sm text-ink/40">
-        Chưa có dữ liệu category
-      </div>
-    );
-  }
-
-  const allValues =
-    visibleCategories.flatMap(
-      (category) =>
-        data.map(
-          (row) =>
-            row.categories[
-              category
-            ] ?? 0
-        )
-    );
+  const allValues = visibleCategories.flatMap(
+    (category) =>
+      chartData.map(
+        (row) =>
+          row.categories[category] || 0
+      )
+  );
 
   const maxValue = Math.max(
     ...allValues,
     1
   );
 
-  const chartHeight = 280;
-
-  const yTicks = [
-    0,
-    25,
-    50,
-    75,
-    100,
-  ];
-
-  /*
-   * SVG chart.
-   *
-   * Dùng viewBox để chart responsive.
-   * Mỗi category là một polyline.
-   */
+  const chartHeight = 300;
 
   const chartWidth = Math.max(
-    900,
-    data.length * 52
+    chartData.length * 72,
+    900
   );
 
-  const paddingLeft = 55;
-  const paddingRight = 25;
-  const paddingTop = 25;
-  const paddingBottom = 45;
-
-  const plotWidth =
-    chartWidth -
-    paddingLeft -
-    paddingRight;
-
-  const plotHeight =
-    chartHeight -
-    paddingTop -
-    paddingBottom;
-
-  const getX = (
+  const getPointX = (
     index: number
   ) => {
-    if (data.length <= 1)
-      return (
-        paddingLeft +
-        plotWidth / 2
-      );
+    if (chartData.length <= 1) {
+      return chartWidth / 2;
+    }
 
     return (
-      paddingLeft +
+      36 +
       (index /
-        (data.length - 1)) *
-        plotWidth
+        (chartData.length - 1)) *
+        (chartWidth - 72)
     );
   };
 
-  const getY = (
+  const getPointY = (
     value: number
   ) => {
     return (
-      paddingTop +
-      plotHeight -
+      chartHeight -
       (value / maxValue) *
-        plotHeight
+        chartHeight
     );
   };
 
   return (
     <div>
-      {/* CATEGORY FILTER */}
+      {/* =====================================================
+          FILTERS
+      ===================================================== */}
 
-      <div className="mb-6 flex flex-wrap gap-2">
-        {categories.map(
-          (category, index) => {
-            const active =
-              activeCategories.includes(
-                category
-              );
+      <div className="mb-6 rounded-2xl border border-line bg-paper/30 p-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="font-body text-sm font-bold text-brand-900">
+              Bộ lọc Trend
+            </p>
 
-            const color =
-              getCategoryColor(
-                index
-              );
+            <p className="mt-0.5 font-body text-xs text-ink/40">
+              Chọn Category cần theo dõi trên biểu đồ
+            </p>
+          </div>
 
-            return (
-              <button
-                key={category}
-                type="button"
-                onClick={() =>
-                  toggleCategory(
-                    category
-                  )
+          <button
+            type="button"
+            onClick={() =>
+              setSelectedCategories(
+                selectedCategories.length ===
+                  categories.length
+                  ? categories.slice(0, 5)
+                  : [...categories]
+              )
+            }
+            className="rounded-lg border border-line bg-white px-3 py-1.5 font-body text-xs font-semibold text-ink transition hover:bg-paper"
+          >
+            {selectedCategories.length ===
+            categories.length
+              ? "Chọn mặc định"
+              : "Chọn tất cả"}
+          </button>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
+          {/* CATEGORY */}
+
+          <div>
+            <p className="mb-2 font-body text-[11px] font-bold uppercase tracking-wide text-ink/40">
+              Category
+            </p>
+
+            <div className="flex max-h-24 flex-wrap gap-2 overflow-y-auto">
+              {categories.map(
+                (category, index) => {
+                  const active =
+                    selectedCategories.includes(
+                      category
+                    );
+
+                  const color =
+                    CATEGORY_COLORS[
+                      index %
+                        CATEGORY_COLORS.length
+                    ];
+
+                  return (
+                    <button
+                      key={category}
+                      type="button"
+                      onClick={() =>
+                        toggleCategory(
+                          category
+                        )
+                      }
+                      className={`flex items-center gap-2 rounded-full border px-3 py-1.5 font-body text-xs font-semibold transition ${
+                        active
+                          ? "border-line bg-white text-ink"
+                          : "border-line/50 bg-white/50 text-ink/35"
+                      }`}
+                    >
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{
+                          backgroundColor:
+                            active
+                              ? color
+                              : "#D1D5DB",
+                        }}
+                      />
+
+                      {category}
+                    </button>
+                  );
                 }
-                className={`flex items-center gap-2 rounded-full border px-3 py-2 font-body text-sm font-semibold transition ${
-                  active
-                    ? "border-line bg-paper text-ink"
-                    : "border-line/60 bg-white text-ink/35"
-                }`}
-              >
-                <span
-                  className="h-3 w-3 rounded-full"
-                  style={{
-                    backgroundColor:
-                      active
-                        ? color
-                        : "#D1D5DB",
-                  }}
-                />
+              )}
 
-                {category}
-              </button>
-            );
-          }
-        )}
+              {!categories.length && (
+                <span className="font-body text-xs text-ink/40">
+                  Chưa có Category
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* METRIC */}
+
+          <div>
+            <p className="mb-2 font-body text-[11px] font-bold uppercase tracking-wide text-ink/40">
+              Chỉ số
+            </p>
+
+            <select
+              value={metric}
+              onChange={(e) =>
+                setMetric(
+                  e.target
+                    .value as TrendMetricKey
+                )
+              }
+              className="min-w-[150px] rounded-lg border-2 border-line bg-white px-3 py-2 font-body text-sm font-semibold text-ink"
+            >
+              {trendMetricOptions.map(
+                (item) => (
+                  <option
+                    key={item.key}
+                    value={item.key}
+                  >
+                    {item.label}
+                  </option>
+                )
+              )}
+            </select>
+          </div>
+
+          {/* PERIOD */}
+
+          <div>
+            <p className="mb-2 font-body text-[11px] font-bold uppercase tracking-wide text-ink/40">
+              Khoảng thời gian
+            </p>
+
+            <div className="flex overflow-hidden rounded-lg border-2 border-line bg-white">
+              {[7, 14, 30].map(
+                (value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() =>
+                      setDays(value)
+                    }
+                    className={`px-3 py-2 font-body text-xs font-bold transition ${
+                      days === value
+                        ? "bg-brand-700 text-white"
+                        : "text-ink/50 hover:bg-paper"
+                    }`}
+                  >
+                    {value} ngày
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* LEGEND */}
+      {/* =====================================================
+          LEGEND
+      ===================================================== */}
 
-      <div className="mb-5 flex flex-wrap gap-x-6 gap-y-3">
+      <div className="mb-5 flex flex-wrap gap-x-5 gap-y-2">
         {visibleCategories.map(
           (category) => {
             const index =
@@ -654,305 +703,352 @@ function CategoryTrendChart({
             return (
               <div
                 key={category}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 font-body text-sm font-semibold text-ink/60"
               >
                 <span
                   className="h-3 w-3 rounded-full"
                   style={{
                     backgroundColor:
-                      getCategoryColor(
-                        index
-                      ),
+                      CATEGORY_COLORS[
+                        index %
+                          CATEGORY_COLORS.length
+                      ],
                   }}
                 />
 
-                <span className="font-body text-sm font-semibold text-ink/65">
-                  {category}
-                </span>
+                {category}
               </div>
             );
           }
         )}
       </div>
 
-      {/* CHART */}
+      {/* =====================================================
+          CHART
+      ===================================================== */}
 
-      <div className="overflow-x-auto overflow-y-hidden pb-5">
-        <div
-          style={{
-            minWidth: `${chartWidth}px`,
-          }}
-        >
-          <svg
-            width="100%"
-            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-            preserveAspectRatio="none"
-            className="block h-[360px] w-full"
+      {!chartData.length ||
+      !visibleCategories.length ? (
+        <div className="flex h-[360px] items-center justify-center rounded-xl border border-dashed border-line text-sm text-ink/40">
+          {visibleCategories.length
+            ? "Chưa có dữ liệu trong khoảng thời gian này"
+            : "Chọn ít nhất một Category"}
+        </div>
+      ) : (
+        <div className="overflow-x-auto pb-5">
+          <div
+            className="relative"
+            style={{
+              minWidth: `${chartWidth}px`,
+              height: "390px",
+            }}
           >
-            {/* GRID */}
+            {/* Y AXIS */}
 
-            {yTicks.map(
-              (percentage) => {
-                const y =
-                  paddingTop +
-                  plotHeight -
-                  (percentage /
-                    100) *
-                    plotHeight;
+            <div
+              className="absolute left-0 top-0"
+              style={{
+                width: "44px",
+                height: `${chartHeight}px`,
+              }}
+            >
+              {[0, 25, 50, 75, 100].map(
+                (percentage) => {
+                  const value =
+                    Math.round(
+                      (maxValue *
+                        percentage) /
+                        100
+                    );
 
-                const value =
-                  Math.round(
-                    (maxValue *
+                  const top =
+                    chartHeight -
+                    (chartHeight *
                       percentage) /
-                      100
-                  );
+                      100;
 
-                return (
-                  <g
-                    key={
-                      percentage
-                    }
-                  >
-                    <line
-                      x1={
-                        paddingLeft
-                      }
-                      x2={
-                        chartWidth -
-                        paddingRight
-                      }
-                      y1={y}
-                      y2={y}
-                      stroke="#E5E7EB"
-                      strokeWidth="1"
-                      strokeDasharray={
-                        percentage ===
-                        0
-                          ? "0"
-                          : "4 4"
-                      }
-                    />
-
-                    <text
-                      x={
-                        paddingLeft -
-                        12
-                      }
-                      y={y + 5}
-                      textAnchor="end"
-                      fontSize="14"
-                      fontWeight="600"
-                      fill="#6B7280"
+                  return (
+                    <span
+                      key={percentage}
+                      className="absolute right-2 -translate-y-1/2 font-body text-xs font-semibold text-ink/45"
+                      style={{
+                        top: `${top}px`,
+                      }}
                     >
                       {value.toLocaleString(
                         "vi-VN"
                       )}
-                    </text>
-                  </g>
-                );
-              }
-            )}
-
-            {/* LINES */}
-
-            {visibleCategories.map(
-              (category) => {
-                const categoryIndex =
-                  categories.indexOf(
-                    category
+                    </span>
                   );
+                }
+              )}
+            </div>
 
-                const color =
-                  getCategoryColor(
-                    categoryIndex
-                  );
+            {/* GRID */}
 
-                const points =
-                  data
-                    .map(
-                      (
-                        row,
-                        index
-                      ) => {
-                        const value =
-                          row
-                            .categories[
-                            category
-                          ] ??
-                          0;
+            <div
+              className="absolute left-[52px] right-0 top-0"
+              style={{
+                height: `${chartHeight}px`,
+              }}
+            >
+              {[0, 25, 50, 75, 100].map(
+                (percentage) => (
+                  <div
+                    key={percentage}
+                    className="absolute inset-x-0 border-t border-line/60"
+                    style={{
+                      top: `${
+                        100 - percentage
+                      }%`,
+                    }}
+                  />
+                )
+              )}
 
-                        return `${getX(
+              {/* SVG LINES */}
+
+              <svg
+                className="absolute inset-0 overflow-visible"
+                width={chartWidth - 52}
+                height={chartHeight}
+                viewBox={`0 0 ${
+                  chartWidth - 52
+                } ${chartHeight}`}
+                preserveAspectRatio="none"
+              >
+                {visibleCategories.map(
+                  (category) => {
+                    const categoryIndex =
+                      categories.indexOf(
+                        category
+                      );
+
+                    const color =
+                      CATEGORY_COLORS[
+                        categoryIndex %
+                          CATEGORY_COLORS.length
+                      ];
+
+                    const points =
+                      chartData.map(
+                        (
+                          row,
                           index
-                        )},${getY(
-                          value
-                        )}`;
-                      }
-                    )
-                    .join(" ");
+                        ) => {
+                          const value =
+                            row
+                              .categories[
+                              category
+                            ] || 0;
 
-                return (
-                  <g
-                    key={
-                      category
-                    }
-                  >
-                    <polyline
-                      points={
-                        points
-                      }
-                      fill="none"
-                      stroke={
-                        color
-                      }
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-
-                    {data.map(
-                      (
-                        row,
-                        index
-                      ) => {
-                        const value =
-                          row
-                            .categories[
-                            category
-                          ] ??
-                          0;
-
-                        return (
-                          <circle
-                            key={`${category}-${row.date}`}
-                            cx={getX(
+                          const x =
+                            getPointX(
                               index
-                            )}
-                            cy={getY(
+                            ) - 36;
+
+                          const y =
+                            getPointY(
                               value
-                            )}
-                            r="4"
-                            fill="white"
-                            stroke={
-                              color
-                            }
-                            strokeWidth="2.5"
-                          >
-                            <title>
-                              {`${category} · ${row.date}: ${value.toLocaleString(
-                                "vi-VN"
-                              )} ticket`}
-                            </title>
-                          </circle>
-                        );
-                      }
-                    )}
-                  </g>
-                );
-              }
-            )}
+                            );
 
-            {/* X AXIS */}
+                          return `${x},${y}`;
+                        }
+                      );
 
-            {data.map(
-              (
-                row,
-                index
-              ) => {
-                const x =
-                  getX(index);
+                    return (
+                      <polyline
+                        key={
+                          category
+                        }
+                        points={points.join(
+                          " "
+                        )}
+                        fill="none"
+                        stroke={
+                          color
+                        }
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    );
+                  }
+                )}
+              </svg>
 
-                /*
-                 * Chỉ hiện mỗi 1 ngày nếu
-                 * nhiều data, nhưng ngày vẫn
-                 * lớn và rõ.
-                 */
-                const showLabel =
-                  data.length <=
-                    15 ||
-                  index % 2 === 0 ||
-                  index ===
-                    data.length - 1;
+              {/* POINTS + TOOLTIP */}
 
-                if (!showLabel)
-                  return null;
-
-                return (
-                  <g
+              {chartData.map(
+                (
+                  row,
+                  rowIndex
+                ) => (
+                  <div
                     key={
                       row.date
                     }
+                    className="group absolute top-0 bottom-0"
+                    style={{
+                      left: `${
+                        getPointX(
+                          rowIndex
+                        ) - 36
+                      }px`,
+                      width: "1px",
+                    }}
                   >
-                    <line
-                      x1={x}
-                      x2={x}
-                      y1={
-                        paddingTop +
-                        plotHeight
-                      }
-                      y2={
-                        paddingTop +
-                        plotHeight +
-                        6
-                      }
-                      stroke="#9CA3AF"
-                      strokeWidth="1"
-                    />
+                    <div className="absolute inset-y-0 -left-6 w-12 border-l border-transparent transition group-hover:border-line" />
 
-                    <text
-                      x={x}
-                      y={
-                        paddingTop +
-                        plotHeight +
-                        30
+                    {visibleCategories.map(
+                      (
+                        category
+                      ) => {
+                        const value =
+                          row
+                            .categories[
+                            category
+                          ] || 0;
+
+                        const categoryIndex =
+                          categories.indexOf(
+                            category
+                          );
+
+                        const color =
+                          CATEGORY_COLORS[
+                            categoryIndex %
+                              CATEGORY_COLORS.length
+                          ];
+
+                        const y =
+                          getPointY(
+                            value
+                          );
+
+                        return (
+                          <div
+                            key={
+                              category
+                            }
+                            className="absolute -left-[6px] h-3 w-3 rounded-full border-2 border-white shadow-sm"
+                            style={{
+                              top: `${
+                                y - 6
+                              }px`,
+                              backgroundColor:
+                                color,
+                            }}
+                          >
+                            <div className="pointer-events-none absolute bottom-5 left-1/2 z-20 hidden -translate-x-1/2 whitespace-nowrap rounded-lg bg-brand-900 px-3 py-2 font-body text-xs text-white shadow-lg group-hover:block">
+                              <div className="font-bold">
+                                {
+                                  category
+                                }
+                              </div>
+
+                              <div className="mt-0.5 text-white/70">
+                                {
+                                  formatShortDate(
+                                    row.date
+                                  )
+                                }
+                              </div>
+
+                              <div className="mt-1 text-sm font-bold">
+                                {value.toLocaleString(
+                                  "vi-VN"
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
                       }
-                      textAnchor="middle"
-                      fontSize="15"
-                      fontWeight="600"
-                      fill="#4B5563"
-                    >
-                      {formatChartDate(
-                        row.date
-                      )}
-                    </text>
-                  </g>
-                );
-              }
-            )}
-          </svg>
+                    )}
+                  </div>
+                )
+              )}
+
+              {/* X AXIS */}
+
+              <div
+                className="absolute left-0 right-0"
+                style={{
+                  top: `${chartHeight}px`,
+                }}
+              >
+                {chartData.map(
+                  (
+                    row,
+                    index
+                  ) => {
+                    const show =
+                      chartData.length <=
+                        10 ||
+                      index === 0 ||
+                      index ===
+                        chartData.length -
+                          1 ||
+                      index % 2 ===
+                        0;
+
+                    if (!show)
+                      return null;
+
+                    return (
+                      <span
+                        key={
+                          row.date
+                        }
+                        className="absolute top-3 -translate-x-1/2 whitespace-nowrap font-body text-sm font-bold text-ink/55"
+                        style={{
+                          left: `${getPointX(
+                            index
+                          ) - 36}px`,
+                        }}
+                      >
+                        {formatShortDate(
+                          row.date
+                        )}
+                      </span>
+                    );
+                  }
+                )}
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* FOOTER */}
+      {/* SUMMARY */}
 
       <div className="mt-3 rounded-xl bg-paper/40 px-4 py-3">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-ink/45">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 font-body text-xs text-ink/45">
           <span>
             <strong className="text-ink/65">
-              Line:
+              Chỉ số:
             </strong>{" "}
-            số ticket theo từng
-            category
+            {
+              trendMetricOptions.find(
+                (item) =>
+                  item.key === metric
+              )?.label
+            }
           </span>
 
           <span>
             <strong className="text-ink/65">
-              ↑:
+              Hiển thị:
             </strong>{" "}
-            category tăng
+            {visibleCategories.length}{" "}
+            Category
           </span>
 
           <span>
             <strong className="text-ink/65">
-              ↓:
+              Thời gian:
             </strong>{" "}
-            category giảm
-          </span>
-
-          <span>
-            <strong className="text-ink/65">
-              30 ngày:
-            </strong>{" "}
-            diễn biến gần nhất
+            {days} ngày gần nhất
           </span>
         </div>
       </div>
@@ -991,9 +1087,7 @@ export default function SupervisorDashboardPage() {
     useState<QueueRow[]>([]);
 
   const [summary, setSummary] =
-    useState<DailySummary | null>(
-      null
-    );
+    useState<DailySummary | null>(null);
 
   const [feedback, setFeedback] =
     useState<FeedbackRow[]>([]);
@@ -1015,11 +1109,8 @@ export default function SupervisorDashboardPage() {
       mom: null,
     });
 
-  const [chartData, setChartData] =
-    useState<ChartRow[]>([]);
-
-  const [chartCategories, setChartCategories] =
-    useState<string[]>([]);
+  const [trendData, setTrendData] =
+    useState<DailySummary[]>([]);
 
   const [loading, setLoading] =
     useState(true);
@@ -1036,507 +1127,316 @@ export default function SupervisorDashboardPage() {
   const [reassignOpenFor, setReassignOpenFor] =
     useState<string | null>(null);
 
-  const load = useCallback(
-    async () => {
-      setLoading(true);
+  const load = useCallback(async () => {
+    setLoading(true);
 
-      try {
-        const today =
-          startOfDay(new Date());
+    try {
+      const today = startOfDay(
+        new Date()
+      );
 
-        const todayStr =
-          dateToString(today);
+      const todayStr =
+        dateToString(today);
 
-        const yesterdayStr =
-          dateToString(
-            addDays(today, -1)
-          );
-
-        const weekAgoStr =
-          dateToString(
-            addDays(today, -7)
-          );
-
-        const monthAgoStr =
-          dateToString(
-            getPreviousMonthSamePeriod(
-              today
-            )
-          );
-
-        const chartStart =
-          dateToString(
-            addDays(today, -29)
-          );
-
-        const [
-          { data: queueData },
-          { data: summaryData },
-          { data: feedbackData },
-          { data: counterData },
-          { data: colleagueData },
-          { data: trendData },
-          { data: chartSummaryData },
-        ] = await Promise.all([
-          supabase
-            .from("v_agent_queue")
-            .select("*")
-            .order(
-              "created_at",
-              {
-                ascending: true,
-              }
-            ),
-
-          supabase
-            .from(
-              "v_report_daily_summary"
-            )
-            .select("*")
-            .eq(
-              "business_date",
-              todayStr
-            ),
-
-          supabase
-            .from(
-              "v_report_feedback"
-            )
-            .select(
-              "rating, created_at"
-            ),
-
-          supabase
-            .from("counters")
-            .select(
-              "id, counter_code, counter_name, status, branch_id"
-            ),
-
-          supabase
-            .from("profiles")
-            .select(
-              "id, full_name, email, role"
-            )
-            .eq("role", "agent"),
-
-          supabase
-            .from(
-              "v_report_daily_summary"
-            )
-            .select("*")
-            .gte(
-              "business_date",
-              monthAgoStr
-            )
-            .lte(
-              "business_date",
-              todayStr
-            )
-            .order(
-              "business_date",
-              {
-                ascending: true,
-              }
-            ),
-
-          /*
-           * Lấy dữ liệu 30 ngày.
-           *
-           * Quan trọng:
-           * View phải có category_name.
-           */
-          supabase
-            .from(
-              "v_report_daily_summary"
-            )
-            .select("*")
-            .gte(
-              "business_date",
-              chartStart
-            )
-            .lte(
-              "business_date",
-              todayStr
-            )
-            .order(
-              "business_date",
-              {
-                ascending: true,
-              }
-            ),
-        ]);
-
-        setRows(
-          (queueData as QueueRow[]) ??
-            []
+      const yesterdayStr =
+        dateToString(
+          addDays(today, -1)
         );
 
-        setSummary(
-          (
-            (summaryData as DailySummary[]) ??
-            []
-          )[0] ?? null
+      const weekAgoStr =
+        dateToString(
+          addDays(today, -7)
         );
 
-        const loadedFeedback =
-          (feedbackData as FeedbackRow[]) ??
-          [];
-
-        setFeedback(
-          loadedFeedback
+      const monthAgoStr =
+        dateToString(
+          getPreviousMonthSamePeriod(
+            today
+          )
         );
 
-        setCounters(
-          (counterData as Counter[]) ??
-            []
+      /*
+       * Lấy đủ 30 ngày để Trend có thể
+       * filter 7 / 14 / 30 ngày phía client.
+       */
+      const chartStart =
+        dateToString(
+          addDays(today, -29)
         );
 
-        setColleagues(
-          (colleagueData as AgentOption[]) ??
-            []
-        );
+      const [
+        { data: queueData },
+        { data: summaryData },
+        { data: feedbackData },
+        { data: counterData },
+        { data: colleagueData },
+        { data: trendSummaryData },
+      ] = await Promise.all([
+        supabase
+          .from("v_agent_queue")
+          .select("*")
+          .order("created_at", {
+            ascending: true,
+          }),
 
-        const summaries =
-          (trendData as DailySummary[]) ??
-          [];
-
-        const chartSummaries =
-          (chartSummaryData as DailySummary[]) ??
-          [];
-
-        const getDateSummary = (
-          date: string
-        ) =>
-          summaries.filter(
-            (row) =>
-              row.business_date ===
-              date
-          );
-
-        const todaySummary =
-          aggregateSummaries(
-            getDateSummary(
-              todayStr
-            )
-          );
-
-        const yesterdaySummary =
-          aggregateSummaries(
-            getDateSummary(
-              yesterdayStr
-            )
-          );
-
-        const weekSummary =
-          aggregateSummaries(
-            getDateSummary(
-              weekAgoStr
-            )
-          );
-
-        const monthSummary =
-          aggregateSummaries(
-            getDateSummary(
-              monthAgoStr
-            )
-          );
-
-        const feedbackByDate = (
-          start: string,
-          end: string
-        ) =>
-          loadedFeedback.filter(
-            (item) => {
-              if (
-                !item.created_at
-              )
-                return false;
-
-              const date =
-                item.created_at.slice(
-                  0,
-                  10
-                );
-
-              return (
-                date >= start &&
-                date <= end
-              );
-            }
-          );
-
-        const getCsat = (
-          items: FeedbackRow[]
-        ) =>
-          items.length
-            ? items.reduce(
-                (
-                  sum,
-                  item
-                ) =>
-                  sum +
-                  Number(
-                    item.rating ||
-                      0
-                  ),
-                0
-              ) /
-              items.length
-            : null;
-
-        const todayCsat =
-          getCsat(
-            feedbackByDate(
-              todayStr,
-              todayStr
-            )
-          );
-
-        const yesterdayCsat =
-          getCsat(
-            feedbackByDate(
-              yesterdayStr,
-              yesterdayStr
-            )
-          );
-
-        const weekCsat =
-          getCsat(
-            feedbackByDate(
-              weekAgoStr,
-              weekAgoStr
-            )
-          );
-
-        const monthCsat =
-          getCsat(
-            feedbackByDate(
-              monthAgoStr,
-              monthAgoStr
-            )
-          );
-
-        const createMetrics = (
-          previous: PeriodSummary,
-          previousCsat: number | null
-        ): TrendMetrics => ({
-          tickets:
-            buildTrend(
-              todaySummary.tickets,
-              previous.tickets
-            ),
-
-          completed:
-            buildTrend(
-              todaySummary.completed,
-              previous.completed
-            ),
-
-          visits:
-            buildTrend(
-              todaySummary.visits,
-              previous.visits
-            ),
-
-          uniqueDrivers:
-            buildTrend(
-              todaySummary.uniqueDrivers,
-              previous.uniqueDrivers
-            ),
-
-          waiting:
-            buildTrend(
-              todaySummary.waiting,
-              previous.waiting
-            ),
-
-          handling:
-            buildTrend(
-              todaySummary.handling,
-              previous.handling
-            ),
-
-          csat:
-            buildTrend(
-              todayCsat,
-              previousCsat
-            ),
-        });
-
-        setTrendMetrics({
-          dod: createMetrics(
-            yesterdaySummary,
-            yesterdayCsat
+        supabase
+          .from(
+            "v_report_daily_summary"
+          )
+          .select("*")
+          .eq(
+            "business_date",
+            todayStr
           ),
 
-          wow: createMetrics(
-            weekSummary,
-            weekCsat
+        supabase
+          .from("v_report_feedback")
+          .select(
+            "rating, created_at"
           ),
 
-          mom: createMetrics(
-            monthSummary,
-            monthCsat
+        supabase
+          .from("counters")
+          .select(
+            "id, counter_code, counter_name, status, branch_id"
           ),
-        });
 
-        /* =====================================================
-           BUILD CATEGORY TREND
-        ===================================================== */
+        supabase
+          .from("profiles")
+          .select(
+            "id, full_name, email, role"
+          )
+          .eq("role", "agent"),
 
-        const groupedChart =
-          new Map<
-            string,
-            ChartRow
-          >();
+        supabase
+          .from(
+            "v_report_daily_summary"
+          )
+          .select("*")
+          .gte(
+            "business_date",
+            chartStart
+          )
+          .lte(
+            "business_date",
+            todayStr
+          )
+          .order("business_date", {
+            ascending: true,
+          }),
+      ]);
 
-        const categorySet =
-          new Set<string>();
+      setRows(
+        ((queueData as QueueRow[]) ??
+          [])
+      );
 
-        chartSummaries.forEach(
-          (row) => {
+      setSummary(
+        (
+          (summaryData as DailySummary[]) ??
+          []
+        )[0] ?? null
+      );
+
+      const loadedFeedback =
+        (feedbackData as FeedbackRow[]) ??
+        [];
+
+      setFeedback(
+        loadedFeedback
+      );
+
+      setCounters(
+        (counterData as Counter[]) ??
+          []
+      );
+
+      setColleagues(
+        (colleagueData as AgentOption[]) ??
+          []
+      );
+
+      const summaries =
+        (trendSummaryData as DailySummary[]) ??
+        [];
+
+      setTrendData(
+        summaries
+      );
+
+      /* =====================================================
+         BENCHMARK
+      ===================================================== */
+
+      const getDateSummary = (
+        date: string
+      ) =>
+        summaries.filter(
+          (row) =>
+            row.business_date ===
+            date
+        );
+
+      const todaySummary =
+        aggregateSummaries(
+          getDateSummary(
+            todayStr
+          )
+        );
+
+      const yesterdaySummary =
+        aggregateSummaries(
+          getDateSummary(
+            yesterdayStr
+          )
+        );
+
+      const weekSummary =
+        aggregateSummaries(
+          getDateSummary(
+            weekAgoStr
+          )
+        );
+
+      const monthSummary =
+        aggregateSummaries(
+          getDateSummary(
+            monthAgoStr
+          )
+        );
+
+      const feedbackByDate = (
+        start: string,
+        end: string
+      ) =>
+        loadedFeedback.filter(
+          (item) => {
+            if (!item.created_at)
+              return false;
+
             const date =
-              row.business_date;
+              item.created_at.slice(
+                0,
+                10
+              );
 
-            const category =
-              typeof row.category_name ===
-                "string" &&
-              row.category_name.trim()
-                ? row.category_name.trim()
-                : "Chưa phân loại";
-
-            categorySet.add(
-              category
+            return (
+              date >= start &&
+              date <= end
             );
-
-            const existing =
-              groupedChart.get(
-                date
-              );
-
-            if (existing) {
-              existing.categories[
-                category
-              ] =
-                (existing.categories[
-                  category
-                ] ?? 0) +
-                Number(
-                  row.total_tickets ||
-                    0
-                );
-            } else {
-              groupedChart.set(
-                date,
-                {
-                  date,
-                  categories: {
-                    [category]:
-                      Number(
-                        row.total_tickets ||
-                          0
-                      ),
-                  },
-                }
-              );
-            }
           }
         );
 
-        /*
-         * Nếu category xuất hiện ngày khác
-         * thì bổ sung = 0 để line liên tục.
-         */
+      const getCsat = (
+        items: FeedbackRow[]
+      ) =>
+        items.length
+          ? items.reduce(
+              (
+                sum,
+                item
+              ) =>
+                sum +
+                Number(
+                  item.rating || 0
+                ),
+              0
+            ) / items.length
+          : null;
 
-        const categoryList =
-          Array.from(
-            categorySet
-          ).sort((a, b) => {
-            const totalA =
-              chartSummaries
-                .filter(
-                  (row) =>
-                    (
-                      row.category_name
-                        ?.trim() ||
-                      "Chưa phân loại"
-                    ) === a
-                )
-                .reduce(
-                  (sum, row) =>
-                    sum +
-                    Number(
-                      row.total_tickets ||
-                        0
-                    ),
-                  0
-                );
-
-            const totalB =
-              chartSummaries
-                .filter(
-                  (row) =>
-                    (
-                      row.category_name
-                        ?.trim() ||
-                      "Chưa phân loại"
-                    ) === b
-                )
-                .reduce(
-                  (sum, row) =>
-                    sum +
-                    Number(
-                      row.total_tickets ||
-                        0
-                    ),
-                  0
-                );
-
-            return (
-              totalB - totalA
-            );
-          });
-
-        const finalChartData =
-          Array.from(
-            groupedChart.values()
+      const todayCsat =
+        getCsat(
+          feedbackByDate(
+            todayStr,
+            todayStr
           )
-            .sort((a, b) =>
-              a.date.localeCompare(
-                b.date
-              )
-            )
-            .map((row) => {
-              categoryList.forEach(
-                (category) => {
-                  if (
-                    row.categories[
-                      category
-                    ] == null
-                  ) {
-                    row.categories[
-                      category
-                    ] = 0;
-                  }
-                }
-              );
-
-              return row;
-            });
-
-        setChartCategories(
-          categoryList
         );
 
-        setChartData(
-          finalChartData
+      const yesterdayCsat =
+        getCsat(
+          feedbackByDate(
+            yesterdayStr,
+            yesterdayStr
+          )
         );
-      } finally {
-        setLoading(false);
-      }
-    },
-    []
-  );
+
+      const weekCsat =
+        getCsat(
+          feedbackByDate(
+            weekAgoStr,
+            weekAgoStr
+          )
+        );
+
+      const monthCsat =
+        getCsat(
+          feedbackByDate(
+            monthAgoStr,
+            monthAgoStr
+          )
+        );
+
+      const createMetrics = (
+        previous: PeriodSummary,
+        previousCsat: number | null
+      ): TrendMetrics => ({
+        tickets: buildTrend(
+          todaySummary.tickets,
+          previous.tickets
+        ),
+
+        completed: buildTrend(
+          todaySummary.completed,
+          previous.completed
+        ),
+
+        visits: buildTrend(
+          todaySummary.visits,
+          previous.visits
+        ),
+
+        uniqueDrivers:
+          buildTrend(
+            todaySummary.uniqueDrivers,
+            previous.uniqueDrivers
+          ),
+
+        waiting: buildTrend(
+          todaySummary.waiting,
+          previous.waiting
+        ),
+
+        handling: buildTrend(
+          todaySummary.handling,
+          previous.handling
+        ),
+
+        csat: buildTrend(
+          todayCsat,
+          previousCsat
+        ),
+      });
+
+      setTrendMetrics({
+        dod: createMetrics(
+          yesterdaySummary,
+          yesterdayCsat
+        ),
+
+        wow: createMetrics(
+          weekSummary,
+          weekCsat
+        ),
+
+        mom: createMetrics(
+          monthSummary,
+          monthCsat
+        ),
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     getCurrentProfile().then(
@@ -1552,6 +1452,7 @@ export default function SupervisorDashboardPage() {
         .channel(
           "supervisor-dashboard"
         )
+
         .on(
           "postgres_changes",
           {
@@ -1562,6 +1463,7 @@ export default function SupervisorDashboardPage() {
           },
           load
         )
+
         .on(
           "postgres_changes",
           {
@@ -1572,6 +1474,7 @@ export default function SupervisorDashboardPage() {
           },
           load
         )
+
         .on(
           "postgres_changes",
           {
@@ -1582,6 +1485,7 @@ export default function SupervisorDashboardPage() {
           },
           load
         )
+
         .subscribe();
 
     return () => {
@@ -1658,16 +1562,10 @@ export default function SupervisorDashboardPage() {
   const categories = Array.from(
     new Set(
       rows
-        .map(
-          (r) =>
-            r.category_name
-        )
+        .map((r) => r.category_name)
         .filter(
-          (
-            category
-          ): category is string =>
-            typeof category ===
-              "string" &&
+          (category): category is string =>
+            typeof category === "string" &&
             category.length > 0
         )
     )
@@ -1676,20 +1574,33 @@ export default function SupervisorDashboardPage() {
   const agents = Array.from(
     new Set(
       rows
-        .map(
-          (r) =>
-            r.agent_name
-        )
+        .map((r) => r.agent_name)
         .filter(
-          (
-            agent
-          ): agent is string =>
-            typeof agent ===
-              "string" &&
+          (agent): agent is string =>
+            typeof agent === "string" &&
             agent.length > 0
         )
     )
   );
+
+  const trendCategories =
+    Array.from(
+      new Set(
+        trendData
+          .map(
+            (row) =>
+              row.category_name
+          )
+          .filter(
+            (
+              category
+            ): category is string =>
+              typeof category ===
+                "string" &&
+              category.length > 0
+          )
+      )
+    );
 
   const waiting =
     rows.filter(
@@ -1914,7 +1825,7 @@ export default function SupervisorDashboardPage() {
       </section>
 
       {/* =====================================================
-          CATEGORY TREND
+          TREND THEO CATEGORY
       ===================================================== */}
 
       <section>
@@ -1924,33 +1835,28 @@ export default function SupervisorDashboardPage() {
           </p>
 
           <p className="mt-1 font-body text-xs text-ink/40">
-            Theo dõi số ticket
-            của từng category
-            trong 30 ngày gần
-            nhất
+            Theo dõi tăng giảm
+            từng Category theo
+            ngày
           </p>
         </div>
 
         <div className="rounded-card border border-line bg-white p-5">
-          <div className="mb-6">
-            <p className="font-display text-xl font-bold text-brand-900">
-              Ticket Trend by
-              Category
+          <div className="mb-5">
+            <p className="font-body text-lg font-bold text-brand-900">
+              Category Trend
             </p>
 
             <p className="mt-1 font-body text-sm text-ink/45">
               Mỗi đường biểu diễn
-              một category · nhìn
-              trực tiếp xu hướng
-              tăng / giảm theo
-              ngày
+              một Category
             </p>
           </div>
 
           <CategoryTrendChart
-            data={chartData}
+            data={trendData}
             categories={
-              chartCategories
+              trendCategories
             }
           />
         </div>
@@ -2361,3 +2267,4 @@ export default function SupervisorDashboardPage() {
     </div>
   );
 }
+
