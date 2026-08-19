@@ -270,6 +270,7 @@ function BenchmarkGroup({
     <div>
       <div className="mb-2 flex items-center gap-2">
         <span className="h-1.5 w-1.5 rounded-full bg-brand-700" />
+
         <span className="font-body text-xs font-bold uppercase tracking-wide text-ink/55">
           {title}
         </span>
@@ -667,6 +668,7 @@ function CsATChart({
 
       <div className="mt-2 flex justify-between px-1 text-[10px] text-ink/35">
         <span>{valid[0]?.date}</span>
+
         <span>
           {valid[valid.length - 1]?.date}
         </span>
@@ -824,32 +826,36 @@ export default function SupervisorDashboardPage() {
         }),
     ]);
 
-    setRows(
-      ((queueData as QueueRow[]) ?? [])
-    );
+    const nextRows =
+      (queueData as QueueRow[]) ?? [];
 
-    setSummary(
-      ((summaryData as DailySummary[]) ?? [])[0] ??
-        null
-    );
+    const nextSummary =
+      (summaryData as DailySummary[]) ?? [];
 
-    setFeedback(
-      (feedbackData as FeedbackRow[]) ?? []
-    );
+    const nextFeedback =
+      (feedbackData as FeedbackRow[]) ?? [];
 
-    setCounters(
-      (counterData as Counter[]) ?? []
-    );
+    const nextCounters =
+      (counterData as Counter[]) ?? [];
 
-    setColleagues(
-      (colleagueData as AgentOption[]) ?? []
-    );
+    const nextColleagues =
+      (colleagueData as AgentOption[]) ?? [];
 
     const summaries =
       (trendData as DailySummary[]) ?? [];
 
     const chartSummaries =
       (chartSummaryData as DailySummary[]) ?? [];
+
+    setRows(nextRows);
+
+    setSummary(nextSummary[0] ?? null);
+
+    setFeedback(nextFeedback);
+
+    setCounters(nextCounters);
+
+    setColleagues(nextColleagues);
 
     const getDateSummary = (
       date: string
@@ -883,7 +889,7 @@ export default function SupervisorDashboardPage() {
       start: string,
       end: string
     ) =>
-      feedback.filter((item) => {
+      nextFeedback.filter((item) => {
         if (!item.created_at) return false;
 
         const date =
@@ -991,11 +997,9 @@ export default function SupervisorDashboardPage() {
       ),
     });
 
-    /*
-     * ============================
-     * BUILD 30-DAY CHART
-     * ============================
-     */
+    /* =======================================================
+       BUILD 30-DAY CHART
+    ======================================================= */
 
     const groupedChart =
       new Map<string, ChartRow>();
@@ -1022,43 +1026,74 @@ export default function SupervisorDashboardPage() {
         existing.uniqueDrivers += Number(
           row.unique_drivers || 0
         );
+
+        /*
+         * Weighted-average is not available
+         * from the current view, so keep the
+         * first non-null daily value.
+         */
+        if (
+          existing.waiting == null &&
+          row.avg_waiting_time_min != null
+        ) {
+          existing.waiting = Number(
+            row.avg_waiting_time_min
+          );
+        }
+
+        if (
+          existing.handling == null &&
+          row.avg_handling_time_min != null
+        ) {
+          existing.handling = Number(
+            row.avg_handling_time_min
+          );
+        }
       } else {
         groupedChart.set(date, {
           date,
+
           tickets: Number(
             row.total_tickets || 0
           ),
+
           completed: Number(
             row.completed_tickets || 0
           ),
+
           visits: Number(
             row.total_visits || 0
           ),
+
           uniqueDrivers: Number(
             row.unique_drivers || 0
           ),
+
           waiting:
             row.avg_waiting_time_min != null
               ? Number(
                   row.avg_waiting_time_min
                 )
               : null,
+
           handling:
             row.avg_handling_time_min != null
               ? Number(
                   row.avg_handling_time_min
                 )
               : null,
+
           csat: null,
         });
       }
     });
 
-    /*
-     * Add CSAT by date
-     */
+    /* =======================================================
+       ADD CSAT BY DATE
+    ======================================================= */
+
     const chartFeedback =
-      feedback.filter((item) => {
+      nextFeedback.filter((item) => {
         if (!item.created_at) return false;
 
         const date =
@@ -1082,7 +1117,9 @@ export default function SupervisorDashboardPage() {
       const current =
         feedbackMap.get(date) ?? [];
 
-      current.push(Number(item.rating || 0));
+      current.push(
+        Number(item.rating || 0)
+      );
 
       feedbackMap.set(date, current);
     });
@@ -1092,7 +1129,7 @@ export default function SupervisorDashboardPage() {
         const row =
           groupedChart.get(date);
 
-        if (!row) return;
+        if (!row || !ratings.length) return;
 
         row.csat =
           ratings.reduce(
@@ -1112,10 +1149,13 @@ export default function SupervisorDashboardPage() {
     );
 
     setLoading(false);
-  }, [feedback]);
+  }, []);
 
   useEffect(() => {
     getCurrentProfile().then(setProfile);
+  }, []);
+
+  useEffect(() => {
     load();
   }, [load]);
 
@@ -1192,6 +1232,7 @@ export default function SupervisorDashboardPage() {
     );
 
     setReassignOpenFor(null);
+
     load();
   }
 
@@ -1214,19 +1255,32 @@ export default function SupervisorDashboardPage() {
     agentFilter,
   ]);
 
-  const categories = Array.from(
+  /*
+   * IMPORTANT:
+   * Explicitly narrow null/undefined values
+   * so TypeScript knows these are string[].
+   */
+  const categories: string[] = Array.from(
     new Set(
       rows
         .map((r) => r.category_name)
-        .filter(Boolean)
+        .filter(
+          (value): value is string =>
+            typeof value === "string" &&
+            value.trim().length > 0
+        )
     )
   );
 
-  const agents = Array.from(
+  const agents: string[] = Array.from(
     new Set(
       rows
         .map((r) => r.agent_name)
-        .filter(Boolean)
+        .filter(
+          (value): value is string =>
+            typeof value === "string" &&
+            value.trim().length > 0
+        )
     )
   );
 
