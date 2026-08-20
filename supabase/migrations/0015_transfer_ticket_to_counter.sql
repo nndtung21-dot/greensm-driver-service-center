@@ -1,206 +1,19 @@
 -- ============================================================
--- 1. TRANSFER TICKET TO SELECTED COUNTER
--- ============================================================
-
-create or replace function transfer_ticket_to_counter(
-  p_ticket_id uuid,
-  p_target_counter_id uuid
-)
-returns table (
-  ticket_id uuid,
-  ticket_code text,
-  queue_number text,
-  target_counter_code text,
-  target_agent_id uuid
-)
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_agent_id uuid := auth.uid();
-  v_role user_role;
-  v_branch uuid;
-
-  v_ticket_branch uuid;
-  v_ticket_status ticket_status;
-
-  v_target_branch uuid;
-  v_target_agent uuid;
-  v_target_code text;
-begin
-
-  -- ==========================================================
-  -- LẤY PROFILE NGƯỜI THỰC HIỆN
-  -- ==========================================================
-
-  select
-    role,
-    branch_id
-  into
-    v_role,
-    v_branch
-  from profiles
-  where id = v_agent_id;
-
-  if v_role is null then
-    raise exception 'Không tìm thấy thông tin tài khoản.';
-  end if;
-
-  if v_role not in ('agent', 'supervisor', 'admin') then
-    raise exception 'Không có quyền chuyển ticket.';
-  end if;
-
-  if v_branch is null then
-    raise exception 'Tài khoản chưa được gán văn phòng.';
-  end if;
-
-
-  -- ==========================================================
-  -- LOCK TICKET
-  -- ==========================================================
-
-  select
-    branch_id,
-    status
-  into
-    v_ticket_branch,
-    v_ticket_status
-  from queue_tickets
-  where id = p_ticket_id
-  for update;
-
-  if not found then
-    raise exception 'Không tìm thấy ticket.';
-  end if;
-
-
-  -- ==========================================================
-  -- KIỂM TRA CÙNG VĂN PHÒNG
-  -- ==========================================================
-
-  if v_ticket_branch is distinct from v_branch then
-    raise exception 'Ticket không thuộc văn phòng của bạn.';
-  end if;
-
-
-  -- ==========================================================
-  -- CHỈ CHO PHÉP CHUYỂN KHI CALLED / PROCESSING
-  -- ==========================================================
-
-  if v_ticket_status not in ('CALLED', 'PROCESSING') then
-    raise exception
-      'Chỉ có thể chuyển ticket đang được gọi hoặc đang xử lý.';
-  end if;
-
-
-  -- ==========================================================
-  -- LẤY QUẦY ĐÍCH
-  -- ==========================================================
-
-  select
-    c.branch_id,
-    c.default_agent_id,
-    c.counter_code
-  into
-    v_target_branch,
-    v_target_agent,
-    v_target_code
-  from counters c
-  where c.id = p_target_counter_id
-  for update;
-
-  if not found then
-    raise exception 'Không tìm thấy quầy đích.';
-  end if;
-
-
-  -- ==========================================================
-  -- QUẦY ĐÍCH PHẢI CÙNG VĂN PHÒNG
-  -- ==========================================================
-
-  if v_target_branch is distinct from v_branch then
-    raise exception 'Quầy đích không thuộc văn phòng này.';
-  end if;
-
-
-  -- ==========================================================
-  -- QUẦY ĐÍCH PHẢI CÓ AGENT MẶC ĐỊNH
-  -- ==========================================================
-
-  if v_target_agent is null then
-    raise exception 'Quầy đích chưa được gán Agent.';
-  end if;
-
-
-  -- ==========================================================
-  -- QUAN TRỌNG:
-  --
-  -- Chuyển ticket về WAITING
-  -- NHƯNG GIỮ counter_id = QUẦY ĐÍCH
-  --
-  -- KHÔNG gọi số.
-  -- KHÔNG set CALLED.
-  -- ==========================================================
-
-  update queue_tickets
-  set
-    status = 'WAITING',
-    counter_id = p_target_counter_id,
-    called_at = null
-  where id = p_ticket_id;
-
-
-  -- ==========================================================
-  -- SERVICE CASE:
-  --
-  -- WAITING
-  -- assign cho Agent mặc định của quầy đích
-  -- ==========================================================
-
-  update service_cases
-  set
-    status = 'WAITING',
-    assigned_agent_id = v_target_agent
-  where ticket_id = p_ticket_id;
-
-
-  -- ==========================================================
-  -- TRẢ KẾT QUẢ
-  -- ==========================================================
-
-  return query
-  select
-    qt.id,
-    qt.ticket_code,
-    qt.queue_number,
-    v_target_code,
-    v_target_agent
-  from queue_tickets qt
-  where qt.id = p_ticket_id;
-
-end;
-$$;
-
-
-revoke all
-on function transfer_ticket_to_counter(uuid, uuid)
-from public;
-
-grant execute
-on function transfer_ticket_to_counter(uuid, uuid)
-to authenticated;
-
-
-
--- ============================================================
--- 2. CALL NEXT TICKET
+-- CALL NEXT TICKET
 --
 -- Agent bấm "GỌI SỐ"
 -- => tìm ticket WAITING thuộc QUẦY CỦA AGENT
 -- => chuyển ticket thành CALLED
 --
--- Không tự chọn quầy khác.
+-- Agent:
+--   Chỉ lấy ticket thuộc quầy mình.
+--
+-- Supervisor / Admin:
+--   Có thể lấy ticket WAITING trong cùng branch.
+--
+-- counter_id là nguồn xác định ticket thuộc queue nào.
+-- assigned_agent_id chỉ dùng để ưu tiên, không dùng để
+-- loại ticket khỏi queue.
 -- ============================================================
 
 create or replace function call_next_ticket()
@@ -229,7 +42,7 @@ declare
 begin
 
   -- ==========================================================
-  -- LẤY PROFILE AGENT
+  -- 1. LẤY PROFILE NGƯỜI THỰC HIỆN
   -- ==========================================================
 
   select
@@ -257,15 +70,19 @@ begin
 
 
   -- ==========================================================
-  -- TÌM TICKET WAITING
+  -- 2. TÌM TICKET WAITING
   --
-  -- Ticket phải:
-  -- 1. Cùng branch
-  -- 2. WAITING
-  -- 3. Có counter_id
-  -- 4. Counter thuộc Agent hiện tại
+  -- AGENT:
+  --   Chỉ lấy ticket thuộc quầy của Agent.
   --
-  -- Ưu tiên ticket được assign trực tiếp cho Agent.
+  -- SUPERVISOR / ADMIN:
+  --   Có thể lấy ticket WAITING trong cùng branch.
+  --
+  -- QUAN TRỌNG:
+  --   counter_id + default_agent_id xác định queue.
+  --
+  --   assigned_agent_id KHÔNG được dùng để loại ticket.
+  --   Chỉ dùng để ưu tiên ticket đã assign cho Agent.
   -- ==========================================================
 
   select
@@ -284,18 +101,26 @@ begin
     qt.branch_id = v_branch
     and qt.status = 'WAITING'
 
-    and c.default_agent_id = v_agent_id
-
     and (
-      cs.assigned_agent_id = v_agent_id
-      or cs.assigned_agent_id is null
+      -- Agent:
+      -- chỉ lấy ticket thuộc quầy của Agent hiện tại
+      (
+        v_role = 'agent'
+        and c.default_agent_id = v_agent_id
+      )
+
+      -- Supervisor / Admin:
+      -- lấy ticket WAITING trong cùng branch
+      or v_role in ('supervisor', 'admin')
     )
 
   order by
+    -- Ưu tiên ticket đã được assign cho Agent hiện tại
     (
       cs.assigned_agent_id = v_agent_id
     ) desc,
 
+    -- Sau đó ưu tiên người chờ lâu nhất
     qt.created_at
 
   for update of qt skip locked
@@ -304,7 +129,7 @@ begin
 
 
   -- ==========================================================
-  -- KHÔNG CÓ TICKET
+  -- 3. KHÔNG CÓ TICKET
   -- ==========================================================
 
   if v_ticket_id is null then
@@ -314,9 +139,10 @@ begin
 
 
   -- ==========================================================
-  -- LẤY ĐÚNG QUẦY CỦA TICKET
+  -- 4. LẤY QUẦY CỦA TICKET
   --
-  -- KHÔNG tự tìm AVAILABLE counter.
+  -- Không tự tìm quầy khác.
+  -- Lấy đúng counter_id đang gắn với ticket.
   -- ==========================================================
 
   select
@@ -337,6 +163,10 @@ begin
   for update of c;
 
 
+  -- ==========================================================
+  -- 5. KIỂM TRA TICKET ĐÃ CÓ QUẦY
+  -- ==========================================================
+
   if v_counter_id is null then
     raise exception
       'Ticket chưa được gán quầy.';
@@ -344,26 +174,51 @@ begin
 
 
   -- ==========================================================
-  -- KIỂM TRA QUẦY THUỘC AGENT
+  -- 6. KIỂM TRA QUẦY
+  --
+  -- Agent:
+  --   Quầy phải là quầy của Agent.
+  --
+  -- Supervisor / Admin:
+  --   Chỉ cần quầy thuộc cùng branch.
   -- ==========================================================
 
-  if not exists (
-    select 1
-    from counters c
-    where
-      c.id = v_counter_id
-      and c.branch_id = v_branch
-      and c.default_agent_id = v_agent_id
-  ) then
+  if v_role = 'agent' then
 
-    raise exception
-      'Ticket không thuộc quầy của Agent hiện tại.';
+    if not exists (
+      select 1
+      from counters c
+      where
+        c.id = v_counter_id
+        and c.branch_id = v_branch
+        and c.default_agent_id = v_agent_id
+    ) then
+
+      raise exception
+        'Ticket không thuộc quầy của Agent hiện tại.';
+
+    end if;
+
+  else
+
+    if not exists (
+      select 1
+      from counters c
+      where
+        c.id = v_counter_id
+        and c.branch_id = v_branch
+    ) then
+
+      raise exception
+        'Ticket không thuộc văn phòng của bạn.';
+
+    end if;
 
   end if;
 
 
   -- ==========================================================
-  -- CHỈ TẠI ĐÂY MỚI CALLED
+  -- 7. CHUYỂN TICKET -> CALLED
   -- ==========================================================
 
   update queue_tickets
@@ -374,7 +229,7 @@ begin
 
 
   -- ==========================================================
-  -- QUẦY -> BUSY
+  -- 8. QUẦY -> BUSY
   -- ==========================================================
 
   update counters
@@ -385,7 +240,9 @@ begin
 
 
   -- ==========================================================
-  -- CASE -> CALLED
+  -- 9. SERVICE CASE -> CALLED
+  --
+  -- Agent hiện tại trở thành người xử lý ticket.
   -- ==========================================================
 
   update service_cases
@@ -400,7 +257,7 @@ begin
 
 
   -- ==========================================================
-  -- TRẢ KẾT QUẢ
+  -- 10. TRẢ KẾT QUẢ
   -- ==========================================================
 
   return query
@@ -430,6 +287,10 @@ begin
 end;
 $$;
 
+
+-- ============================================================
+-- PERMISSION
+-- ============================================================
 
 revoke all
 on function call_next_ticket()
