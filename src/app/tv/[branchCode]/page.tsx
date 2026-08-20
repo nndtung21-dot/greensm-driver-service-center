@@ -9,6 +9,10 @@ import {
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
+/* ============================================================
+   TYPES
+   ============================================================ */
+
 type CounterStatusRow = {
   counter_code: string;
   counter_name: string;
@@ -17,7 +21,15 @@ type CounterStatusRow = {
     | "CLOSED"
     | "AVAILABLE"
     | "BUSY"
-    | "OFFLINE";
+    | "OFFLINE"
+    | string;
+
+  // DB RPC ĐÃ CÓ các field này
+  agent_id: string | null;
+  agent_name: string | null;
+  queue_number: string | null;
+  called_at: string | null;
+  display_order: number;
 };
 
 type AgentQueueRow = {
@@ -28,11 +40,9 @@ type AgentQueueRow = {
   created_at: string;
 };
 
-type ActiveCall = {
-  counter_code: string;
-  queue_number: string;
-  called_at: string;
-};
+/* ============================================================
+   AUDIO
+   ============================================================ */
 
 const CLIP_BASE = "/audio/tv/";
 
@@ -136,7 +146,10 @@ function counterNumberToWords(
   }
 
   return [...counterCode]
-    .map((ch) => DIGIT_WORD[ch] ?? ch)
+    .map(
+      (ch) =>
+        DIGIT_WORD[ch] ?? ch
+    )
     .join(" ");
 }
 
@@ -146,7 +159,10 @@ function buildAnnouncementText(
   counterCode: string
 ): string {
   const qWords = [...queueNumber.toUpperCase()]
-    .map((ch) => DIGIT_WORD[ch] ?? ch)
+    .map(
+      (ch) =>
+        DIGIT_WORD[ch] ?? ch
+    )
     .join(" ");
 
   const cWords =
@@ -155,6 +171,10 @@ function buildAnnouncementText(
   return `Kính mời tài xế có số ${qWords}, ${driverName}, đến quầy số ${cWords}`;
 }
 
+/* ============================================================
+   ANNOUNCER
+   ============================================================ */
+
 function useAnnouncer() {
   const audioRef =
     useRef<HTMLAudioElement | null>(null);
@@ -162,7 +182,8 @@ function useAnnouncer() {
   const queueRef =
     useRef<(() => Promise<void>)[]>([]);
 
-  const playingRef = useRef(false);
+  const playingRef =
+    useRef(false);
 
   const [unlocked, setUnlocked] =
     useState(false);
@@ -172,9 +193,11 @@ function useAnnouncer() {
       audioRef.current = new Audio();
     }
 
-    const audio = audioRef.current;
+    const audio =
+      audioRef.current;
 
-    audio.src = `${CLIP_BASE}intro.mp3`;
+    audio.src =
+      `${CLIP_BASE}intro.mp3`;
 
     audio
       .play()
@@ -186,78 +209,86 @@ function useAnnouncer() {
       .catch(() => {});
   }, []);
 
-  const playLocalClips = useCallback(
-    (clipNames: string[]) => {
-      return new Promise<void>(
-        (resolve, reject) => {
-          if (!audioRef.current) {
-            audioRef.current = new Audio();
-          }
-
-          const audio =
-            audioRef.current;
-
-          let index = 0;
-
-          const playNext = () => {
-            if (index >= clipNames.length) {
-              resolve();
-              return;
+  const playLocalClips =
+    useCallback(
+      (clipNames: string[]) => {
+        return new Promise<void>(
+          (resolve, reject) => {
+            if (!audioRef.current) {
+              audioRef.current =
+                new Audio();
             }
 
-            audio.src =
-              `${CLIP_BASE}${clipNames[index]}.mp3`;
+            const audio =
+              audioRef.current;
 
-            index += 1;
+            let index = 0;
 
-            audio.onended = playNext;
+            const playNext = () => {
+              if (
+                index >=
+                clipNames.length
+              ) {
+                resolve();
+                return;
+              }
+
+              audio.src =
+                `${CLIP_BASE}${clipNames[index]}.mp3`;
+
+              index += 1;
+
+              audio.onended =
+                playNext;
+
+              audio
+                .play()
+                .catch(reject);
+            };
+
+            playNext();
+          }
+        );
+      },
+      []
+    );
+
+  const playRemote =
+    useCallback(
+      (url: string) => {
+        return new Promise<void>(
+          (resolve, reject) => {
+            if (!audioRef.current) {
+              audioRef.current =
+                new Audio();
+            }
+
+            const audio =
+              audioRef.current;
+
+            audio.src = url;
+
+            audio.onended = () =>
+              resolve();
+
+            audio.onerror = () =>
+              reject(
+                new Error(
+                  "playback error"
+                )
+              );
 
             audio
               .play()
               .catch(reject);
-          };
-
-          playNext();
-        }
-      );
-    },
-    []
-  );
-
-  const playRemote = useCallback(
-    (url: string) => {
-      return new Promise<void>(
-        (resolve, reject) => {
-          if (!audioRef.current) {
-            audioRef.current = new Audio();
           }
+        );
+      },
+      []
+    );
 
-          const audio =
-            audioRef.current;
-
-          audio.src = url;
-
-          audio.onended = () =>
-            resolve();
-
-          audio.onerror = () =>
-            reject(
-              new Error(
-                "playback error"
-              )
-            );
-
-          audio
-            .play()
-            .catch(reject);
-        }
-      );
-    },
-    []
-  );
-
-  const processQueue = useCallback(
-    async () => {
+  const processQueue =
+    useCallback(async () => {
       if (playingRef.current) {
         return;
       }
@@ -285,108 +316,126 @@ function useAnnouncer() {
       }
 
       playingRef.current = false;
-    },
-    []
-  );
+    }, []);
 
-  const enqueue = useCallback(
-    (
-      queueNumber: string,
-      driverName: string,
-      counterCode: string
-    ) => {
-      queueRef.current.push(
-        async () => {
-          const text =
-            buildAnnouncementText(
-              queueNumber,
-              driverName,
-              counterCode
-            );
-
-          try {
-            const response =
-              await fetch(
-                `/api/tts?text=${encodeURIComponent(
-                  text
-                )}`
+  const enqueue =
+    useCallback(
+      (
+        queueNumber: string,
+        driverName: string,
+        counterCode: string
+      ) => {
+        queueRef.current.push(
+          async () => {
+            const text =
+              buildAnnouncementText(
+                queueNumber,
+                driverName,
+                counterCode
               );
 
-            if (!response.ok) {
-              throw new Error(
-                "TTS route failed"
-              );
-            }
-
-            const blob =
-              await response.blob();
-
-            const url =
-              URL.createObjectURL(blob);
+            /* Lần 1 */
 
             try {
-              await playRemote(url);
-            } finally {
-              URL.revokeObjectURL(url);
+              const response =
+                await fetch(
+                  `/api/tts?text=${encodeURIComponent(
+                    text
+                  )}`
+                );
+
+              if (!response.ok) {
+                throw new Error(
+                  "TTS route failed"
+                );
+              }
+
+              const blob =
+                await response.blob();
+
+              const url =
+                URL.createObjectURL(
+                  blob
+                );
+
+              try {
+                await playRemote(
+                  url
+                );
+              } finally {
+                URL.revokeObjectURL(
+                  url
+                );
+              }
+            } catch {
+              await playLocalClips(
+                buildAnnouncementClips(
+                  queueNumber,
+                  counterCode
+                )
+              );
             }
-          } catch {
-            await playLocalClips(
-              buildAnnouncementClips(
-                queueNumber,
-                counterCode
-              )
+
+            await new Promise(
+              (resolve) =>
+                setTimeout(
+                  resolve,
+                  700
+                )
             );
-          }
 
-          await new Promise(
-            (resolve) =>
-              setTimeout(resolve, 700)
-          );
-
-          try {
-            const response =
-              await fetch(
-                `/api/tts?text=${encodeURIComponent(
-                  text
-                )}`
-              );
-
-            if (!response.ok) {
-              throw new Error(
-                "TTS route failed"
-              );
-            }
-
-            const blob =
-              await response.blob();
-
-            const url =
-              URL.createObjectURL(blob);
+            /* Lần 2 */
 
             try {
-              await playRemote(url);
-            } finally {
-              URL.revokeObjectURL(url);
-            }
-          } catch {
-            await playLocalClips(
-              buildAnnouncementClips(
-                queueNumber,
-                counterCode
-              )
-            );
-          }
-        }
-      );
+              const response =
+                await fetch(
+                  `/api/tts?text=${encodeURIComponent(
+                    text
+                  )}`
+                );
 
-      processQueue();
-    },
-    [
-      playRemote,
-      playLocalClips,
-      processQueue,
-    ]
-  );
+              if (!response.ok) {
+                throw new Error(
+                  "TTS route failed"
+                );
+              }
+
+              const blob =
+                await response.blob();
+
+              const url =
+                URL.createObjectURL(
+                  blob
+                );
+
+              try {
+                await playRemote(
+                  url
+                );
+              } finally {
+                URL.revokeObjectURL(
+                  url
+                );
+              }
+            } catch {
+              await playLocalClips(
+                buildAnnouncementClips(
+                  queueNumber,
+                  counterCode
+                )
+              );
+            }
+          }
+        );
+
+        processQueue();
+      },
+      [
+        playRemote,
+        playLocalClips,
+        processQueue,
+      ]
+    );
 
   return {
     enqueue,
@@ -394,6 +443,10 @@ function useAnnouncer() {
     unlocked,
   };
 }
+
+/* ============================================================
+   CLOCK
+   ============================================================ */
 
 function useClock() {
   const [now, setNow] =
@@ -403,7 +456,8 @@ function useClock() {
     setNow(new Date());
 
     const id = setInterval(
-      () => setNow(new Date()),
+      () =>
+        setNow(new Date()),
       1000
     );
 
@@ -413,6 +467,10 @@ function useClock() {
 
   return now;
 }
+
+/* ============================================================
+   TV DISPLAY
+   ============================================================ */
 
 export default function TvDisplayPage() {
   const params =
@@ -426,21 +484,16 @@ export default function TvDisplayPage() {
   const [
     counters,
     setCounters,
-  ] = useState<CounterStatusRow[]>(
-    []
-  );
+  ] = useState<
+    CounterStatusRow[]
+  >([]);
 
   const [
     agentQueue,
     setAgentQueue,
-  ] = useState<AgentQueueRow[]>(
-    []
-  );
-
-  const [
-    activeCalls,
-    setActiveCalls,
-  ] = useState<ActiveCall[]>([]);
+  ] = useState<
+    AgentQueueRow[]
+  >([]);
 
   const [
     loading,
@@ -450,10 +503,18 @@ export default function TvDisplayPage() {
   const [
     errorMessage,
     setErrorMessage,
-  ] = useState<string | null>(
-    null
-  );
+  ] = useState<
+    string | null
+  >(null);
 
+  /*
+   * Lưu lần gọi cuối cùng theo quầy.
+   *
+   * Key:
+   *   HCM011
+   *   HCM012
+   * ...
+   */
   const lastAnnouncedAt =
     useRef<
       Map<string, string>
@@ -467,17 +528,18 @@ export default function TvDisplayPage() {
 
   const clock = useClock();
 
-  /*
-   * ============================================================
-   * LOAD COUNTERS
-   *
-   * DB RPC hiện tại:
-   * tv_counter_status
-   *
-   * KHÔNG phải:
-   * tv_counters_status
-   * ============================================================
-   */
+  /* ==========================================================
+     LOAD COUNTERS
+
+     RPC này ĐÃ trả:
+       agent_id
+       agent_name
+       queue_number
+       called_at
+       display_order
+
+     => Không query queue_tickets riêng nữa.
+     ========================================================== */
 
   const loadCounters =
     useCallback(async () => {
@@ -502,6 +564,8 @@ export default function TvDisplayPage() {
           error.message
         );
 
+        setCounters([]);
+
         return [];
       }
 
@@ -510,22 +574,14 @@ export default function TvDisplayPage() {
         [];
 
       /*
-       * Hiện DB chưa có display_order.
-       * Tạm thời sort theo counter_code.
-       *
-       * Sau này thêm display_order:
-       * sort theo display_order trước.
+       * RPC đã sort display_order.
+       * Nhưng sort lại ở frontend để
+       * đảm bảo thứ tự TV.
        */
-
-      result.sort((a, b) =>
-        a.counter_code.localeCompare(
-          b.counter_code,
-          undefined,
-          {
-            numeric: true,
-            sensitivity: "base",
-          }
-        )
+      result.sort(
+        (a, b) =>
+          a.display_order -
+          b.display_order
       );
 
       setCounters(result);
@@ -533,11 +589,19 @@ export default function TvDisplayPage() {
       return result;
     }, [branchCode]);
 
-  /*
-   * ============================================================
-   * LOAD AGENT QUEUE
-   * ============================================================
-   */
+  /* ==========================================================
+     LOAD QUEUE
+
+     RPC này trả cả:
+       WAITING
+       CALLED
+       PROCESSING
+
+     và QUAN TRỌNG:
+       assigned_agent_id có thể NULL.
+
+     => NULL chính là "Chưa phân bổ Agent".
+     ========================================================== */
 
   const loadAgentQueue =
     useCallback(async () => {
@@ -558,10 +622,6 @@ export default function TvDisplayPage() {
           error
         );
 
-        /*
-         * Không xoá counters nếu
-         * queue RPC lỗi.
-         */
         setAgentQueue([]);
 
         return [];
@@ -571,164 +631,27 @@ export default function TvDisplayPage() {
         (data as AgentQueueRow[]) ??
         [];
 
+      /*
+       * Queue cũ trước, mới sau.
+       */
+      result.sort(
+        (a, b) =>
+          new Date(
+            a.created_at
+          ).getTime() -
+          new Date(
+            b.created_at
+          ).getTime()
+      );
+
       setAgentQueue(result);
 
       return result;
     }, [branchCode]);
 
-  /*
-   * ============================================================
-   * LOAD ACTIVE CALL
-   *
-   * Vì tv_counter_status hiện tại chỉ trả:
-   * counter_code
-   * counter_name
-   * counter_status
-   *
-   * nên ticket đang gọi phải lấy riêng từ queue_tickets.
-   * ============================================================
-   */
-
-  const loadActiveCalls =
-    useCallback(async () => {
-      /*
-       * Lấy các ticket đang CALLED.
-       *
-       * Dùng RPC/view hiện có trước.
-       * Nếu RPC queue list đã chứa ticket đang gọi
-       * thì dùng dữ liệu đó.
-       */
-
-      const {
-        data,
-        error,
-      } = await supabase
-        .from("queue_tickets")
-        .select(
-          `
-            ticket_code,
-            queue_number,
-            counter_id,
-            called_at,
-            status
-          `
-        )
-        .eq(
-          "status",
-          "CALLED"
-        )
-        .not(
-          "counter_id",
-          "is",
-          null
-        );
-
-      if (error) {
-        console.warn(
-          "Không lấy được active calls:",
-          error.message
-        );
-
-        setActiveCalls([]);
-
-        return [];
-      }
-
-      /*
-       * Cần map counter_id -> counter_code.
-       */
-      const rows =
-        data ?? [];
-
-      if (
-        rows.length === 0
-      ) {
-        setActiveCalls([]);
-
-        return [];
-      }
-
-      const counterIds =
-        rows
-          .map(
-            (row) =>
-              row.counter_id
-          )
-          .filter(
-            (
-              id
-            ): id is string =>
-              Boolean(id)
-          );
-
-      const {
-        data: counterRows,
-      } = await supabase
-        .from("counters")
-        .select(
-          "id, counter_code"
-        )
-        .in(
-          "id",
-          counterIds
-        );
-
-      const counterMap =
-        new Map(
-          (counterRows ??
-            []
-          ).map(
-            (counter) => [
-              counter.id,
-              counter.counter_code,
-            ]
-          )
-        );
-
-      const result =
-        rows
-          .map((row) => {
-            const counterCode =
-              row.counter_id
-                ? counterMap.get(
-                    row.counter_id
-                  )
-                : null;
-
-            if (
-              !counterCode ||
-              !row.queue_number ||
-              !row.called_at
-            ) {
-              return null;
-            }
-
-            return {
-              counter_code:
-                counterCode,
-              queue_number:
-                row.queue_number,
-              called_at:
-                row.called_at,
-            };
-          })
-          .filter(
-            (
-              row
-            ): row is ActiveCall =>
-              Boolean(row)
-          );
-
-      setActiveCalls(result);
-
-      return result;
-    }, []);
-
-  /*
-   * ============================================================
-   * LOAD ALL
-   * ============================================================
-   */
+  /* ==========================================================
+     LOAD ALL
+     ========================================================== */
 
   const load =
     useCallback(async () => {
@@ -737,46 +660,47 @@ export default function TvDisplayPage() {
       const [
         counterList,
         queueList,
-        calls,
       ] = await Promise.all([
         loadCounters(),
         loadAgentQueue(),
-        loadActiveCalls(),
       ]);
 
       setLoading(false);
 
-      /*
-       * ========================================================
-       * ANNOUNCEMENT
-       * ========================================================
-       */
+      /* ======================================================
+         ANNOUNCEMENT
 
-      const sortedCalls =
-        [...calls].sort(
-          (a, b) =>
-            new Date(
-              a.called_at
-            ).getTime() -
-            new Date(
-              b.called_at
-            ).getTime()
-        );
+         Lấy ticket đang gọi trực tiếp
+         từ tv_counter_status().
+         ====================================================== */
+
+      const activeCalls =
+        counterList
+          .filter(
+            (counter) =>
+              counter.queue_number &&
+              counter.called_at
+          )
+          .sort(
+            (a, b) =>
+              new Date(
+                a.called_at!
+              ).getTime() -
+              new Date(
+                b.called_at!
+              ).getTime()
+          );
 
       for (
-        const call of sortedCalls
+        const call of activeCalls
       ) {
         const last =
           lastAnnouncedAt.current.get(
             call.counter_code
           );
 
-        /*
-         * Đã đọc call này rồi.
-         */
         if (
-          last ===
-          call.called_at
+          last === call.called_at
         ) {
           continue;
         }
@@ -787,59 +711,37 @@ export default function TvDisplayPage() {
               q.queue_number
                 .trim()
                 .toUpperCase() ===
-              call.queue_number
+              call.queue_number!
                 .trim()
                 .toUpperCase()
           );
 
-        /*
-         * Chưa có tên tài xế thì
-         * chưa đánh dấu đã đọc.
-         */
         if (
           !driver?.driver_name?.trim()
         ) {
           continue;
         }
 
-        /*
-         * Kiểm tra counter có thực sự
-         * tồn tại trên TV.
-         */
-        const counterExists =
-          counterList.some(
-            (c) =>
-              c.counter_code ===
-              call.counter_code
-          );
-
-        if (!counterExists) {
-          continue;
-        }
-
         enqueueAudio(
-          call.queue_number,
+          call.queue_number!,
           driver.driver_name.trim(),
           call.counter_code
         );
 
         lastAnnouncedAt.current.set(
           call.counter_code,
-          call.called_at
+          call.called_at!
         );
       }
     }, [
       loadCounters,
       loadAgentQueue,
-      loadActiveCalls,
       enqueueAudio,
     ]);
 
-  /*
-   * ============================================================
-   * INITIAL + REALTIME
-   * ============================================================
-   */
+  /* ==========================================================
+     REALTIME
+     ========================================================== */
 
   useEffect(() => {
     load();
@@ -865,7 +767,7 @@ export default function TvDisplayPage() {
           {
             event: "*",
             schema: "public",
-            table: "counters",
+            table: "service_cases",
           },
           () => {
             load();
@@ -876,7 +778,7 @@ export default function TvDisplayPage() {
           {
             event: "*",
             schema: "public",
-            table: "service_cases",
+            table: "counters",
           },
           () => {
             load();
@@ -904,11 +806,9 @@ export default function TvDisplayPage() {
     load,
   ]);
 
-  /*
-   * ============================================================
-   * CURRENT DISPLAY STATE
-   * ============================================================
-   */
+  /* ==========================================================
+     WAITING BY AGENT
+     ========================================================== */
 
   const waitingByAgent =
     new Map<
@@ -936,32 +836,43 @@ export default function TvDisplayPage() {
     );
   }
 
+  /* ==========================================================
+     UNASSIGNED
+
+     agent_id = NULL
+     => LUÔN hiển thị ở cuối TV.
+     ========================================================== */
+
   const unassigned =
     agentQueue.filter(
       (q) => !q.agent_id
     );
 
-  const totalWaiting =
-    agentQueue.length;
-
-  function getActiveCall(
-    counterCode: string
-  ) {
-    return activeCalls.find(
-      (call) =>
-        call.counter_code ===
-        counterCode
-    );
-  }
-
   /*
-   * ============================================================
-   * RENDER
-   * ============================================================
+   * Tổng hàng chờ:
+   *
+   * KHÔNG tính PROCESSING/CALLED riêng.
+   * RPC đã trả những ticket active.
    */
+  const totalWaiting =
+    agentQueue.filter(
+      (q) => !isCalledQueue(
+        q,
+        counters
+      )
+    ).length;
+
+  /* ==========================================================
+     RENDER
+     ========================================================== */
 
   return (
     <div className="flex min-h-screen w-screen flex-col overflow-hidden bg-paper">
+
+      {/* ======================================================
+          AUDIO UNLOCK
+          ====================================================== */}
+
       {!unlocked && (
         <button
           type="button"
@@ -971,10 +882,10 @@ export default function TvDisplayPage() {
             fontSize: "1vw",
           }}
         >
-          🔊 Bấm vào đây 1 lần để
-          bật âm thanh thông báo cho
-          màn hình này (chỉ cần làm 1
-          lần mỗi khi mở trang)
+          🔊 Bấm vào đây 1 lần để bật
+          âm thanh thông báo cho màn hình
+          này (chỉ cần làm 1 lần mỗi khi
+          mở trang)
         </button>
       )}
 
@@ -1087,7 +998,7 @@ export default function TvDisplayPage() {
 
       {errorMessage && (
         <div className="mx-[2.2vw] mt-[1vw] rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-body text-sm text-red-700">
-          Không tải được dữ liệu quầy:
+          Không tải được dữ liệu:
           {" "}
           {errorMessage}
         </div>
@@ -1136,35 +1047,47 @@ export default function TvDisplayPage() {
             >
               {counters.map(
                 (counter) => {
-                  const call =
-                    getActiveCall(
-                      counter.counter_code
-                    );
-
-                  const busy =
-                    counter.counter_status ===
-                      "BUSY" &&
-                    Boolean(call);
 
                   /*
-                   * Queue đang chờ tại agent
-                   * của quầy.
+                   * Ticket đang gọi tại quầy
+                   */
+                  const busy =
+                    Boolean(
+                      counter.queue_number &&
+                      counter.called_at
+                    );
+
+                  /*
+                   * QUAN TRỌNG:
                    *
-                   * Nếu RPC counter chưa trả
-                   * agent_id thì phần này không
-                   * thể xác định agent của quầy.
+                   * Lấy queue theo agent_id
+                   * của counter.
+                   *
+                   * Không lấy agent_id
+                   * từ ActiveCall nữa.
                    */
                   const myAgentQueue =
-                    agentQueue.filter(
+                    counter.agent_id
+                      ? (
+                          waitingByAgent.get(
+                            counter.agent_id
+                          ) ?? []
+                        )
+                      : [];
+
+                  /*
+                   * Không hiển thị ticket đang
+                   * được gọi trong danh sách chờ.
+                   */
+                  const waitingForCounter =
+                    myAgentQueue.filter(
                       (q) =>
-                        q.agent_id &&
-                        q.agent_id ===
-                          (
-                            call as
-                              unknown as {
-                                agent_id?: string;
-                              }
-                          )?.agent_id
+                        q.queue_number
+                          .trim()
+                          .toUpperCase() !==
+                        counter.queue_number
+                          ?.trim()
+                          .toUpperCase()
                     );
 
                   return (
@@ -1174,7 +1097,8 @@ export default function TvDisplayPage() {
                       }
                       className="flex flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-sm"
                     >
-                      {/* Counter header */}
+
+                      {/* COUNTER HEADER */}
 
                       <div
                         className="bg-brand-700"
@@ -1190,7 +1114,9 @@ export default function TvDisplayPage() {
                               "0.95vw",
                           }}
                         >
-                          {counter.counter_name}
+                          {
+                            counter.counter_name
+                          }
                         </p>
 
                         <p
@@ -1200,11 +1126,13 @@ export default function TvDisplayPage() {
                               "0.7vw",
                           }}
                         >
-                          {counter.counter_code}
+                          {
+                            counter.counter_code
+                          }
                         </p>
                       </div>
 
-                      {/* Current call */}
+                      {/* CURRENT CALL */}
 
                       <div
                         className={`text-center ${
@@ -1231,7 +1159,7 @@ export default function TvDisplayPage() {
                           }}
                         >
                           {busy
-                            ? call?.queue_number
+                            ? counter.queue_number
                             : "—"}
                         </p>
 
@@ -1267,7 +1195,7 @@ export default function TvDisplayPage() {
                         )}
                       </div>
 
-                      {/* Waiting */}
+                      {/* WAITING */}
 
                       <div
                         className="flex-1 border-t border-line"
@@ -1284,12 +1212,18 @@ export default function TvDisplayPage() {
                           }}
                         >
                           Đang chờ
+                          {" "}
+                          (
+                          {
+                            waitingForCounter.length
+                          }
+                          )
                         </p>
 
-                        {myAgentQueue.length >
+                        {waitingForCounter.length >
                         0 ? (
                           <div className="space-y-1.5">
-                            {myAgentQueue.map(
+                            {waitingForCounter.map(
                               (q) => (
                                 <div
                                   key={
@@ -1407,8 +1341,7 @@ export default function TvDisplayPage() {
                         "0.95vw",
                     }}
                   >
-                    Chưa phân bổ
-                    Agent
+                    Chưa phân bổ Agent
                     {" "}
                     ({unassigned.length})
                   </p>
@@ -1418,7 +1351,8 @@ export default function TvDisplayPage() {
                   className="flex flex-wrap"
                   style={{
                     padding: "1vw",
-                    gap: "0.4vw 2vw",
+                    gap:
+                      "0.4vw 2vw",
                   }}
                 >
                   {unassigned.map(
@@ -1462,5 +1396,29 @@ export default function TvDisplayPage() {
         )}
       </div>
     </div>
+  );
+}
+
+/* ============================================================
+   HELPER
+   ============================================================ */
+
+/*
+ * Ticket nào đang được gọi thì không tính
+ * vào "Đang chờ" trên header.
+ */
+function isCalledQueue(
+  queue: AgentQueueRow,
+  counters: CounterStatusRow[]
+) {
+  return counters.some(
+    (counter) =>
+      counter.queue_number
+        ?.trim()
+        .toUpperCase() ===
+        queue.queue_number
+          .trim()
+          .toUpperCase() &&
+      counter.called_at
   );
 }
