@@ -146,74 +146,101 @@ function buildAnnouncementText(queueNumber: string, driverName: string, counterN
 }
 
 /* ============================================================
-   TV SPEECH ENGINE
+   TV SPEECH ENGINE (OPTIMIZED)
    ============================================================ */
 
 function useTvSpeech() {
   const queueRef = useRef<SpeechJob[]>([]);
   const speakingRef = useRef(false);
   const unlockedRef = useRef(false);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   const [unlocked, setUnlocked] = useState(false);
   const [audioStatus, setAudioStatus] = useState("Chưa bật âm thanh");
 
-  const getVietnameseVoice = useCallback(() => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
-    const voices = window.speechSynthesis.getVoices();
-    if (!voices.length) return null;
-    return voices.find((v) => v.lang.trim().toLowerCase() === "vi-vn") ??
-      voices.find((v) => v.lang.trim().toLowerCase().startsWith("vi-")) ?? null;
+  // Load voices bất đồng bộ
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+
+    const updateVoices = () => {
+      const availableVoices = window.speechSynthesis.getVoices();
+      setVoices(availableVoices);
+    };
+
+    updateVoices();
+    window.speechSynthesis.onvoiceschanged = updateVoices;
+
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
   }, []);
 
-  const speak = useCallback((text: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-        reject(new Error("Speech synthesis not supported"));
-        return;
-      }
-      const synthesis = window.speechSynthesis;
-      const voice = getVietnameseVoice();
-      if (!voice) {
-        reject(new Error("Không tìm thấy giọng tiếng Việt"));
-        return;
-      }
-      synthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "vi-VN";
-      utterance.voice = voice;
-      utterance.rate = 0.9;
+  const getVietnameseVoice = useCallback(() => {
+    if (!voices.length) return null;
+    return (
+      voices.find((v) => v.lang.trim().toLowerCase() === "vi-vn") ??
+      voices.find((v) => v.lang.trim().toLowerCase().startsWith("vi-")) ??
+      null
+    );
+  }, [voices]);
 
-      let finished = false;
-      const cleanup = () => {
-        utterance.onend = null;
-        utterance.onerror = null;
-        utterance.removeEventListener("cancel", finish);
-      };
-      const finish = () => {
-        if (finished) return;
-        finished = true;
-        cleanup();
-        resolve();
-      };
-      const fail = (e: SpeechSynthesisErrorEvent) => {
-        if (finished) return;
-        finished = true;
-        cleanup();
-        reject(new Error(`Speech failed: ${e.error}`));
-      };
+  const speak = useCallback(
+    (text: string): Promise<void> => {
+      return new Promise((resolve) => {
+        if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+          resolve();
+          return;
+        }
 
-      utterance.onend = finish;
-      utterance.onerror = fail;
-      utterance.addEventListener("cancel", finish);
-      synthesis.speak(utterance);
-    });
-  }, [getVietnameseVoice]);
+        const synthesis = window.speechSynthesis;
+        const voice = getVietnameseVoice();
+        if (!voice) {
+          resolve();
+          return;
+        }
+
+        synthesis.cancel(); // Clears pending queue
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = "vi-VN";
+        utterance.voice = voice;
+        utterance.rate = 0.9;
+
+        let finished = false;
+
+        // Safety timeout phòng trường hợp Web Speech API bị treo trên TV
+        const timeoutId = setTimeout(() => {
+          if (!finished) {
+            finished = true;
+            synthesis.cancel();
+            resolve();
+          }
+        }, 12000);
+
+        const finish = () => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timeoutId);
+          utterance.onend = null;
+          utterance.onerror = null;
+          resolve();
+        };
+
+        utterance.onend = finish;
+        utterance.onerror = finish;
+
+        synthesis.speak(utterance);
+      });
+    },
+    [getVietnameseVoice]
+  );
 
   const unlock = useCallback(async () => {
     try {
       if (typeof window === "undefined" || !("speechSynthesis" in window)) return false;
       const synthesis = window.speechSynthesis;
       synthesis.cancel();
+      
       const voice = getVietnameseVoice();
       if (!voice) {
         setUnlocked(false);
@@ -224,9 +251,10 @@ function useTvSpeech() {
       const test = new SpeechSynthesisUtterance("Âm thanh thông báo đã bật");
       test.lang = "vi-VN";
       test.voice = voice;
-      await new Promise<void>((resolve, reject) => {
+      
+      await new Promise<void>((resolve) => {
         test.onend = () => resolve();
-        test.onerror = (e) => reject(e);
+        test.onerror = () => resolve();
         synthesis.speak(test);
       });
 
@@ -251,7 +279,11 @@ function useTvSpeech() {
         if (!job) continue;
         for (let r = 1; r <= 2; r++) {
           if (!unlockedRef.current) break;
-          try { await speak(job.text); } catch (e) { console.error(e); }
+          try {
+            await speak(job.text);
+          } catch (e) {
+            console.error(e);
+          }
           if (r === 1) await new Promise((res) => window.setTimeout(res, 900));
         }
         await new Promise((res) => window.setTimeout(res, 700));
@@ -264,11 +296,14 @@ function useTvSpeech() {
     }
   }, [speak]);
 
-  const enqueue = useCallback((queueNumber: string, driverName: string, counterName: string) => {
-    const text = buildAnnouncementText(queueNumber, driverName, counterName);
-    queueRef.current.push({ id: `${counterName}-${Date.now()}`, text });
-    if (unlockedRef.current) void processQueue();
-  }, [processQueue]);
+  const enqueue = useCallback(
+    (queueNumber: string, driverName: string, counterName: string) => {
+      const text = buildAnnouncementText(queueNumber, driverName, counterName);
+      queueRef.current.push({ id: `${counterName}-${Date.now()}`, text });
+      if (unlockedRef.current) void processQueue();
+    },
+    [processQueue]
+  );
 
   return { enqueue, unlock, unlocked, audioStatus };
 }
@@ -297,13 +332,15 @@ export default function TvDisplayPage() {
 
   const [counters, setCounters] = useState<CounterStatusRow[]>([]);
   const [agentQueue, setAgentQueue] = useState<AgentQueueRow[]>([]);
-  const [loading, setLoading] = useState(true);
 
+  // Giới hạn lịch sử gọi để tránh Memory Leak khi chạy TV liên tục
   const announcedCalls = useRef<Set<string>>(new Set());
   const { enqueue: enqueueAudio, unlock: unlockAudio, unlocked, audioStatus } = useTvSpeech();
   const clock = useClock();
 
   const loadData = useCallback(async () => {
+    if (!branchCode) return;
+
     const [cRes, qRes] = await Promise.all([
       supabase.rpc("tv_counter_status", { p_branch_code: branchCode }),
       supabase.rpc("tv_agent_queue_list", { p_branch_code: branchCode }),
@@ -314,17 +351,23 @@ export default function TvDisplayPage() {
 
     setCounters(counterList);
     setAgentQueue(queueList);
-    setLoading(false);
 
     // Audio Call logic
     const activeCalls = counterList.filter((c) => Boolean(c.queue_number) && Boolean(c.called_at));
     for (const call of activeCalls) {
       if (!call.queue_number || !call.called_at) continue;
       const callKey = `${call.counter_code}:${call.called_at}`;
+      
       if (announcedCalls.current.has(callKey)) continue;
 
       const driver = queueList.find((q) => normalizeQueue(q.queue_number) === normalizeQueue(call.queue_number));
       if (!driver?.driver_name) continue;
+
+      // Giữ Set dưới 200 phần tử để tránh leak memory
+      if (announcedCalls.current.size > 200) {
+        const firstKey = announcedCalls.current.values().next().value;
+        if (firstKey) announcedCalls.current.delete(firstKey);
+      }
 
       announcedCalls.current.add(callKey);
       enqueueAudio(call.queue_number, driver.driver_name, call.counter_name || call.counter_code);
