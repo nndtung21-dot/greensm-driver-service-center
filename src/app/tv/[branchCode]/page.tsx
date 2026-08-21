@@ -39,6 +39,7 @@ type AgentQueueRow = {
   queue_number: string;
   driver_name: string;
   created_at: string;
+  status?: string | null;
 };
 
 type SpeechJob = {
@@ -54,29 +55,6 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function normalizeQueue(value: string | null | undefined): string {
   return (value ?? "").trim().toUpperCase();
-}
-
-/**
- * Kiểm tra xem ticket đã được gọi vào quầy chưa
- */
-function isCalledQueue(
-  queue: AgentQueueRow,
-  counters: CounterStatusRow[]
-): boolean {
-  if (queue.agent_id) return true;
-
-  const queueNumber = normalizeQueue(queue.queue_number);
-  if (!queueNumber) return false;
-
-  const createdTime = new Date(queue.created_at).getTime();
-
-  return counters.some((counter) => {
-    if (normalizeQueue(counter.queue_number) !== queueNumber) return false;
-    if (!counter.called_at) return false;
-
-    const calledTime = new Date(counter.called_at).getTime();
-    return calledTime >= createdTime;
-  });
 }
 
 /* ============================================================
@@ -217,7 +195,7 @@ function buildAnnouncementText(
 }
 
 /* ============================================================
-   GOOGLE VIETNAMESE SPEECH ENGINE
+   VIETNAMESE FEMALE SPEECH ENGINE (GIỌNG NỮ TIẾNG VIỆT)
    ============================================================ */
 
 function useTvSpeech() {
@@ -227,32 +205,36 @@ function useTvSpeech() {
 
   const [unlocked, setUnlocked] = useState(false);
 
-  // Lọc lấy giọng Google Tiếng Việt chuẩn nhất
-  const getGoogleVietnameseVoice = useCallback(() => {
+  // Lọc chính xác Giọng Nữ Tiếng Việt
+  const getVietnameseFemaleVoice = useCallback(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       return null;
     }
     const voices = window.speechSynthesis.getVoices();
     if (!voices.length) return null;
 
-    // Ưu tiên 1: Giọng Google tiếng Việt
-    const googleVoice = voices.find(
-      (v) =>
-        v.lang.toLowerCase().includes("vi") &&
-        v.name.toLowerCase().includes("google")
+    const viVoices = voices.filter((v) =>
+      v.lang.toLowerCase().replace("_", "-").startsWith("vi")
     );
-    if (googleVoice) return googleVoice;
 
-    // Ưu tiên 2: Giọng chuẩn vi-VN bất kỳ
-    const exactVoice = voices.find(
-      (v) => v.lang.trim().toLowerCase() === "vi-vn"
-    );
-    if (exactVoice) return exactVoice;
+    if (!viVoices.length) return null;
 
-    // Ưu tiên 3: Giọng có mã ngôn ngữ bắt đầu bằng vi
-    return (
-      voices.find((v) => v.lang.trim().toLowerCase().startsWith("vi")) ?? null
-    );
+    // Ưu tiên 1: Giọng nữ có từ khóa Female / HoaiMy / Linh / Google
+    const femaleVoice = viVoices.find((v) => {
+      const name = v.name.toLowerCase();
+      return (
+        name.includes("female") ||
+        name.includes("nữ") ||
+        name.includes("hoaimy") ||
+        name.includes("linh") ||
+        name.includes("google")
+      );
+    });
+
+    if (femaleVoice) return femaleVoice;
+
+    // Ưu tiên 2: Giọng tiếng Việt đầu tiên tìm thấy
+    return viVoices[0];
   }, []);
 
   const speak = useCallback(
@@ -264,13 +246,15 @@ function useTvSpeech() {
         }
 
         const synthesis = window.speechSynthesis;
-        const voice = getGoogleVietnameseVoice();
+        const voice = getVietnameseFemaleVoice();
 
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = "vi-VN";
         if (voice) utterance.voice = voice;
-        utterance.rate = 0.88; // Tốc độ tự nhiên cho giọng đọc thông báo
-        utterance.pitch = 1.0;
+        
+        // Chỉnh pitch nhẹ (1.1) để giọng thanh và giống giọng Nữ hơn
+        utterance.rate = 0.88;
+        utterance.pitch = 1.1; 
         utterance.volume = 1.0;
 
         let finished = false;
@@ -298,7 +282,7 @@ function useTvSpeech() {
         synthesis.speak(utterance);
       });
     },
-    [getGoogleVietnameseVoice]
+    [getVietnameseFemaleVoice]
   );
 
   const unlock = useCallback(async () => {
@@ -318,7 +302,7 @@ function useTvSpeech() {
       unlockedRef.current = true;
       setUnlocked(true);
       return true;
-    } catch (error) {
+    } catch {
       unlockedRef.current = true;
       setUnlocked(true);
       return false;
@@ -343,7 +327,7 @@ function useTvSpeech() {
           try {
             await speak(job.text);
           } catch (error) {
-            console.error(`[TV AUDIO] Error:`, error);
+            console.error(`[TV AUDIO ERROR]:`, error);
           }
 
           if (repeat === 1) await delay(800);
@@ -422,6 +406,7 @@ export default function TvDisplayPage() {
   const { enqueue: enqueueAudio, unlock: unlockAudio, unlocked } = useTvSpeech();
   const clock = useClock();
 
+  // Load Quầy
   const loadCounters = useCallback(async () => {
     const { data, error } = await supabase.rpc("tv_counter_status", {
       p_branch_code: branchCode,
@@ -440,24 +425,30 @@ export default function TvDisplayPage() {
     return result;
   }, [branchCode]);
 
+  // Load Hàng chờ - TRUY VẤN TRỰC TIẾP DỮ LIỆU ĐỂ TRÁNH BỊ RPC LỌC SAI
   const loadAgentQueue = useCallback(async () => {
-    const { data, error } = await supabase.rpc("tv_agent_queue_list", {
+    // Ưu tiên đọc trực tiếp từ bảng agent_queues
+    const { data, error } = await supabase
+      .from("agent_queues")
+      .select("*")
+      .order("created_at", { ascending: true });
+
+    if (!error && data) {
+      setAgentQueue(data as AgentQueueRow[]);
+      return data as AgentQueueRow[];
+    }
+
+    // Nếu không truy vấn trực tiếp được thì dùng RPC backup
+    const { data: rpcData } = await supabase.rpc("tv_agent_queue_list", {
       p_branch_code: branchCode,
     });
 
-    if (error) return [];
-
-    const result = ((data ?? []) as AgentQueueRow[])
-      .slice()
-      .sort(
-        (a, b) =>
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
-
+    const result = ((rpcData ?? []) as AgentQueueRow[]).slice();
     setAgentQueue(result);
     return result;
   }, [branchCode]);
 
+  // Phát âm thanh khi có lượt gọi
   const handleCalls = useCallback(
     (counterList: CounterStatusRow[], queueList: AgentQueueRow[]) => {
       const activeCalls = counterList.filter(
@@ -505,7 +496,7 @@ export default function TvDisplayPage() {
       setErrorMessage(null);
       handleCalls(counterList, queueList);
     } catch (error) {
-      console.error("[TV] REFRESH ERROR:", error);
+      console.error("[TV REFRESH ERROR]", error);
     } finally {
       loadingRef.current = false;
     }
@@ -528,10 +519,7 @@ export default function TvDisplayPage() {
     void refresh();
   }, [unlockAudio, refresh]);
 
-  /* ==========================================================
-     REALTIME & POLLING
-     ========================================================== */
-
+  /* Realtime + Polling 1.5s/lần siêu nhạy */
   useEffect(() => {
     if (!branchCode) return;
 
@@ -553,7 +541,7 @@ export default function TvDisplayPage() {
 
     const pollInterval = window.setInterval(() => {
       scheduleRefresh();
-    }, 2000); // Polling 2s/lần cập nhật siêu tốc
+    }, 1500);
 
     return () => {
       if (refreshTimer.current !== null) {
@@ -565,15 +553,31 @@ export default function TvDisplayPage() {
   }, [branchCode, refresh, scheduleRefresh]);
 
   /* ==========================================================
-     LOGIC TỰ ĐỘNG PHÂN HÀNG CHỜ THEO QUẦY CHUẨN XÁC 100%
+     HIỂN THỊ TẤT CẢ VÉ VỪA CHECK-IN VÀO CÁC QUẦY
      ========================================================== */
 
   const waitingQueueByCounter = useMemo(() => {
-    const uncalledQueues = agentQueue.filter((q) => !isCalledQueue(q, counters));
+    // Loại bỏ những số ĐANG ĐƯỢC GỌI TẠI MÀN HÌNH CHÍNH CỦA QUẦY
+    const activeCallingNumbers = new Set(
+      counters
+        .map((c) => normalizeQueue(c.queue_number))
+        .filter(Boolean)
+    );
+
+    const uncalledQueues = agentQueue.filter((q) => {
+      const qNum = normalizeQueue(q.queue_number);
+      if (!qNum) return false;
+      // Nếu số đang được hiển thị gọi ở màn hình lớn của quầy thì ẩn khỏi hàng chờ
+      if (activeCallingNumbers.has(qNum)) return false;
+      // Bỏ qua nếu phiếu đã DONE / CANCELLED
+      if (q.status && ["DONE", "COMPLETED", "CANCELLED"].includes(q.status.toUpperCase())) {
+        return false;
+      }
+      return true;
+    });
 
     const grouped: Record<string, { counterName: string; list: AgentQueueRow[] }> = {};
 
-    // 1. Tạo nhóm theo các quầy hiện có
     counters.forEach((c) => {
       grouped[c.counter_code] = {
         counterName: c.counter_name,
@@ -581,11 +585,9 @@ export default function TvDisplayPage() {
       };
     });
 
-    // 2. Phân loại từng vé vào quầy tương ứng
     uncalledQueues.forEach((q) => {
       let matchedCode = q.counter_code;
 
-      // Nếu database chưa gắn counter_code, tự động khớp theo ký tự đầu của số vé (VD: A101 -> Quầy có code A)
       if (!matchedCode && q.queue_number) {
         const prefix = q.queue_number.trim().charAt(0).toUpperCase();
         const foundCounter = counters.find(
@@ -598,19 +600,11 @@ export default function TvDisplayPage() {
         }
       }
 
-      // Nếu tìm thấy quầy phù hợp thì nhét vào, không thì cho vào quầy đầu tiên
       if (matchedCode && grouped[matchedCode]) {
         grouped[matchedCode].list.push(q);
       } else if (counters.length > 0 && counters[0]) {
         grouped[counters[0].counter_code].list.push(q);
       }
-    });
-
-    // Sắp xếp vé theo thời gian check-in tăng dần
-    Object.keys(grouped).forEach((key) => {
-      grouped[key].list.sort(
-        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
     });
 
     return grouped;
@@ -646,7 +640,7 @@ export default function TvDisplayPage() {
                 : "bg-amber-500 hover:bg-amber-600 text-slate-950 animate-pulse"
             }`}
           >
-            🔊 {unlocked ? "Âm thanh đã bật" : "Bật âm thanh"}
+            🔊 {unlocked ? "Giọng nữ đã bật" : "Bật âm thanh (Giọng Nữ)"}
           </button>
 
           {clock && (
@@ -749,7 +743,7 @@ export default function TvDisplayPage() {
 
                         return (
                           <div
-                            key={item.ticket_code}
+                            key={item.ticket_code || item.queue_number}
                             className="flex items-center justify-between bg-slate-900/90 border border-slate-700/60 p-3 rounded-lg"
                           >
                             <span className="text-xl font-bold font-mono text-emerald-400">
