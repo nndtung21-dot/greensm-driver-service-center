@@ -1,56 +1,77 @@
 import { NextRequest } from "next/server";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const text = req.nextUrl.searchParams.get("text")?.trim();
+  const text =
+    req.nextUrl.searchParams.get("text")?.trim();
 
   if (!text) {
-    return new Response("Missing text", {
-      status: 400,
-    });
+    return new Response(
+      "Missing text",
+      {
+        status: 400,
+      }
+    );
   }
 
   if (text.length > 300) {
-    return new Response("Text too long", {
-      status: 400,
-    });
+    return new Response(
+      "Text too long",
+      {
+        status: 400,
+      }
+    );
   }
 
   const googleUrl =
-    `https://translate.google.com/translate_tts` +
+    "https://translate.google.com/translate_tts" +
     `?ie=UTF-8` +
-    `&q=${encodeURIComponent(text)}` +
+    `&client=tw-ob` +
     `&tl=vi` +
-    `&client=tw-ob`;
+    `&q=${encodeURIComponent(text)}`;
 
   try {
-    const response = await fetch(googleUrl, {
-      method: "GET",
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-          "AppleWebKit/537.36 " +
-          "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+    console.log(
+      "[TTS] Request:",
+      text
+    );
 
-        Referer:
-          "https://translate.google.com/",
+    const response =
+      await fetch(
+        googleUrl,
+        {
+          method: "GET",
+          headers: {
+            Accept:
+              "audio/mpeg,audio/*,*/*;q=0.8",
 
-        Accept:
-          "audio/mpeg,audio/*,*/*;q=0.8",
-      },
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36",
 
-      cache: "no-store",
-    });
+            Referer:
+              "https://translate.google.com/",
+          },
+
+          cache: "no-store",
+        }
+      );
 
     if (!response.ok) {
+      const body =
+        await response.text().catch(
+          () => ""
+        );
+
       console.error(
         "[TTS] Google HTTP error:",
-        response.status
+        response.status,
+        body
       );
 
       return new Response(
-        "Google TTS unavailable",
+        "Google TTS HTTP error",
         {
           status: 502,
         }
@@ -58,57 +79,51 @@ export async function GET(req: NextRequest) {
     }
 
     const contentType =
-      response.headers.get("content-type") ?? "";
+      response.headers.get(
+        "content-type"
+      ) ?? "";
 
-    if (
-      !contentType.includes("audio") &&
-      !contentType.includes("mpeg")
-    ) {
-      console.error(
-        "[TTS] Invalid content type:",
-        contentType
-      );
-
-      return new Response(
-        "Google TTS returned non-audio",
-        {
-          status: 502,
-        }
-      );
-    }
+    console.log(
+      "[TTS] Google content-type:",
+      contentType
+    );
 
     const buffer =
       await response.arrayBuffer();
 
-    if (buffer.byteLength === 0) {
+    if (!buffer.byteLength) {
       return new Response(
-        "Empty Google TTS audio",
+        "Google returned empty audio",
         {
           status: 502,
         }
       );
     }
 
-    return new Response(buffer, {
-      status: 200,
+    return new Response(
+      buffer,
+      {
+        status: 200,
+        headers: {
+          "Content-Type":
+            "audio/mpeg",
 
-      headers: {
-        "Content-Type": "audio/mpeg",
+          "Content-Length":
+            String(buffer.byteLength),
 
-        /*
-         * Không cache tại browser/CDN vì cùng
-         * ticket có thể thay đổi tên/quầy.
-         */
-        "Cache-Control":
-          "no-store, no-cache, must-revalidate",
+          "Cache-Control":
+            "no-store, no-cache, must-revalidate",
 
-        "Content-Length":
-          String(buffer.byteLength),
-      },
-    });
+          Pragma: "no-cache",
+
+          "X-TTS-Provider":
+            "Google Translate",
+        },
+      }
+    );
   } catch (error) {
     console.error(
-      "[TTS] Google TTS fetch failed:",
+      "[TTS] Fetch failed:",
       error
     );
 
