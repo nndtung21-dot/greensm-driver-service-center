@@ -1,42 +1,126 @@
 import { NextRequest } from "next/server";
 
-// Dùng endpoint TTS không chính thức của Google Translate — miễn phí, không
-// cần API key, nhưng KHÔNG được Google hỗ trợ/tài liệu hoá chính thức nên có
-// thể bị chặn/giới hạn bất kỳ lúc nào. Frontend (TV Display) sẽ tự chuyển
-// sang giọng thu sẵn (espeak) nếu route này lỗi — xem buildAnnouncementClips
-// trong src/app/tv/[branchCode]/page.tsx.
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
-  const text = req.nextUrl.searchParams.get("text");
-  if (!text || text.length > 200) {
-    return new Response("Missing or too-long text", { status: 400 });
+  const text = req.nextUrl.searchParams.get("text")?.trim();
+
+  if (!text) {
+    return new Response("Missing text", {
+      status: 400,
+    });
   }
 
-  const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(
-    text
-  )}&tl=vi&client=tw-ob`;
+  if (text.length > 300) {
+    return new Response("Text too long", {
+      status: 400,
+    });
+  }
+
+  const url =
+    `https://translate.google.com/translate_tts` +
+    `?ie=UTF-8` +
+    `&q=${encodeURIComponent(text)}` +
+    `&tl=vi` +
+    `&client=tw-ob`;
 
   try {
-    const res = await fetch(url, {
+    const response = await fetch(url, {
+      method: "GET",
+
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-        Referer: "https://translate.google.com/",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+          "AppleWebKit/537.36 (KHTML, like Gecko) " +
+          "Chrome/151.0.0.0 Safari/537.36",
+
+        Accept:
+          "audio/mpeg,audio/*;q=0.9,*/*;q=0.8",
+
+        Referer:
+          "https://translate.google.com/",
       },
+
+      cache: "no-store",
     });
 
-    const contentType = res.headers.get("content-type") ?? "";
-    if (!res.ok || !contentType.includes("audio")) {
-      return new Response("Google TTS unavailable", { status: 502 });
+    if (!response.ok) {
+      console.error(
+        "[TTS] Google HTTP error:",
+        response.status
+      );
+
+      return new Response(
+        "Google TTS unavailable",
+        {
+          status: 502,
+        }
+      );
     }
 
-    const audioBuffer = await res.arrayBuffer();
+    const contentType =
+      response.headers.get("content-type") ?? "";
+
+    if (
+      !contentType.includes("audio") &&
+      !contentType.includes("mpeg")
+    ) {
+      console.error(
+        "[TTS] Invalid content type:",
+        contentType
+      );
+
+      return new Response(
+        "Google TTS returned non-audio",
+        {
+          status: 502,
+        }
+      );
+    }
+
+    const audioBuffer =
+      await response.arrayBuffer();
+
+    if (audioBuffer.byteLength === 0) {
+      return new Response(
+        "Google TTS returned empty audio",
+        {
+          status: 502,
+        }
+      );
+    }
+
     return new Response(audioBuffer, {
+      status: 200,
+
       headers: {
         "Content-Type": "audio/mpeg",
-        "Cache-Control": "public, max-age=86400",
+
+        "Content-Length":
+          String(audioBuffer.byteLength),
+
+        /*
+         * Không cache tại browser trong lúc test.
+         * Khi ổn định rồi mới cache.
+         */
+        "Cache-Control":
+          "no-store, no-cache, must-revalidate",
+
+        "Accept-Ranges": "bytes",
       },
     });
-  } catch {
-    return new Response("Google TTS fetch failed", { status: 502 });
+  } catch (error) {
+    console.error(
+      "[TTS] Google TTS fetch failed:",
+      error
+    );
+
+    return new Response(
+      "Google TTS fetch failed",
+      {
+        status: 502,
+      }
+    );
   }
 }
