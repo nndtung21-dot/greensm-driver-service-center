@@ -88,11 +88,11 @@ const clips: string[] = ["intro"];
 for (const ch of queueNumber.toUpperCase()) {
 const clip = DIGIT_CLIP[ch];
 
-```
+
 if (clip) {
   clips.push(clip);
 }
-```
+
 
 }
 
@@ -103,11 +103,11 @@ const counterDigits = stripLeadingZeros(counterCode);
 for (const ch of counterDigits) {
 const clip = DIGIT_CLIP[ch];
 
-```
+
 if (clip) {
   clips.push(clip);
 }
-```
+
 
 }
 
@@ -205,7 +205,7 @@ const getAudio = useCallback(() => {
 if (!audioRef.current) {
 const audio = new Audio();
 
-```
+
   audio.preload = "auto";
   audio.volume = 1;
   audio.setAttribute("playsinline", "");
@@ -214,7 +214,7 @@ const audio = new Audio();
 }
 
 return audioRef.current;
-```
+
 
 }, []);
 
@@ -227,7 +227,7 @@ if (typeof window === "undefined") {
 return;
 }
 
-```
+
 for (const clip of REQUIRED_AUDIO_CLIPS) {
   const audio = new Audio();
 
@@ -239,7 +239,7 @@ for (const clip of REQUIRED_AUDIO_CLIPS) {
 console.log(
   "[TV AUDIO] Local audio preload started"
 );
-```
+
 
 }, []);
 
@@ -251,7 +251,7 @@ const unlock = useCallback(async () => {
 try {
 const audio = getAudio();
 
-```
+
   audio.pause();
   audio.currentTime = 0;
   audio.volume = 0.01;
@@ -284,7 +284,7 @@ const audio = getAudio();
 
   return false;
 }
-```
+
 
 }, [getAudio, preloadAudio]);
 
@@ -296,7 +296,7 @@ const playClip = useCallback(
 async (clipName: string) => {
 const audio = getAudio();
 
-```
+
   await new Promise<void>((resolve, reject) => {
     let finished = false;
 
@@ -344,7 +344,7 @@ const audio = getAudio();
   });
 },
 [getAudio]
-```
+
 
 );
 
@@ -364,7 +364,7 @@ queueNumber,
 counterCode
 );
 
-```
+
     console.log(
       "[TV AUDIO] PLAY LOCAL",
       {
@@ -380,7 +380,7 @@ counterCode
   },
   [playClip]
 );
-```
+
 
 /* ==========================================================
 SPEECH FALLBACK
@@ -397,7 +397,7 @@ throw new Error(
 );
 }
 
-```
+
   await new Promise<void>(
     (resolve, reject) => {
       window.speechSynthesis.cancel();
@@ -429,7 +429,7 @@ throw new Error(
   );
 },
 []
-```
+
 
 );
 
@@ -442,7 +442,7 @@ if (playingRef.current) {
 return;
 }
 
-```
+
 if (!unlockedRef.current) {
   console.warn(
     "[TV AUDIO] Queue waiting for unlock"
@@ -483,7 +483,7 @@ try {
 } finally {
   playingRef.current = false;
 }
-```
+
 
 }, []);
 
@@ -504,7 +504,7 @@ driverName,
 counterCode
 );
 
-```
+
   queueRef.current.push(
     async () => {
       /*
@@ -561,7 +561,7 @@ counterCode
   playSpeech,
   processQueue,
 ]
-```
+
 
 );
 
@@ -593,7 +593,7 @@ useState<Date | null>(null);
 useEffect(() => {
 setNow(new Date());
 
-```
+
 const id = window.setInterval(() => {
   setNow(new Date());
 }, 1000);
@@ -601,7 +601,7 @@ const id = window.setInterval(() => {
 return () => {
   window.clearInterval(id);
 };
-```
+
 
 }, []);
 
@@ -709,7 +709,7 @@ branchCode,
 }
 );
 
-```
+
   if (error) {
     console.error(
       "[TV] tv_counter_status",
@@ -736,7 +736,7 @@ branchCode,
 
   return result;
 }, [branchCode]);
-```
+
 
 /* ==========================================================
 LOAD QUEUE
@@ -755,7 +755,7 @@ branchCode,
 }
 );
 
-```
+
   if (error) {
     console.error(
       "[TV] tv_agent_queue_list",
@@ -782,7 +782,7 @@ branchCode,
 
   return result;
 }, [branchCode]);
-```
+
 
 /* ==========================================================
 HANDLE NEW CALL
@@ -802,7 +802,7 @@ counter.queue_number
 Boolean(counter.called_at)
 );
 
-```
+
   for (const call of activeCalls) {
     if (
       !call.queue_number ||
@@ -903,7 +903,7 @@ Boolean(counter.called_at)
   }
 },
 [enqueueAudio]
-```
+
 
 );
 
@@ -920,7 +920,7 @@ if (loadingRef.current) {
 return;
 }
 
-```
+
   loadingRef.current = true;
 
   try {
@@ -952,7 +952,7 @@ return;
   loadAgentQueue,
   handleCalls,
 ]);
-```
+
 
 /* ==========================================================
 DEBOUNCED REFRESH
@@ -966,7 +966,7 @@ refreshTimer.current
 );
 }
 
-```
+
   /*
    * Gom nhiều Postgres events thành
    * 1 lần refresh.
@@ -979,7 +979,7 @@ refreshTimer.current
       void refresh();
     }, 100);
 }, [refresh]);
-```
+
 
 /* ==========================================================
 REALTIME
@@ -990,7 +990,7 @@ if (!branchCode) {
 return;
 }
 
-```
+
 /*
  * Initial load.
  */
@@ -1084,7 +1084,7 @@ return () => {
     channel
   );
 };
-```
+
 
 }, [
 branchCode,
@@ -1107,7 +1107,7 @@ if (!queue.agent_id) {
 continue;
 }
 
-```
+
 const current =
   waitingByAgent.get(
     queue.agent_id
@@ -1119,7 +1119,7 @@ waitingByAgent.set(
   queue.agent_id,
   current
 );
-```
+
 
 }
 
@@ -1151,7 +1151,7 @@ RENDER
 
 return ( <div className="flex min-h-screen w-screen flex-col overflow-hidden bg-paper">
 
-```
+
   {/* ======================================================
       AUDIO UNLOCK
       ====================================================== */}
@@ -1657,7 +1657,7 @@ return ( <div className="flex min-h-screen w-screen flex-col overflow-hidden bg-
     )}
   </div>
 </div>
-```
+
 
 );
 }
