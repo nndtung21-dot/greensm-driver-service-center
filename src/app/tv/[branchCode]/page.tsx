@@ -55,7 +55,7 @@ function cleanDriverName(driverName: string | null | undefined): string {
 }
 
 /* ============================================================
-   AUDIO ENGINE (SPEECH + GOOGLE MP3 FALLBACK CHO SMART TV)
+   AUDIO ENGINE (HYBRID SPEECH + GOOGLE MP3 FALLBACK)
    ============================================================ */
 
 function useTvSpeech() {
@@ -66,7 +66,6 @@ function useTvSpeech() {
 
   const [unlocked, setUnlocked] = useState(false);
 
-  // Phát file MP3 giọng Nữ Google qua Proxy/API Online
   const playGoogleTtsMp3 = useCallback((text: string): Promise<void> => {
     return new Promise((resolve, reject) => {
       const encodedText = encodeURIComponent(text);
@@ -78,7 +77,7 @@ function useTvSpeech() {
 
       const audio = audioObjRef.current;
       audio.src = url;
-      audio.playbackRate = 0.95; // Giọng đọc rõ ràng hơn
+      audio.playbackRate = 0.95;
 
       const onEnded = () => {
         cleanup();
@@ -105,7 +104,6 @@ function useTvSpeech() {
     });
   }, []);
 
-  // Web Speech API
   const playWebSpeech = useCallback((text: string): Promise<void> => {
     return new Promise((resolve, reject) => {
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
@@ -121,7 +119,6 @@ function useTvSpeech() {
         v.lang.toLowerCase().replace("_", "-").startsWith("vi")
       );
 
-      // Nếu không có giọng Tiếng Việt trong HĐH, ngắt để nhảy sang MP3 Fallback
       if (!viVoices.length) {
         reject(new Error("Không tìm thấy Giọng Tiếng Việt hệ thống"));
         return;
@@ -143,7 +140,7 @@ function useTvSpeech() {
       utterance.lang = "vi-VN";
       if (femaleVoice) utterance.voice = femaleVoice;
       utterance.rate = 0.9;
-      utterance.pitch = 1.1; // Chỉnh giọng cao thanh thoát hơn
+      utterance.pitch = 1.1;
 
       let finished = false;
 
@@ -170,24 +167,21 @@ function useTvSpeech() {
     });
   }, []);
 
-  // Tổng hợp phát âm thanh: Ưu tiên WebSpeech -> Fallback MP3 Google
   const speakText = useCallback(
     async (text: string) => {
       try {
         await playWebSpeech(text);
-      } catch (err) {
-        console.warn("[AUDIO ENGINE] WebSpeech thất bại, chuyển sang Google TTS MP3:", err);
+      } catch {
         try {
           await playGoogleTtsMp3(text);
         } catch (mp3Err) {
-          console.error("[AUDIO ENGINE] Google MP3 thất bại:", mp3Err);
+          console.error("[AUDIO ENGINE] Thất bại:", mp3Err);
         }
       }
     },
     [playWebSpeech, playGoogleTtsMp3]
   );
 
-  // Kích hoạt Audio trên Smart TV (Giải quyết Autoplay Policy)
   const unlock = useCallback(async () => {
     try {
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -199,7 +193,6 @@ function useTvSpeech() {
       if (!audioObjRef.current) {
         audioObjRef.current = new Audio();
       }
-      // Khởi tạo audio giả lập
       audioObjRef.current.src =
         "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
       await audioObjRef.current.play();
@@ -226,7 +219,6 @@ function useTvSpeech() {
         const job = queueRef.current.shift();
         if (!job) continue;
 
-        // Đọc lặp lại 2 lần
         for (let repeat = 1; repeat <= 2; repeat++) {
           if (!unlockedRef.current) break;
           await speakText(job.text);
@@ -270,7 +262,7 @@ function useTvSpeech() {
 }
 
 /* ============================================================
-   MAIN TV COMPONENT (DÙNG CHO TV 65 INCH)
+   MAIN TV COMPONENT (FIX FULL RESPONSIVE LAPTOP + TV 65 INCH)
    ============================================================ */
 
 export default function TvDisplayPage() {
@@ -282,11 +274,9 @@ export default function TvDisplayPage() {
   const [loading, setLoading] = useState(true);
 
   const announcedCalls = useRef<Set<string>>(new Set());
-  const refreshTimer = useRef<number | null>(null);
 
   const { enqueue: enqueueAudio, unlock: unlockAudio, unlocked } = useTvSpeech();
 
-  // Load Quầy
   const loadCounters = useCallback(async () => {
     const { data } = await supabase.rpc("tv_counter_status", {
       p_branch_code: branchCode,
@@ -298,19 +288,23 @@ export default function TvDisplayPage() {
     return result;
   }, [branchCode]);
 
-  // Load Hàng chờ - Đọc trực tiếp từ DB không qua RPC bị lọc
+  // Nâng cấp: Lấy toàn bộ danh sách check-in trong ngày
   const loadAgentQueue = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("agent_queues")
       .select("*")
       .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("[SUPABASE ERROR] Lỗi tải agent_queues:", error.message);
+      return [];
+    }
 
     const result = (data ?? []) as AgentQueueRow[];
     setAgentQueue(result);
     return result;
   }, []);
 
-  // Xử lý đọc gọi số
   const handleCalls = useCallback(
     (counterList: CounterStatusRow[], queueList: AgentQueueRow[]) => {
       const activeCalls = counterList.filter(
@@ -354,7 +348,6 @@ export default function TvDisplayPage() {
   useEffect(() => {
     void refresh();
 
-    // Realtime cập nhật tức thì khi Check-in hoặc Gọi số
     const channel = supabase
       .channel(`tv-realtime-${branchCode}`)
       .on(
@@ -377,63 +370,72 @@ export default function TvDisplayPage() {
     };
   }, [branchCode, refresh]);
 
-  /* Lọc hàng chờ đảm bảo vé VỪA CHECK IN XONG sẽ hiện ngay */
+  /* 
+    Sửa chuẩn Logic Lọc Hàng Chờ:
+    Chỉ ẩn số nếu số đó đang hiển thị Gọi trực tiếp ở màn hình chính của Quầy,
+    hoặc đã DONE / CANCELLED.
+  */
   const waitingQueue = useMemo(() => {
-    const callingNumbers = new Set(
-      counters.map((c) => normalizeQueue(c.queue_number)).filter(Boolean)
+    const activeCallingNumbers = new Set(
+      counters
+        .map((c) => normalizeQueue(c.queue_number))
+        .filter((num) => Boolean(num) && num !== "---")
     );
 
     return agentQueue.filter((q) => {
       const qNum = normalizeQueue(q.queue_number);
       if (!qNum) return false;
-      // Ẩn các số đang được xướng tên trên màn hình chính của quầy
-      if (callingNumbers.has(qNum)) return false;
-      // Không hiển thị vé đã hoàn thành/hủy
-      if (q.status && ["DONE", "CANCELLED", "COMPLETED"].includes(q.status.toUpperCase())) {
+
+      // Nếu số đang được hiển thị ở màn hình lớn của quầy -> Ẩn khỏi hàng chờ
+      if (activeCallingNumbers.has(qNum)) return false;
+
+      // Ẩn các trạng thái hoàn tất/hủy
+      const st = (q.status ?? "").trim().toUpperCase();
+      if (["DONE", "CANCELLED", "COMPLETED", "FINISHED"].includes(st)) {
         return false;
       }
+
       return true;
     });
   }, [agentQueue, counters]);
 
   if (loading) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-4xl font-bold text-white">
-        ĐANG KHỞI ĐỘNG MÀN HÌNH MỚI...
+      <div className="w-screen h-screen flex items-center justify-center bg-slate-950 text-white font-black text-2xl">
+        ĐANG KHỞI ĐỘNG HỆ THỐNG MÀN HÌNH...
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-slate-950 text-white font-sans overflow-hidden select-none p-4 gap-4">
-      {/* Header tối ưu hiển thị TV */}
-      <header className="flex h-[10vh] items-center justify-between bg-slate-900/90 rounded-2xl px-8 border border-slate-800">
-        <h1 className="text-4xl font-black tracking-wider text-amber-400 uppercase">
+    <div className="w-screen h-screen bg-slate-950 text-white font-sans overflow-hidden select-none p-3 lg:p-4 flex flex-col gap-3 lg:gap-4">
+      {/* HEADER RESPONISVE */}
+      <header className="w-full h-[8vh] min-h-[50px] bg-slate-900 border border-slate-800 rounded-xl px-4 lg:px-8 flex items-center justify-between shrink-0">
+        <h1 className="text-xl lg:text-3xl font-black text-amber-400 tracking-wider uppercase">
           HỆ THỐNG GỌI SỐ TỰ ĐỘNG
         </h1>
 
-        <div className="flex items-center gap-6">
-          {!unlocked && (
+        <div className="flex items-center gap-4">
+          {!unlocked ? (
             <button
               onClick={() => void unlockAudio()}
-              className="px-6 py-3 bg-amber-500 text-slate-950 font-black text-2xl rounded-xl animate-bounce shadow-lg shadow-amber-500/50"
+              className="px-4 py-2 bg-amber-500 text-slate-950 font-black text-sm lg:text-lg rounded-lg animate-bounce shadow-lg shadow-amber-500/50 cursor-pointer"
             >
-              🔊 NHẤP ĐỂ BẬT ÂM THANH
+              🔊 BẬT ÂM THANH TV
             </button>
-          )}
-          {unlocked && (
-            <span className="text-emerald-400 font-bold text-xl flex items-center gap-2">
-              <span className="h-4 w-4 rounded-full bg-emerald-500 animate-ping"></span>
-              ÂM THANH GIỌNG NỮ SẴN SÀNG
+          ) : (
+            <span className="text-emerald-400 font-bold text-xs lg:text-base flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-emerald-500 animate-ping"></span>
+              ÂM THANH SẴN SÀNG
             </span>
           )}
         </div>
       </header>
 
-      {/* Thân màn hình TV 65 Inch chia Cột */}
-      <main className="flex-1 grid grid-cols-12 gap-6 h-[86vh] overflow-hidden">
-        {/* CỘT TRÁI (7 CỘT): CÁC QUẦY ĐANG GỌI SỐ */}
-        <section className="col-span-7 grid grid-cols-2 gap-4 h-full auto-rows-fr">
+      {/* BODY DISPLAY: Flex Layout co giãn tự động theo kích thước màn hình */}
+      <main className="w-full flex-1 flex flex-col lg:flex-row gap-3 lg:gap-4 overflow-hidden">
+        {/* CỘT TRÁI (QUẦY PHỤC VỤ): Chiếm 60% trên Laptop/TV */}
+        <section className="w-full lg:w-[60%] h-full grid grid-cols-2 gap-3 lg:gap-4 auto-rows-fr">
           {counters.map((counter) => {
             const isCalling = Boolean(counter.called_at && counter.queue_number);
             const driverName = cleanDriverName(counter.agent_name);
@@ -441,39 +443,41 @@ export default function TvDisplayPage() {
             return (
               <div
                 key={counter.counter_code}
-                className={`flex flex-col justify-between p-6 rounded-3xl border-4 transition-all ${
+                className={`w-full h-full flex flex-col justify-between p-3 lg:p-5 rounded-2xl border-2 transition-all overflow-hidden ${
                   isCalling
-                    ? "bg-slate-900 border-amber-400 shadow-[0_0_50px_rgba(251,191,36,0.3)]"
-                    : "bg-slate-900/60 border-slate-800"
+                    ? "bg-slate-900 border-amber-400 shadow-[0_0_30px_rgba(251,191,36,0.3)]"
+                    : "bg-slate-900/70 border-slate-800"
                 }`}
               >
-                <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                  <span className="text-3xl font-extrabold text-slate-300">
+                {/* Tên quầy */}
+                <div className="w-full flex justify-between items-center border-b border-slate-800 pb-2">
+                  <span className="text-lg lg:text-2xl font-extrabold text-slate-200 truncate">
                     {counter.counter_name}
                   </span>
                   <span
-                    className={`text-lg px-4 py-1 rounded-xl font-bold ${
+                    className={`text-xs lg:text-sm font-bold px-2 py-0.5 rounded border ${
                       counter.counter_status === "OPEN" || counter.counter_status === "AVAILABLE"
-                        ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
-                        : "bg-slate-800 text-slate-400"
+                        ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40"
+                        : "bg-slate-800 text-slate-400 border-transparent"
                     }`}
                   >
                     {counter.counter_status}
                   </span>
                 </div>
 
-                {/* SỐ SỐ PHỤC VỤ (CỰC ĐẠI TRÊN TV) */}
-                <div className="text-center my-auto">
+                {/* Số lượt hiển thị */}
+                <div className="w-full flex-1 flex items-center justify-center my-1">
                   <span
-                    className={`block text-[6.5rem] leading-none font-black font-mono tracking-tight ${
-                      isCalling ? "text-amber-400 animate-pulse" : "text-slate-100"
+                    className={`text-5xl lg:text-8xl font-black font-mono leading-none tracking-tight ${
+                      isCalling ? "text-amber-400 animate-pulse" : "text-white"
                     }`}
                   >
                     {counter.queue_number || "---"}
                   </span>
                 </div>
 
-                <div className="border-t border-slate-800 pt-3 text-2xl font-bold text-slate-400 truncate">
+                {/* Tên tài xế */}
+                <div className="w-full border-t border-slate-800 pt-2 text-sm lg:text-xl font-bold text-slate-400 truncate">
                   Tài xế: <span className="text-white">{driverName || "---"}</span>
                 </div>
               </div>
@@ -481,38 +485,39 @@ export default function TvDisplayPage() {
           })}
         </section>
 
-        {/* CỘT PHẢI (5 CỘT): HÀNG CHỜ VỪA CHECK-IN */}
-        <section className="col-span-5 bg-slate-900/80 border-2 border-slate-800 rounded-3xl p-6 flex flex-col h-full overflow-hidden">
-          <div className="flex justify-between items-center border-b-2 border-slate-800 pb-4 mb-4">
-            <h2 className="text-3xl font-black text-amber-400 tracking-wide">
+        {/* CỘT PHẢI (DANH SÁCH CHỜ): Chiếm 40% trên Laptop/TV */}
+        <section className="w-full lg:w-[40%] h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-3 lg:p-5 flex flex-col overflow-hidden">
+          <div className="w-full flex justify-between items-center border-b border-slate-800 pb-3 mb-3 shrink-0">
+            <h2 className="text-lg lg:text-2xl font-black text-amber-400 uppercase tracking-wide">
               DANH SÁCH CHỜ
             </h2>
-            <span className="bg-amber-500/20 text-amber-300 font-extrabold px-4 py-1.5 rounded-full text-2xl border border-amber-500/30">
+            <span className="bg-amber-500/20 text-amber-300 font-extrabold text-sm lg:text-xl px-3 py-1 rounded-full border border-amber-500/30">
               {waitingQueue.length}
             </span>
           </div>
 
-          <div className="flex-1 overflow-hidden grid grid-cols-1 gap-3">
+          {/* Render mượt danh sách chờ có cuộn tự động nếu danh sách dài */}
+          <div className="w-full flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
             {waitingQueue.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-3xl font-bold text-slate-600 italic">
+              <div className="w-full h-full flex items-center justify-center text-base lg:text-xl font-bold text-slate-600 italic">
                 Chưa có tài xế check-in
               </div>
             ) : (
-              waitingQueue.slice(0, 7).map((item) => {
+              waitingQueue.map((item) => {
                 const driver = cleanDriverName(item.driver_name);
                 return (
                   <div
                     key={item.ticket_code || item.queue_number}
-                    className="flex items-center justify-between bg-slate-950 border-2 border-slate-800 p-4 rounded-2xl"
+                    className="w-full bg-slate-950 border border-slate-800/90 p-3 lg:p-4 rounded-xl flex items-center justify-between"
                   >
-                    <span className="text-5xl font-black font-mono text-emerald-400">
+                    <span className="text-2xl lg:text-4xl font-black font-mono text-emerald-400 leading-none">
                       {item.queue_number}
                     </span>
-                    <div className="text-right">
-                      <p className="text-2xl font-bold text-slate-100 truncate max-w-[250px]">
+                    <div className="text-right truncate max-w-[65%]">
+                      <p className="text-sm lg:text-lg font-bold text-slate-100 truncate">
                         {driver || "Tài xế"}
                       </p>
-                      <p className="text-lg text-slate-400 font-mono">
+                      <p className="text-xs lg:text-sm font-mono text-slate-400">
                         {new Date(item.created_at).toLocaleTimeString("vi-VN", {
                           hour: "2-digit",
                           minute: "2-digit",
