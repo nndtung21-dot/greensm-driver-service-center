@@ -206,7 +206,7 @@ function counterNumberToWords(counterName: string): string {
 }
 
 /* ============================================================
-   QUEUE NUMBER & DRIVER NAME
+   QUEUE NUMBER & CLEAN DRIVER NAME
    ============================================================ */
 
 function queueNumberToWords(queueNumber: string): string {
@@ -215,8 +215,23 @@ function queueNumberToWords(queueNumber: string): string {
     .join(" ");
 }
 
-function cleanDriverName(driverName: string): string {
-  return driverName.trim().replace(/\s+/g, " ");
+/**
+ * Lọc bỏ email nếu dữ liệu dính email (VD: "nam.nguyen@gmail.com" -> "nam nguyen")
+ */
+function cleanDriverName(driverName: string | null | undefined): string {
+  if (!driverName) return "";
+
+  let name = driverName.trim();
+
+  // Nếu chứa email, cắt bỏ phần đuôi từ dấu @ trở đi
+  if (name.includes("@")) {
+    name = name.split("@")[0] ?? "";
+  }
+
+  // Thay thế các ký tự đặc biệt hay có trong email bằng khoảng trắng
+  name = name.replace(/[._-]/g, " ").replace(/\s+/g, " ");
+
+  return name.trim();
 }
 
 function buildAnnouncementText(
@@ -228,15 +243,20 @@ function buildAnnouncementText(
   const counterWords = counterNumberToWords(counterName);
   const cleanName = cleanDriverName(driverName);
 
-  return (
-    `Kính mời tài xế số ${queueWords}, ` +
-    `${cleanName}, ` +
-    `vui lòng đến quầy số ${counterWords}.`
-  );
+  // Nếu lọc xong vẫn còn tên người thì đọc kèm tên, ngược lại chỉ đọc Số và Quầy
+  if (cleanName) {
+    return (
+      `Kính mời tài xế số ${queueWords}, ` +
+      `${cleanName}, ` +
+      `vui lòng đến quầy số ${counterWords}.`
+    );
+  }
+
+  return `Kính mời tài xế số ${queueWords}, vui lòng đến quầy số ${counterWords}.`;
 }
 
 /* ============================================================
-   TV SPEECH ENGINE
+   TV SPEECH ENGINE (FIXED QUEUE EXECUTION)
    ============================================================ */
 
 function useTvSpeech() {
@@ -264,7 +284,7 @@ function useTvSpeech() {
     );
   }, []);
 
-  /* SPEAK ONE TEXT - KHÔNG CANCEL ĐỂ TRÁNH NGẮT QUEUE */
+  /* SPEAK ONE TEXT - KHÔNG CANCEL ĐỂ TRÁNH HỦY QUEUE */
   const speak = useCallback(
     (text: string): Promise<void> => {
       return new Promise((resolve, reject) => {
@@ -303,7 +323,7 @@ function useTvSpeech() {
           finished = true;
           utterance.onend = null;
           utterance.onerror = null;
-          reject(new Error(`Speech Synthesis Error: ${event.error}`));
+          reject(new Error(`Speech Error: ${event.error}`));
         };
 
         utterance.onend = finish;
@@ -316,7 +336,7 @@ function useTvSpeech() {
     [getVietnameseVoice]
   );
 
-  /* UNLOCK AUDIO */
+  /* UNLOCK AUDIO HANDLER */
   const unlock = useCallback(async () => {
     try {
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
@@ -324,18 +344,18 @@ function useTvSpeech() {
       }
 
       const synthesis = window.speechSynthesis;
-      synthesis.cancel(); // Xóa tác vụ cũ khi mở khóa ban đầu
+      synthesis.cancel(); // Xóa lệnh phát cũ duy nhất tại thời điểm unlock
 
       const voice = getVietnameseVoice();
       if (!voice) {
         unlockedRef.current = false;
         setUnlocked(false);
-        setAudioStatus("Thiết bị chưa có giọng đọc Tiếng Việt");
+        setAudioStatus("Thiết bị chưa cài giọng Tiếng Việt");
         return false;
       }
 
-      // Test đọc 1 câu ngắn để unlock
-      const testUtterance = new SpeechSynthesisUtterance("Đã bật âm thanh");
+      // Test đọc 1 câu ngắn để unlock trình duyệt
+      const testUtterance = new SpeechSynthesisUtterance("Đã bật âm thanh thành công");
       testUtterance.lang = "vi-VN";
       testUtterance.voice = voice;
       synthesis.speak(testUtterance);
@@ -347,12 +367,12 @@ function useTvSpeech() {
     } catch (error) {
       unlockedRef.current = false;
       setUnlocked(false);
-      setAudioStatus("Không bật được âm thanh");
+      setAudioStatus("Lỗi bật âm thanh");
       return false;
     }
   }, [getVietnameseVoice]);
 
-  /* PROCESS QUEUE */
+  /* PROCESS QUEUE CONTINUOUSLY */
   const processQueue = useCallback(async () => {
     if (speakingRef.current || !unlockedRef.current || queueRef.current.length === 0) {
       return;
@@ -365,34 +385,34 @@ function useTvSpeech() {
         const job = queueRef.current.shift();
         if (!job) continue;
 
-        // Đọc lặp lại 2 lần
+        // Đọc lặp lại 2 lần cho mỗi lượt gọi
         for (let repeat = 1; repeat <= 2; repeat++) {
           if (!unlockedRef.current) break;
 
           try {
             await speak(job.text);
           } catch (error) {
-            console.error(`[TV AUDIO] Đọc thất bại lượt ${repeat}:`, error);
+            console.error(`[TV AUDIO] Đọc thất bại lần ${repeat}:`, error);
           }
 
           if (repeat === 1) {
-            await delay(900); // Khoảng nghỉ giữa 2 lần đọc
+            await delay(900); // Khoảng nghỉ giữa 2 lần đọc cùng 1 lượt
           }
         }
 
-        await delay(700); // Khoảng nghỉ giữa các Ticket khác nhau
+        await delay(700); // Khoảng nghỉ giữa các lượt gọi tiếp theo
       }
     } finally {
       speakingRef.current = false;
 
-      // Nếu còn danh sách trong queue chưa đọc hết, kích hoạt lại
+      // Kiểm tra xem có yêu cầu mới vừa nạp vào khi đang đọc hay không
       if (unlockedRef.current && queueRef.current.length > 0) {
         void processQueue();
       }
     }
   }, [speak]);
 
-  /* ENQUEUE JOB */
+  /* ENQUEUE NEW CALL */
   const enqueue = useCallback(
     (queueNumber: string, driverName: string, counterName: string) => {
       const text = buildAnnouncementText(
@@ -432,9 +452,9 @@ function useTvSpeech() {
 
       if (!unlockedRef.current) {
         if (viVoice) {
-          setAudioStatus(`Đã tìm thấy giọng Việt: ${viVoice.name}`);
+          setAudioStatus(`Đã có giọng đọc: ${viVoice.name}`);
         } else {
-          setAudioStatus("TV chưa có giọng tiếng Việt");
+          setAudioStatus("Chưa có giọng Tiếng Việt");
         }
       }
     };
@@ -462,7 +482,7 @@ function useTvSpeech() {
 }
 
 /* ============================================================
-   CLOCK & MAIN COMPONENT
+   CLOCK & MAIN PAGE COMPONENT
    ============================================================ */
 
 function useClock() {
@@ -552,16 +572,16 @@ export default function TvDisplayPage() {
           (q) => normalizeQueue(q.queue_number) === targetQueue
         );
 
-        if (!driver || !driver.driver_name?.trim()) continue;
-
-        const driverName = driver.driver_name.trim();
+        // Lấy driver_name hoặc agent_name từ quầy làm dự phòng
+        const rawDriverName = driver?.driver_name || call.agent_name || "";
         const counterName =
           call.counter_name?.trim() || call.counter_code?.trim() || "quầy";
 
         announcedCalls.current.add(callKey);
-        enqueueAudio(call.queue_number, driverName, counterName);
+        enqueueAudio(call.queue_number, rawDriverName, counterName);
       }
 
+      // Giới hạn kích thước Set để tránh tràn bộ nhớ
       if (announcedCalls.current.size > 500) {
         const values = Array.from(announcedCalls.current);
         announcedCalls.current = new Set(values.slice(-200));
@@ -625,6 +645,7 @@ export default function TvDisplayPage() {
       )
       .subscribe();
 
+    // Fallback Polling 10 giây một lần đề phòng đứt kết nối WebSocket
     const pollInterval = window.setInterval(() => {
       scheduleRefresh();
     }, 10000);
@@ -644,86 +665,162 @@ export default function TvDisplayPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-xl text-white">
-        Đang tải dữ liệu...
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-2xl font-bold text-white">
+        Đang kết nối hệ thống quầy...
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-slate-950 text-white overflow-hidden p-6 gap-6">
-      <header className="flex justify-between items-center bg-slate-900/80 p-4 rounded-xl border border-slate-800">
-        <h1 className="text-2xl font-bold">MÀN HÌNH HIỂN THỊ CHI NHÁNH {branchCode}</h1>
+    <div className="flex h-screen w-screen flex-col bg-slate-950 text-white font-sans overflow-hidden">
+      {/* Top Header */}
+      <header className="flex items-center justify-between bg-slate-900 px-8 py-4 border-b border-slate-800">
         <div className="flex items-center gap-4">
+          <h1 className="text-3xl font-bold tracking-wide">
+            HỆ THỐNG GỌI SỐ TỰ ĐỘNG
+          </h1>
+          <span className="text-sm px-3 py-1 bg-slate-800 rounded-full text-slate-300 border border-slate-700">
+            Chi nhánh: {branchCode}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-6">
+          {/* Nút bật/mở khóa âm thanh */}
           <button
             onClick={() => void unlockAudio()}
-            className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all ${
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
               unlocked
-                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                : "bg-amber-500 text-slate-950 animate-pulse"
+                ? "bg-emerald-600/20 text-emerald-400 border border-emerald-500/30"
+                : "bg-amber-500 hover:bg-amber-600 text-slate-950 animate-pulse"
             }`}
           >
             🔊 {audioStatus}
           </button>
+
+          {/* Clock */}
           {clock && (
-            <div className="text-xl font-mono text-slate-300">
+            <div className="text-2xl font-mono font-semibold tracking-wider text-slate-200">
               {clock.toLocaleTimeString("vi-VN")}
             </div>
           )}
         </div>
       </header>
 
-      <main className="flex-1 grid grid-cols-12 gap-6 overflow-hidden">
-        <section className="col-span-8 grid grid-cols-2 gap-4 auto-rows-min overflow-y-auto">
+      {/* Main Grid: Counters Status & Queue Sidebar */}
+      <main className="flex-1 grid grid-cols-12 gap-6 p-6 overflow-hidden">
+        {/* Active Counters Grid */}
+        <section className="col-span-8 grid grid-cols-2 gap-4 auto-rows-min overflow-y-auto pr-1">
           {counters.map((counter) => {
             const isCalling = Boolean(counter.called_at && counter.queue_number);
+            const displayDriverName = cleanDriverName(
+              counter.agent_name ?? ""
+            );
+
             return (
               <div
                 key={counter.counter_code}
-                className={`p-6 rounded-2xl border ${
+                className={`flex flex-col justify-between p-6 rounded-2xl border transition-all ${
                   isCalling
-                    ? "bg-amber-500/10 border-amber-500"
-                    : "bg-slate-900 border-slate-800"
+                    ? "bg-amber-500/10 border-amber-500 shadow-lg shadow-amber-500/10"
+                    : "bg-slate-900/80 border-slate-800"
                 }`}
               >
-                <div className="flex justify-between border-b border-slate-800 pb-2">
-                  <span className="font-bold">{counter.counter_name}</span>
-                  <span className="text-xs px-2 py-1 bg-slate-800 rounded">
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+                  <span className="text-xl font-bold text-slate-300">
+                    {counter.counter_name}
+                  </span>
+                  <span
+                    className={`text-xs font-bold px-2.5 py-1 rounded-md uppercase tracking-wider ${
+                      counter.counter_status === "OPEN" || counter.counter_status === "AVAILABLE"
+                        ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                        : "bg-slate-800 text-slate-400"
+                    }`}
+                  >
                     {counter.counter_status}
                   </span>
                 </div>
+
                 <div className="my-6 text-center">
-                  <p className="text-6xl font-extrabold font-mono text-amber-400">
+                  <p className="text-sm text-slate-400 mb-1">Số lượt phục vụ</p>
+                  <p
+                    className={`text-6xl font-extrabold tracking-tight font-mono ${
+                      isCalling ? "text-amber-400 animate-pulse" : "text-white"
+                    }`}
+                  >
                     {counter.queue_number || "---"}
                   </p>
                 </div>
-                <div className="text-sm text-slate-400">
-                  Tài xế: <strong className="text-white">{counter.agent_name || "---"}</strong>
+
+                <div className="flex items-center justify-between text-sm text-slate-400 pt-3 border-t border-slate-800/80">
+                  <span>
+                    Tài xế:{" "}
+                    <strong className="text-slate-200">
+                      {displayDriverName || "---"}
+                    </strong>
+                  </span>
                 </div>
               </div>
             );
           })}
         </section>
 
-        <section className="col-span-4 bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col">
-          <h2 className="font-bold border-b border-slate-800 pb-3 mb-3">
-            DANH SÁCH CHỜ ({waitingQueue.length})
+        {/* Right Sidebar: Waiting Queue */}
+        <section className="col-span-4 bg-slate-900/60 border border-slate-800 rounded-2xl p-6 flex flex-col overflow-hidden">
+          <h2 className="text-xl font-bold text-slate-200 mb-4 border-b border-slate-800 pb-3 flex items-center justify-between">
+            <span>DANH SÁCH CHỜ</span>
+            <span className="text-sm font-normal text-slate-400">
+              Tổng: {waitingQueue.length}
+            </span>
           </h2>
-          <div className="flex-1 overflow-y-auto space-y-2">
-            {waitingQueue.map((item) => (
-              <div
-                key={item.ticket_code}
-                className="flex justify-between bg-slate-800/50 p-3 rounded-lg"
-              >
-                <span className="font-mono text-xl font-bold text-emerald-400">
-                  {item.queue_number}
-                </span>
-                <span>{item.driver_name}</span>
+
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+            {waitingQueue.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-slate-500 text-center py-12">
+                Không có tài xế trong hàng chờ
               </div>
-            ))}
+            ) : (
+              waitingQueue.map((item) => {
+                const cleanName = cleanDriverName(item.driver_name);
+
+                return (
+                  <div
+                    key={item.ticket_code}
+                    className="flex items-center justify-between bg-slate-800/50 border border-slate-700/50 p-4 rounded-xl"
+                  >
+                    <span className="text-2xl font-bold font-mono text-emerald-400">
+                      {item.queue_number}
+                    </span>
+                    <div className="text-right">
+                      <p className="font-semibold text-slate-200">
+                        {cleanName || "Tài xế"}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {new Date(item.created_at).toLocaleTimeString("vi-VN", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </section>
       </main>
+
+      {/* Error Bar */}
+      {errorMessage && (
+        <div className="bg-red-900/80 border-t border-red-700 text-red-200 px-6 py-2 text-sm flex items-center justify-between">
+          <span>⚠️ Lỗi kết nối: {errorMessage}</span>
+          <button
+            onClick={() => void refresh()}
+            className="underline hover:text-white"
+          >
+            Thử lại
+          </button>
+        </div>
+      )}
     </div>
   );
 }
