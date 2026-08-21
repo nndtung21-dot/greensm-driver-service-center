@@ -1,3 +1,4 @@
+tsx
 "use client";
 
 import {
@@ -11,7 +12,7 @@ import { supabase } from "@/lib/supabase/client";
 
 /* ============================================================
    TYPES
-   ============================================================ */
+============================================================ */
 
 type CounterStatusRow = {
   counter_code: string;
@@ -40,8 +41,8 @@ type AgentQueueRow = {
 };
 
 /* ============================================================
-   AUDIO CONFIG
-   ============================================================ */
+   AUDIO
+============================================================ */
 
 const CLIP_BASE = "/audio/tv/";
 
@@ -59,7 +60,7 @@ const DIGIT_CLIP: Record<string, string> = {
   A: "chu_a",
 };
 
-const REQUIRED_AUDIO_CLIPS = [
+const AUDIO_FILES = [
   "intro",
   "den_quay_so",
   "so_0",
@@ -75,16 +76,51 @@ const REQUIRED_AUDIO_CLIPS = [
   "chu_a",
 ];
 
-/* ============================================================
-   AUDIO HELPERS
-   ============================================================ */
+const DIGIT_WORD: Record<string, string> = {
+  "0": "không",
+  "1": "một",
+  "2": "hai",
+  "3": "ba",
+  "4": "bốn",
+  "5": "năm",
+  "6": "sáu",
+  "7": "bảy",
+  "8": "tám",
+  "9": "chín",
+  A: "a",
+};
+
+const SMALL_NUMBER_WORDS = [
+  "không",
+  "một",
+  "hai",
+  "ba",
+  "bốn",
+  "năm",
+  "sáu",
+  "bảy",
+  "tám",
+  "chín",
+  "mười",
+  "mười một",
+  "mười hai",
+  "mười ba",
+  "mười bốn",
+  "mười lăm",
+  "mười sáu",
+  "mười bảy",
+  "mười tám",
+  "mười chín",
+  "hai mươi",
+];
+
+function normalizeQueue(value: string | null) {
+  return value?.trim().toUpperCase() ?? "";
+}
 
 function stripLeadingZeros(value: string) {
   const stripped = value.replace(/^0+/, "");
-
-  return stripped.length > 0
-    ? stripped
-    : "0";
+  return stripped.length > 0 ? stripped : "0";
 }
 
 function buildAnnouncementClips(
@@ -93,9 +129,7 @@ function buildAnnouncementClips(
 ): string[] {
   const clips: string[] = ["intro"];
 
-  for (
-    const ch of queueNumber.toUpperCase()
-  ) {
+  for (const ch of queueNumber.toUpperCase()) {
     const clip = DIGIT_CLIP[ch];
 
     if (clip) {
@@ -105,12 +139,9 @@ function buildAnnouncementClips(
 
   clips.push("den_quay_so");
 
-  const counterDigits =
-    stripLeadingZeros(counterCode);
+  const counterDigits = stripLeadingZeros(counterCode);
 
-  for (
-    const ch of counterDigits
-  ) {
+  for (const ch of counterDigits) {
     const clip = DIGIT_CLIP[ch];
 
     if (clip) {
@@ -121,201 +152,325 @@ function buildAnnouncementClips(
   return clips;
 }
 
-/* ============================================================
-   NORMALIZE
-   ============================================================ */
+function counterNumberToWords(counterCode: string) {
+  const stripped = counterCode.replace(/^0+/, "");
+  const n = parseInt(stripped || "0", 10);
 
-function normalizeQueue(
-  value: string | null
+  if (
+    !Number.isNaN(n) &&
+    n >= 0 &&
+    n < SMALL_NUMBER_WORDS.length
+  ) {
+    return SMALL_NUMBER_WORDS[n];
+  }
+
+  return [...counterCode]
+    .map((ch) => DIGIT_WORD[ch] ?? ch)
+    .join(" ");
+}
+
+function buildAnnouncementText(
+  queueNumber: string,
+  driverName: string,
+  counterCode: string
 ) {
-  return (
-    value
-      ?.trim()
-      .toUpperCase() ?? ""
-  );
+  const qWords = [...queueNumber.toUpperCase()]
+    .map((ch) => DIGIT_WORD[ch] ?? ch)
+    .join(" ");
+
+  const cWords = counterNumberToWords(counterCode);
+
+  return `Kính mời tài xế có số ${qWords}, ${driverName}, đến quầy số ${cWords}`;
 }
 
 /* ============================================================
    AUDIO ANNOUNCER
-   ============================================================ */
+
+   NGUYÊN TẮC:
+
+   1. Chỉ dùng 1 HTMLAudioElement.
+   2. Element được giữ suốt lifecycle.
+   3. Unlock bằng user gesture.
+   4. Preload bằng chính audio element đó.
+   5. Mỗi clip:
+      - pause
+      - reset
+      - đổi src
+      - load
+      - chờ canplay
+      - play
+      - chờ ended
+   6. Local MP3 là đường chính.
+   7. Speech synthesis chỉ là fallback cuối.
+============================================================ */
 
 function useAnnouncer() {
-  /*
-   * IMPORTANT:
-   *
-   * Mỗi clip chỉ có đúng 1 Audio object.
-   *
-   * Không tạo Audio mới mỗi lần phát.
-   */
-  const audioCacheRef =
-    useRef<Map<
-      string,
-      HTMLAudioElement
-    >>(new Map());
+  const audioRef =
+    useRef<HTMLAudioElement | null>(null);
 
-  /*
-   * Queue announcement.
-   */
-  const queueRef =
-    useRef<
-      Array<{
-        queueNumber: string;
-        counterCode: string;
-      }>
-    >([]);
+  const unlockedRef =
+    useRef(false);
 
-  /*
-   * Chống phát đồng thời.
-   */
   const playingRef =
     useRef(false);
 
-  /*
-   * State unlock.
-   */
-  const unlockedRef =
-    useRef(false);
+  const queueRef =
+    useRef<
+      Array<() => Promise<void>>
+    >([]);
 
   const [unlocked, setUnlocked] =
     useState(false);
 
   /* ==========================================================
-     GET AUDIO
-     ========================================================== */
+     CREATE AUDIO ELEMENT
+  ========================================================== */
 
-  const getAudio =
+  const getAudio = useCallback(() => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    if (!audioRef.current) {
+      const audio =
+        document.createElement("audio");
+
+      audio.preload = "auto";
+      audio.volume = 1;
+      audio.autoplay = false;
+
+      audio.setAttribute(
+        "playsinline",
+        "true"
+      );
+
+      audio.setAttribute(
+        "webkit-playsinline",
+        "true"
+      );
+
+      audioRef.current = audio;
+    }
+
+    return audioRef.current;
+  }, []);
+
+  /* ==========================================================
+     WAIT FOR AUDIO READY
+  ========================================================== */
+
+  const waitForCanPlay =
     useCallback(
-      (clipName: string) => {
-        let audio =
-          audioCacheRef.current.get(
-            clipName
-          );
+      (
+        audio: HTMLAudioElement
+      ) =>
+        new Promise<void>(
+          (resolve, reject) => {
+            if (
+              audio.readyState >= 3
+            ) {
+              resolve();
+              return;
+            }
 
-        if (!audio) {
-          audio = new Audio(
-            `${CLIP_BASE}${clipName}.mp3`
-          );
+            let finished = false;
 
-          audio.preload = "auto";
-          audio.volume = 1;
+            const cleanup = () => {
+              audio.removeEventListener(
+                "canplay",
+                onCanPlay
+              );
 
-          audio.setAttribute(
-            "playsinline",
-            ""
-          );
+              audio.removeEventListener(
+                "canplaythrough",
+                onCanPlay
+              );
 
-          /*
-           * Một số browser cần muted=false
-           * rõ ràng sau unlock.
-           */
-          audio.muted = false;
+              audio.removeEventListener(
+                "error",
+                onError
+              );
 
-          audioCacheRef.current.set(
-            clipName,
-            audio
-          );
-        }
+              audio.removeEventListener(
+                "abort",
+                onError
+              );
+            };
 
-        return audio;
-      },
+            const done = () => {
+              if (finished) return;
+
+              finished = true;
+              cleanup();
+              resolve();
+            };
+
+            const fail = () => {
+              if (finished) return;
+
+              finished = true;
+              cleanup();
+
+              reject(
+                new Error(
+                  "Audio không load được"
+                )
+              );
+            };
+
+            const onCanPlay =
+              () => done();
+
+            const onError =
+              () => fail();
+
+            audio.addEventListener(
+              "canplay",
+              onCanPlay
+            );
+
+            audio.addEventListener(
+              "canplaythrough",
+              onCanPlay
+            );
+
+            audio.addEventListener(
+              "error",
+              onError
+            );
+
+            audio.addEventListener(
+              "abort",
+              onError
+            );
+
+            /*
+             * Có thể audio đã chuyển
+             * trạng thái giữa lúc check
+             * và lúc add listener.
+             */
+            if (
+              audio.readyState >= 3
+            ) {
+              done();
+            }
+          }
+        ),
       []
     );
 
   /* ==========================================================
-     PRELOAD AUDIO
-     ========================================================== */
+     PRELOAD
+
+     Không tạo new Audio() hàng loạt.
+     Browser sẽ tự cache các MP3.
+  ========================================================== */
 
   const preloadAudio =
     useCallback(() => {
       if (
-        typeof window === "undefined"
+        typeof window ===
+        "undefined"
       ) {
         return;
       }
 
-      for (
-        const clip of REQUIRED_AUDIO_CLIPS
-      ) {
-        const audio =
-          getAudio(clip);
-
-        try {
-          audio.load();
-        } catch (error) {
-          console.warn(
-            "[TV AUDIO] preload failed:",
-            clip,
-            error
+      for (const file of AUDIO_FILES) {
+        const link =
+          document.createElement(
+            "link"
           );
-        }
+
+        link.rel = "preload";
+        link.as = "audio";
+        link.href =
+          `${CLIP_BASE}${file}.mp3`;
+
+        document.head.appendChild(
+          link
+        );
       }
 
       console.log(
-        "[TV AUDIO] preload started"
+        "[TV AUDIO] preload requested"
       );
-    }, [getAudio]);
+    }, []);
 
   /* ==========================================================
-     UNLOCK AUDIO
-     ========================================================== */
+     UNLOCK
 
-  const unlock =
-    useCallback(async () => {
+     QUAN TRỌNG:
+     Không dùng volume 0.01.
+     Phát intro thật ở volume 1 trong
+     user gesture.
+
+     Sau khi play thành công mới pause.
+  ========================================================== */
+
+  const unlock = useCallback(
+    async () => {
+      const audio = getAudio();
+
+      if (!audio) {
+        return false;
+      }
+
       try {
         console.log(
           "[TV AUDIO] unlocking..."
         );
 
-        const audio =
-          getAudio("intro");
-
-        /*
-         * Reset.
-         */
         audio.pause();
 
         try {
           audio.currentTime = 0;
         } catch {}
 
-        audio.volume = 0.01;
-        audio.muted = false;
+        audio.src =
+          `${CLIP_BASE}intro.mp3`;
+
+        audio.volume = 1;
+
+        audio.load();
+
+        await waitForCanPlay(audio);
 
         /*
-         * QUAN TRỌNG:
-         *
-         * play() phải được gọi trực tiếp
-         * trong user gesture.
+         * Đây là play trực tiếp bên trong
+         * click event.
          */
         await audio.play();
 
         /*
-         * Browser đã cấp quyền audio.
+         * Đợi browser thực sự bắt đầu.
          */
+        await new Promise<void>(
+          (resolve) =>
+            setTimeout(
+              resolve,
+              250
+            )
+        );
+
         audio.pause();
 
         try {
           audio.currentTime = 0;
         } catch {}
-
-        audio.volume = 1;
-        audio.muted = false;
 
         unlockedRef.current = true;
 
         setUnlocked(true);
 
-        /*
-         * Preload sau khi browser đã unlock.
-         */
         preloadAudio();
 
         console.log(
-          "[TV AUDIO] UNLOCKED"
+          "[TV AUDIO] UNLOCK SUCCESS"
         );
 
         /*
-         * Có queue chờ thì xử lý.
+         * Nếu lúc chưa unlock đã có
+         * ticket chờ thì phát luôn.
          */
         setTimeout(() => {
           void processQueue();
@@ -334,28 +489,69 @@ function useAnnouncer() {
 
         return false;
       }
-    }, [
+    },
+    [
       getAudio,
+      waitForCanPlay,
       preloadAudio,
-    ]);
+    ]
+  );
 
   /* ==========================================================
      PLAY ONE CLIP
-     ========================================================== */
+  ========================================================== */
 
   const playClip =
     useCallback(
-      async (
-        clipName: string
-      ) => {
-        const audio =
-          getAudio(clipName);
+      async (clipName: string) => {
+        const audio = getAudio();
+
+        if (!audio) {
+          throw new Error(
+            "Audio element unavailable"
+          );
+        }
+
+        const src =
+          `${CLIP_BASE}${clipName}.mp3`;
+
+        console.log(
+          "[TV AUDIO] loading:",
+          src
+        );
+
+        /*
+         * Dừng clip trước.
+         */
+        audio.pause();
+
+        try {
+          audio.currentTime = 0;
+        } catch {}
+
+        /*
+         * Đổi source.
+         */
+        audio.src = src;
+        audio.volume = 1;
+
+        /*
+         * Bắt browser load source mới.
+         */
+        audio.load();
+
+        /*
+         * Chờ source thực sự usable.
+         */
+        await waitForCanPlay(audio);
+
+        console.log(
+          "[TV AUDIO] playing:",
+          clipName
+        );
 
         await new Promise<void>(
-          (
-            resolve,
-            reject
-          ) => {
+          (resolve, reject) => {
             let finished = false;
 
             const cleanup = () => {
@@ -364,93 +560,63 @@ function useAnnouncer() {
               audio.onabort = null;
             };
 
-            const success = () => {
-              if (finished) {
-                return;
-              }
+            const finish = () => {
+              if (finished) return;
 
               finished = true;
-
               cleanup();
 
               resolve();
             };
 
-            const failed = (
-              error?: unknown
-            ) => {
-              if (finished) {
-                return;
-              }
+            const fail = () => {
+              if (finished) return;
 
               finished = true;
-
               cleanup();
 
               reject(
-                error instanceof Error
-                  ? error
-                  : new Error(
-                      `Audio failed: ${clipName}`
-                    )
-              );
-            };
-
-            /*
-             * Reset audio.
-             */
-            audio.pause();
-
-            try {
-              audio.currentTime = 0;
-            } catch {}
-
-            audio.volume = 1;
-            audio.muted = false;
-
-            audio.onended =
-              success;
-
-            audio.onerror = () => {
-              failed(
                 new Error(
-                  `Cannot play ${clipName}.mp3`
+                  `Không phát được ${src}`
                 )
               );
             };
 
-            audio.onabort = () => {
-              failed(
-                new Error(
-                  `Audio aborted: ${clipName}`
-                )
-              );
-            };
+            audio.onended = finish;
+            audio.onerror = fail;
+            audio.onabort = fail;
 
-            /*
-             * IMPORTANT:
-             *
-             * Không tạo Audio mới.
-             */
-            const playPromise =
-              audio.play();
+            audio
+              .play()
+              .then(() => {
+                console.log(
+                  "[TV AUDIO] play() OK:",
+                  clipName
+                );
+              })
+              .catch((error) => {
+                console.error(
+                  "[TV AUDIO] play() FAILED:",
+                  clipName,
+                  error
+                );
 
-            playPromise.catch(
-              (error) => {
-                failed(error);
-              }
-            );
+                fail();
+              });
           }
         );
       },
-      [getAudio]
+      [
+        getAudio,
+        waitForCanPlay,
+      ]
     );
 
   /* ==========================================================
-     PLAY FULL ANNOUNCEMENT
-     ========================================================== */
+     PLAY LOCAL ANNOUNCEMENT
+  ========================================================== */
 
-  const playAnnouncement =
+  const playLocalAnnouncement =
     useCallback(
       async (
         queueNumber: string,
@@ -463,7 +629,7 @@ function useAnnouncer() {
           );
 
         console.log(
-          "[TV AUDIO] PLAY ANNOUNCEMENT",
+          "[TV AUDIO] ANNOUNCEMENT:",
           {
             queueNumber,
             counterCode,
@@ -471,38 +637,95 @@ function useAnnouncer() {
           }
         );
 
-        for (
-          const clip of clips
-        ) {
-          console.log(
-            "[TV AUDIO] PLAY CLIP:",
-            clip
-          );
-
+        for (const clip of clips) {
           await playClip(clip);
+
+          /*
+           * Khoảng nghỉ rất nhỏ giữa
+           * các clip để tránh TV/browser
+           * nuốt event.
+           */
+          await new Promise<void>(
+            (resolve) =>
+              setTimeout(
+                resolve,
+                30
+              )
+          );
         }
       },
       [playClip]
     );
 
   /* ==========================================================
+     SPEECH FALLBACK
+  ========================================================== */
+
+  const playSpeech =
+    useCallback(
+      async (text: string) => {
+        if (
+          typeof window ===
+            "undefined" ||
+          !(
+            "speechSynthesis" in
+            window
+          )
+        ) {
+          throw new Error(
+            "speechSynthesis unavailable"
+          );
+        }
+
+        await new Promise<void>(
+          (
+            resolve,
+            reject
+          ) => {
+            window.speechSynthesis.cancel();
+
+            const utterance =
+              new SpeechSynthesisUtterance(
+                text
+              );
+
+            utterance.lang =
+              "vi-VN";
+
+            utterance.rate = 0.9;
+            utterance.pitch = 1;
+            utterance.volume = 1;
+
+            utterance.onend =
+              () => resolve();
+
+            utterance.onerror =
+              () =>
+                reject(
+                  new Error(
+                    "Speech synthesis failed"
+                  )
+                );
+
+            window.speechSynthesis.speak(
+              utterance
+            );
+          }
+        );
+      },
+      []
+    );
+
+  /* ==========================================================
      PROCESS QUEUE
-     ========================================================== */
+  ========================================================== */
 
   const processQueue =
     useCallback(async () => {
-      /*
-       * Đang phát.
-       */
-      if (
-        playingRef.current
-      ) {
+      if (playingRef.current) {
         return;
       }
 
-      /*
-       * Chưa unlock.
-       */
       if (
         !unlockedRef.current
       ) {
@@ -513,9 +736,6 @@ function useAnnouncer() {
         return;
       }
 
-      /*
-       * Không có ticket.
-       */
       if (
         queueRef.current.length ===
         0
@@ -523,77 +743,54 @@ function useAnnouncer() {
         return;
       }
 
-      playingRef.current =
-        true;
+      playingRef.current = true;
+
+      console.log(
+        "[TV AUDIO] processing queue:",
+        queueRef.current.length
+      );
 
       try {
         while (
           queueRef.current.length >
           0
         ) {
-          const item =
+          const job =
             queueRef.current.shift();
 
-          if (!item) {
+          if (!job) {
             continue;
           }
 
           try {
-            await playAnnouncement(
-              item.queueNumber,
-              item.counterCode
-            );
-
-            console.log(
-              "[TV AUDIO] SUCCESS:",
-              item.queueNumber,
-              item.counterCode
-            );
+            await job();
           } catch (error) {
             console.error(
-              "[TV AUDIO] PLAY FAILED:",
-              {
-                queueNumber:
-                  item.queueNumber,
-                counterCode:
-                  item.counterCode,
-                error,
-              }
+              "[TV AUDIO] announcement failed:",
+              error
             );
           }
 
-          /*
-           * Khoảng nghỉ rất ngắn
-           * giữa 2 lượt gọi.
-           */
           await new Promise<void>(
             (resolve) =>
               setTimeout(
                 resolve,
-                100
+                150
               )
           );
         }
       } finally {
-        playingRef.current =
-          false;
+        playingRef.current = false;
 
-        /*
-         * Race protection.
-         */
-        if (
-          unlockedRef.current &&
-          queueRef.current.length >
-            0
-        ) {
-          void processQueue();
-        }
+        console.log(
+          "[TV AUDIO] queue finished"
+        );
       }
-    }, [playAnnouncement]);
+    }, []);
 
   /* ==========================================================
      ENQUEUE
-     ========================================================== */
+  ========================================================== */
 
   const enqueue =
     useCallback(
@@ -602,46 +799,105 @@ function useAnnouncer() {
         driverName: string,
         counterCode: string
       ) => {
+        const text =
+          buildAnnouncementText(
+            queueNumber,
+            driverName,
+            counterCode
+          );
+
         console.log(
-          "[TV AUDIO] ENQUEUE:",
+          "[TV AUDIO] enqueue:",
           {
             queueNumber,
             driverName,
             counterCode,
-            unlocked:
-              unlockedRef.current,
           }
         );
 
-        queueRef.current.push({
-          queueNumber,
-          counterCode,
-        });
+        queueRef.current.push(
+          async () => {
+            /*
+             * LOCAL MP3
+             */
+            try {
+              await playLocalAnnouncement(
+                queueNumber,
+                counterCode
+              );
 
-        /*
-         * Nếu đã unlock thì phát ngay.
-         */
-        if (
-          unlockedRef.current
-        ) {
-          void processQueue();
-        }
+              console.log(
+                "[TV AUDIO] LOCAL SUCCESS"
+              );
+
+              return;
+            } catch (localError) {
+              console.error(
+                "[TV AUDIO] LOCAL FAILED:",
+                localError
+              );
+            }
+
+            /*
+             * FALLBACK SPEECH
+             */
+            try {
+              await playSpeech(
+                text
+              );
+
+              console.log(
+                "[TV AUDIO] SPEECH SUCCESS"
+              );
+            } catch (speechError) {
+              console.error(
+                "[TV AUDIO] ALL AUDIO FAILED:",
+                speechError
+              );
+            }
+          }
+        );
+
+        void processQueue();
       },
-      [processQueue]
+      [
+        playLocalAnnouncement,
+        playSpeech,
+        processQueue,
+      ]
     );
 
   /* ==========================================================
-     UNLOCKED EFFECT
-     ========================================================== */
+     CLEANUP
+  ========================================================== */
+
+  useEffect(() => {
+    return () => {
+      const audio =
+        audioRef.current;
+
+      if (audio) {
+        audio.pause();
+        audio.src = "";
+      }
+
+      audioRef.current = null;
+
+      queueRef.current = [];
+      playingRef.current = false;
+      unlockedRef.current = false;
+    };
+  }, []);
+
+  /* ==========================================================
+     PROCESS AFTER UNLOCK
+  ========================================================== */
 
   useEffect(() => {
     if (unlocked) {
       void processQueue();
     }
-  }, [
-    unlocked,
-    processQueue,
-  ]);
+  }, [unlocked, processQueue]);
 
   return {
     enqueue,
@@ -652,7 +908,7 @@ function useAnnouncer() {
 
 /* ============================================================
    CLOCK
-   ============================================================ */
+============================================================ */
 
 function useClock() {
   const [now, setNow] =
@@ -675,8 +931,8 @@ function useClock() {
 }
 
 /* ============================================================
-   HELPER
-   ============================================================ */
+   CALLED QUEUE HELPER
+============================================================ */
 
 function isCalledQueue(
   queue: AgentQueueRow,
@@ -692,15 +948,13 @@ function isCalledQueue(
       normalizeQueue(
         counter.queue_number
       ) === queueNumber &&
-      Boolean(
-        counter.called_at
-      )
+      Boolean(counter.called_at)
   );
 }
 
 /* ============================================================
    TV DISPLAY
-   ============================================================ */
+============================================================ */
 
 export default function TvDisplayPage() {
   const params =
@@ -711,23 +965,21 @@ export default function TvDisplayPage() {
   const branchCode =
     params.branchCode;
 
-  /* ==========================================================
-     STATE
-     ========================================================== */
-
   const [
     counters,
     setCounters,
-  ] = useState<
-    CounterStatusRow[]
-  >([]);
+  ] =
+    useState<
+      CounterStatusRow[]
+    >([]);
 
   const [
     agentQueue,
     setAgentQueue,
-  ] = useState<
-    AgentQueueRow[]
-  >([]);
+  ] =
+    useState<
+      AgentQueueRow[]
+    >([]);
 
   const [
     loading,
@@ -737,32 +989,18 @@ export default function TvDisplayPage() {
   const [
     errorMessage,
     setErrorMessage,
-  ] = useState<
-    string | null
-  >(null);
+  ] =
+    useState<string | null>(
+      null
+    );
 
-  /* ==========================================================
-     AUDIO
-     ========================================================== */
-
-  const {
-    enqueue: enqueueAudio,
-    unlock: unlockAudio,
-    unlocked,
-  } = useAnnouncer();
-
-  /* ==========================================================
-     ANNOUNCED CALLS
-     ========================================================== */
-
+  /*
+   * counter_code + called_at
+   */
   const announcedCalls =
     useRef<Set<string>>(
       new Set()
     );
-
-  /* ==========================================================
-     REFRESH CONTROL
-     ========================================================== */
 
   const refreshTimer =
     useRef<
@@ -774,12 +1012,17 @@ export default function TvDisplayPage() {
   const loadingRef =
     useRef(false);
 
-  const clock =
-    useClock();
+  const {
+    enqueue: enqueueAudio,
+    unlock: unlockAudio,
+    unlocked,
+  } = useAnnouncer();
+
+  const clock = useClock();
 
   /* ==========================================================
      LOAD COUNTERS
-     ========================================================== */
+  ========================================================== */
 
   const loadCounters =
     useCallback(async () => {
@@ -796,7 +1039,7 @@ export default function TvDisplayPage() {
 
       if (error) {
         console.error(
-          "[TV] tv_counter_status:",
+          "[TV] counter RPC error:",
           error
         );
 
@@ -824,8 +1067,8 @@ export default function TvDisplayPage() {
     }, [branchCode]);
 
   /* ==========================================================
-     LOAD AGENT QUEUE
-     ========================================================== */
+     LOAD QUEUE
+  ========================================================== */
 
   const loadAgentQueue =
     useCallback(async () => {
@@ -842,7 +1085,7 @@ export default function TvDisplayPage() {
 
       if (error) {
         console.error(
-          "[TV] tv_agent_queue_list:",
+          "[TV] queue RPC error:",
           error
         );
 
@@ -871,7 +1114,7 @@ export default function TvDisplayPage() {
 
   /* ==========================================================
      HANDLE CALLS
-     ========================================================== */
+  ========================================================== */
 
   const handleCalls =
     useCallback(
@@ -890,9 +1133,7 @@ export default function TvDisplayPage() {
               )
           );
 
-        for (
-          const call of activeCalls
-        ) {
+        for (const call of activeCalls) {
           if (
             !call.queue_number ||
             !call.called_at
@@ -900,12 +1141,6 @@ export default function TvDisplayPage() {
             continue;
           }
 
-          /*
-           * Unique call.
-           *
-           * Cùng quầy + cùng called_at
-           * chỉ phát 1 lần.
-           */
           const callKey =
             `${call.counter_code}:${call.called_at}`;
 
@@ -922,9 +1157,6 @@ export default function TvDisplayPage() {
               call.queue_number
             );
 
-          /*
-           * Tìm driver.
-           */
           const driver =
             queueList.find(
               (q) =>
@@ -933,18 +1165,11 @@ export default function TvDisplayPage() {
                 ) === normalized
             );
 
-          /*
-           * Chưa có driver.
-           *
-           * KHÔNG mark.
-           *
-           * Refresh sau sẽ thử lại.
-           */
           if (
             !driver?.driver_name?.trim()
           ) {
             console.warn(
-              "[TV] Driver not found:",
+              "[TV] driver not found:",
               call.queue_number
             );
 
@@ -952,18 +1177,18 @@ export default function TvDisplayPage() {
           }
 
           /*
-           * Đủ dữ liệu mới mark.
+           * Mark trước enqueue.
            */
           announcedCalls.current.add(
             callKey
           );
 
           console.log(
-            "[TV] NEW CALL",
+            "[TV] NEW CALL:",
             {
-              queueNumber:
+              queue:
                 call.queue_number,
-              driverName:
+              driver:
                 driver.driver_name,
               counter:
                 call.counter_code,
@@ -972,9 +1197,6 @@ export default function TvDisplayPage() {
             }
           );
 
-          /*
-           * Đẩy vào audio queue.
-           */
           enqueueAudio(
             call.queue_number,
             driver.driver_name.trim(),
@@ -983,7 +1205,7 @@ export default function TvDisplayPage() {
         }
 
         /*
-         * Không để Set phình vô hạn.
+         * Không để Set tăng vô hạn.
          */
         if (
           announcedCalls.current
@@ -1005,33 +1227,27 @@ export default function TvDisplayPage() {
 
   /* ==========================================================
      REFRESH
-     ========================================================== */
+  ========================================================== */
 
   const refresh =
     useCallback(async () => {
-      /*
-       * Không chạy song song.
-       */
-      if (
-        loadingRef.current
-      ) {
+      if (loadingRef.current) {
         return;
       }
 
-      loadingRef.current =
-        true;
+      loadingRef.current = true;
 
       try {
         const [
           counterList,
           queueList,
-        ] = await Promise.all([
-          loadCounters(),
-          loadAgentQueue(),
-        ]);
+        ] =
+          await Promise.all([
+            loadCounters(),
+            loadAgentQueue(),
+          ]);
 
         setLoading(false);
-
         setErrorMessage(null);
 
         handleCalls(
@@ -1054,8 +1270,8 @@ export default function TvDisplayPage() {
     ]);
 
   /* ==========================================================
-     DEBOUNCED REFRESH
-     ========================================================== */
+     DEBOUNCE REALTIME
+  ========================================================== */
 
   const scheduleRefresh =
     useCallback(() => {
@@ -1070,12 +1286,12 @@ export default function TvDisplayPage() {
       refreshTimer.current =
         setTimeout(() => {
           void refresh();
-        }, 100);
+        }, 80);
     }, [refresh]);
 
   /* ==========================================================
      REALTIME
-     ========================================================== */
+  ========================================================== */
 
   useEffect(() => {
     if (!branchCode) {
@@ -1088,7 +1304,7 @@ export default function TvDisplayPage() {
     void refresh();
 
     /*
-     * Realtime channel.
+     * Supabase realtime.
      */
     const channel =
       supabase
@@ -1100,8 +1316,7 @@ export default function TvDisplayPage() {
           {
             event: "*",
             schema: "public",
-            table:
-              "queue_tickets",
+            table: "queue_tickets",
           },
           () => {
             console.log(
@@ -1116,8 +1331,7 @@ export default function TvDisplayPage() {
           {
             event: "*",
             schema: "public",
-            table:
-              "service_cases",
+            table: "service_cases",
           },
           () => {
             console.log(
@@ -1142,21 +1356,15 @@ export default function TvDisplayPage() {
             scheduleRefresh();
           }
         )
-        .subscribe(
-          (status) => {
-            console.log(
-              "[TV REALTIME STATUS]",
-              status
-            );
-          }
-        );
+        .subscribe((status) => {
+          console.log(
+            "[TV REALTIME STATUS]",
+            status
+          );
+        });
 
     /*
-     * Watchdog.
-     *
-     * Realtime là chính.
-     * 5 giây chỉ để recover
-     * nếu realtime bị miss.
+     * Watchdog 5s.
      */
     const watchdog =
       window.setInterval(() => {
@@ -1188,7 +1396,7 @@ export default function TvDisplayPage() {
 
   /* ==========================================================
      WAITING BY AGENT
-     ========================================================== */
+  ========================================================== */
 
   const waitingByAgent =
     new Map<
@@ -1196,9 +1404,7 @@ export default function TvDisplayPage() {
       AgentQueueRow[]
     >();
 
-  for (
-    const queue of agentQueue
-  ) {
+  for (const queue of agentQueue) {
     if (!queue.agent_id) {
       continue;
     }
@@ -1218,7 +1424,7 @@ export default function TvDisplayPage() {
 
   /* ==========================================================
      UNASSIGNED
-     ========================================================== */
+  ========================================================== */
 
   const unassigned =
     agentQueue.filter(
@@ -1227,7 +1433,7 @@ export default function TvDisplayPage() {
 
   /* ==========================================================
      TOTAL WAITING
-     ========================================================== */
+  ========================================================== */
 
   const totalWaiting =
     agentQueue.filter(
@@ -1240,14 +1446,14 @@ export default function TvDisplayPage() {
 
   /* ==========================================================
      RENDER
-     ========================================================== */
+  ========================================================== */
 
   return (
     <div className="flex min-h-screen w-screen flex-col overflow-hidden bg-paper">
 
       {/* ======================================================
           AUDIO UNLOCK
-          ====================================================== */}
+      ====================================================== */}
 
       {!unlocked && (
         <button
@@ -1255,7 +1461,7 @@ export default function TvDisplayPage() {
           onClick={() => {
             void unlockAudio();
           }}
-          className="w-full bg-warn px-4 py-2 text-center font-body font-semibold text-white hover:bg-warn/90"
+          className="w-full bg-warn px-4 py-3 text-center font-body font-semibold text-white hover:bg-warn/90"
           style={{
             fontSize: "1vw",
           }}
@@ -1267,7 +1473,7 @@ export default function TvDisplayPage() {
 
       {/* ======================================================
           HEADER
-          ====================================================== */}
+      ====================================================== */}
 
       <div
         className="flex items-center justify-between border-b border-line bg-white shadow-sm"
@@ -1370,7 +1576,7 @@ export default function TvDisplayPage() {
 
       {/* ======================================================
           ERROR
-          ====================================================== */}
+      ====================================================== */}
 
       {errorMessage && (
         <div className="mx-[2.2vw] mt-[1vw] rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-body text-sm text-red-700">
@@ -1381,7 +1587,7 @@ export default function TvDisplayPage() {
 
       {/* ======================================================
           CONTENT
-          ====================================================== */}
+      ====================================================== */}
 
       <div
         className="flex-1"
@@ -1394,10 +1600,8 @@ export default function TvDisplayPage() {
           <div
             className="flex items-center justify-center text-ink/40"
             style={{
-              minHeight:
-                "20vw",
-              fontSize:
-                "1.2vw",
+              minHeight: "20vw",
+              fontSize: "1.2vw",
             }}
           >
             Đang tải thông tin quầy...
@@ -1406,7 +1610,7 @@ export default function TvDisplayPage() {
           <>
             {/* ==================================================
                 COUNTERS
-                ================================================== */}
+            ================================================== */}
 
             <div
               className="grid"
@@ -1513,8 +1717,7 @@ export default function TvDisplayPage() {
                           style={{
                             fontSize:
                               "4.2vw",
-                            lineHeight:
-                              1.1,
+                            lineHeight: 1.1,
                           }}
                         >
                           {busy
@@ -1671,7 +1874,7 @@ export default function TvDisplayPage() {
 
             {/* ==================================================
                 UNASSIGNED
-                ================================================== */}
+            ================================================== */}
 
             {unassigned.length >
               0 && (
@@ -1755,3 +1958,4 @@ export default function TvDisplayPage() {
     </div>
   );
 }
+
