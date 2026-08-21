@@ -53,9 +53,8 @@ function isCalledQueue(
   queue: AgentQueueRow,
   counters: CounterStatusRow[]
 ) {
-  const queueNumber = normalizeQueue(
-    queue.queue_number
-  );
+  const queueNumber =
+    normalizeQueue(queue.queue_number);
 
   if (!queueNumber) {
     return false;
@@ -74,7 +73,10 @@ function isCalledQueue(
    GOOGLE TTS TEXT
    ============================================================ */
 
-const DIGIT_WORD: Record<string, string> = {
+const DIGIT_WORD: Record<
+  string,
+  string
+> = {
   "0": "không",
   "1": "một",
   "2": "hai",
@@ -112,11 +114,72 @@ const SMALL_NUMBER_WORDS = [
   "hai mươi",
 ];
 
-function counterNumberToWords(
-  counterCode: string
+/* ============================================================
+   COUNTER NUMBER
+   ============================================================ */
+
+/*
+ * Nhận:
+ *   "Quầy 04"
+ *   "QUẦY 04"
+ *   "Quầy số 04"
+ *   "04"
+ *
+ * Trả:
+ *   "04"
+ *
+ * Nếu không tìm được số thì thử lấy số từ cuối chuỗi.
+ */
+function extractCounterNumber(
+  counterName: string
 ) {
+  const value =
+    counterName.trim();
+
+  /*
+   * Ưu tiên chuỗi kiểu:
+   * Quầy 04
+   * Quầy số 04
+   */
+  const match =
+    value.match(
+      /(?:quầy\s*(?:số\s*)?)(\d+)/i
+    );
+
+  if (match?.[1]) {
+    return match[1];
+  }
+
+  /*
+   * Nếu chỉ là số.
+   */
+  if (/^\d+$/.test(value)) {
+    return value;
+  }
+
+  /*
+   * Fallback: lấy cụm số cuối.
+   */
+  const fallback =
+    value.match(/(\d+)\s*$/);
+
+  if (fallback?.[1]) {
+    return fallback[1];
+  }
+
+  return value;
+}
+
+function counterNumberToWords(
+  counterName: string
+) {
+  const number =
+    extractCounterNumber(
+      counterName
+    );
+
   const stripped =
-    counterCode.replace(/^0+/, "");
+    number.replace(/^0+/, "");
 
   const n = parseInt(
     stripped || "0",
@@ -131,7 +194,7 @@ function counterNumberToWords(
     return SMALL_NUMBER_WORDS[n];
   }
 
-  return [...counterCode]
+  return [...number]
     .map(
       (ch) =>
         DIGIT_WORD[
@@ -152,14 +215,10 @@ function queueNumberToWords(
     .join(" ");
 }
 
-/*
- * Quan trọng:
- *
- * counterName = "Quầy 04"
- *
- * Không dùng counter_code = "HCM014"
- * cho nội dung đọc.
- */
+/* ============================================================
+   ANNOUNCEMENT TEXT
+   ============================================================ */
+
 function buildAnnouncementText(
   queueNumber: string,
   driverName: string,
@@ -170,16 +229,18 @@ function buildAnnouncementText(
       queueNumber
     );
 
+  const counterWords =
+    counterNumberToWords(
+      counterName
+    );
+
   const cleanDriverName =
     driverName.trim();
-
-  const cleanCounterName =
-    counterName.trim();
 
   return (
     `Kính mời tài xế có số ${queueWords}, ` +
     `${cleanDriverName}, ` +
-    `đến ${cleanCounterName}.`
+    `đến quầy số ${counterWords}`
   );
 }
 
@@ -220,13 +281,17 @@ function useGoogleTTS() {
   const unlockedRef =
     useRef(false);
 
-  const [unlocked, setUnlocked] =
-    useState(false);
+  const [
+    unlocked,
+    setUnlocked,
+  ] = useState(false);
 
-  const [audioStatus, setAudioStatus] =
-    useState(
-      "Chưa bật âm thanh"
-    );
+  const [
+    audioStatus,
+    setAudioStatus,
+  ] = useState(
+    "Chưa bật âm thanh"
+  );
 
   /* ==========================================================
      CREATE AUDIO
@@ -251,7 +316,6 @@ function useGoogleTTS() {
 
         audio.preload = "auto";
         audio.volume = 1;
-
         audio.setAttribute(
           "playsinline",
           ""
@@ -264,15 +328,14 @@ function useGoogleTTS() {
           audio
         );
 
-        audioRef.current =
-          audio;
+        audioRef.current = audio;
       }
 
       return audioRef.current;
     }, []);
 
   /* ==========================================================
-     CREATE AUDIO CONTEXT
+     AUDIO CONTEXT
      ========================================================== */
 
   const getAudioContext =
@@ -312,130 +375,276 @@ function useGoogleTTS() {
     }, []);
 
   /* ==========================================================
-     CLEANUP CURRENT URL
+     UNLOCK
      ========================================================== */
 
-  const cleanupCurrentAudio =
-    useCallback(() => {
-      if (
-        currentObjectUrlRef.current
-      ) {
-        URL.revokeObjectURL(
-          currentObjectUrlRef.current
+  const unlock =
+    useCallback(async () => {
+      console.log(
+        "[TV AUDIO] ===== UNLOCK START ====="
+      );
+
+      try {
+        const audio =
+          getAudio();
+
+        const ctx =
+          getAudioContext();
+
+        /*
+         * Resume ngay trong user gesture.
+         */
+        if (ctx) {
+          try {
+            await ctx.resume();
+
+            console.log(
+              "[TV AUDIO] AudioContext:",
+              ctx.state
+            );
+          } catch (error) {
+            console.warn(
+              "[TV AUDIO] AudioContext resume failed",
+              error
+            );
+          }
+        }
+
+        /*
+         * Chỉ tạo MediaElementSource 1 lần.
+         */
+        if (
+          ctx &&
+          !sourceNodeRef.current
+        ) {
+          try {
+            sourceNodeRef.current =
+              ctx.createMediaElementSource(
+                audio
+              );
+
+            sourceNodeRef.current.connect(
+              ctx.destination
+            );
+
+            console.log(
+              "[TV AUDIO] MediaElementSource connected"
+            );
+          } catch (error) {
+            console.warn(
+              "[TV AUDIO] Cannot create MediaElementSource",
+              error
+            );
+          }
+        }
+
+        setAudioStatus(
+          "Đang kiểm tra Google TTS..."
         );
 
+        const testText =
+          "Âm thanh thông báo đã được bật";
+
+        const response =
+          await fetch(
+            `/api/tts?text=${encodeURIComponent(
+              testText
+            )}`,
+            {
+              method: "GET",
+              cache: "no-store",
+            }
+          );
+
+        console.log(
+          "[TV AUDIO] TTS TEST STATUS:",
+          response.status
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            `Google TTS HTTP ${response.status}`
+          );
+        }
+
+        const blob =
+          await response.blob();
+
+        console.log(
+          "[TV AUDIO] TTS TEST BLOB:",
+          {
+            type: blob.type,
+            size: blob.size,
+          }
+        );
+
+        if (
+          !blob ||
+          blob.size === 0
+        ) {
+          throw new Error(
+            "Google TTS trả về audio rỗng"
+          );
+        }
+
+        const url =
+          URL.createObjectURL(blob);
+
+        if (
+          currentObjectUrlRef.current
+        ) {
+          URL.revokeObjectURL(
+            currentObjectUrlRef.current
+          );
+        }
+
         currentObjectUrlRef.current =
-          null;
-      }
-    }, []);
+          url;
 
-  /* ==========================================================
-     WAIT FOR AUDIO
-     ========================================================== */
+        audio.pause();
 
-  const waitForAudioReady =
-    useCallback(
-      (
-        audio: HTMLAudioElement
-      ) => {
-        return new Promise<void>(
-          (
-            resolve,
-            reject
-          ) => {
-            let done = false;
+        try {
+          audio.currentTime = 0;
+        } catch {}
 
-            const cleanup =
+        audio.src = url;
+        audio.load();
+
+        /*
+         * Chờ audio sẵn sàng.
+         */
+        await new Promise<void>(
+          (resolve) => {
+            if (
+              audio.readyState >= 2
+            ) {
+              resolve();
+              return;
+            }
+
+            const timer =
+              window.setTimeout(
+                () => resolve(),
+                1500
+              );
+
+            audio.onloadeddata =
               () => {
-                audio.oncanplay =
-                  null;
+                window.clearTimeout(
+                  timer
+                );
 
                 audio.onloadeddata =
                   null;
 
-                audio.onerror =
-                  null;
-
-                window.clearTimeout(
-                  timer
-                );
+                resolve();
               };
+          }
+        );
 
+        console.log(
+          "[TV AUDIO] TEST readyState:",
+          audio.readyState
+        );
+
+        /*
+         * Play test.
+         */
+        await audio.play();
+
+        console.log(
+          "[TV AUDIO] ===== TEST PLAY SUCCESS ====="
+        );
+
+        unlockedRef.current =
+          true;
+
+        setUnlocked(true);
+
+        setAudioStatus(
+          "Âm thanh Google đã bật"
+        );
+
+        /*
+         * Chờ test kết thúc.
+         */
+        await new Promise<void>(
+          (resolve) => {
             const finish =
               () => {
-                if (done) {
-                  return;
-                }
-
-                done = true;
-
-                cleanup();
+                audio.onended =
+                  null;
 
                 resolve();
               };
 
-            const fail =
-              () => {
-                if (done) {
-                  return;
-                }
-
-                done = true;
-
-                cleanup();
-
-                reject(
-                  new Error(
-                    "Audio element không load được Google TTS"
-                  )
-                );
-              };
-
-            const timer =
-              window.setTimeout(
-                () => {
-                  if (
-                    audio.readyState >=
-                    2
-                  ) {
-                    finish();
-                  } else {
-                    fail();
-                  }
-                },
-                5000
-              );
-
-            audio.oncanplay =
+            audio.onended =
               finish;
 
-            audio.onloadeddata =
-              finish;
-
-            audio.onerror =
-              fail;
-
-            if (
-              audio.readyState >=
-              2
-            ) {
+            if (audio.ended) {
               finish();
             }
           }
         );
-      },
-      []
-    );
+
+        /*
+         * Cleanup test.
+         */
+        if (
+          currentObjectUrlRef.current
+        ) {
+          URL.revokeObjectURL(
+            currentObjectUrlRef.current
+          );
+
+          currentObjectUrlRef.current =
+            null;
+        }
+
+        audio.removeAttribute(
+          "src"
+        );
+
+        audio.load();
+
+        setAudioStatus(
+          "Sẵn sàng gọi số"
+        );
+
+        console.log(
+          "[TV AUDIO] ===== UNLOCK COMPLETE ====="
+        );
+
+        return true;
+      } catch (error) {
+        console.error(
+          "[TV AUDIO] ===== UNLOCK FAILED =====",
+          error
+        );
+
+        unlockedRef.current =
+          false;
+
+        setUnlocked(false);
+
+        setAudioStatus(
+          "Không bật được âm thanh"
+        );
+
+        return false;
+      }
+    }, [
+      getAudio,
+      getAudioContext,
+    ]);
 
   /* ==========================================================
-     PLAY AUDIO ONCE
+     PLAY GOOGLE TTS
      ========================================================== */
 
-  const playAudioOnce =
+  const playText =
     useCallback(
-      async (
-        text: string
-      ) => {
+      async (text: string) => {
         if (
           !unlockedRef.current
         ) {
@@ -451,21 +660,15 @@ function useGoogleTTS() {
           getAudioContext();
 
         /*
-         * Đảm bảo AudioContext vẫn chạy.
+         * AudioContext phải running.
          */
         if (
           ctx &&
-          ctx.state !==
-            "running"
+          ctx.state !== "running"
         ) {
           try {
             await ctx.resume();
-          } catch (error) {
-            console.warn(
-              "[TV AUDIO] AudioContext resume failed:",
-              error
-            );
-          }
+          } catch {}
         }
 
         console.log(
@@ -519,58 +722,140 @@ function useGoogleTTS() {
         }
 
         const url =
-          URL.createObjectURL(
-            blob
-          );
+          URL.createObjectURL(blob);
 
-        cleanupCurrentAudio();
+        if (
+          currentObjectUrlRef.current
+        ) {
+          URL.revokeObjectURL(
+            currentObjectUrlRef.current
+          );
+        }
 
         currentObjectUrlRef.current =
           url;
 
-        /*
-         * Dừng source trước.
-         */
         audio.pause();
 
         try {
           audio.currentTime = 0;
         } catch {}
 
-        /*
-         * Gán source.
-         */
         audio.src = url;
-
         audio.load();
 
         /*
-         * Đợi browser load audio.
-         */
-        await waitForAudioReady(
-          audio
-        );
-
-        console.log(
-          "[TV AUDIO] PLAY:",
-          text
-        );
-
-        /*
-         * Play trên cùng Audio element
-         * đã được unlock.
-         */
-        await audio.play();
-
-        /*
-         * Chờ phát xong.
+         * Đợi audio load.
          */
         await new Promise<void>(
           (
             resolve,
             reject
           ) => {
-            let finished = false;
+            let done = false;
+
+            let timer:
+              number | null = null;
+
+            const cleanup =
+              () => {
+                audio.oncanplay =
+                  null;
+
+                audio.onerror =
+                  null;
+
+                if (
+                  timer !== null
+                ) {
+                  window.clearTimeout(
+                    timer
+                  );
+
+                  timer = null;
+                }
+              };
+
+            const finish =
+              () => {
+                if (done) return;
+
+                done = true;
+
+                cleanup();
+
+                resolve();
+              };
+
+            const fail =
+              () => {
+                if (done) return;
+
+                done = true;
+
+                cleanup();
+
+                reject(
+                  new Error(
+                    "Audio element không load được Google TTS"
+                  )
+                );
+              };
+
+            timer =
+              window.setTimeout(
+                () => {
+                  if (
+                    audio.readyState >=
+                    2
+                  ) {
+                    finish();
+                  } else {
+                    fail();
+                  }
+                },
+                5000
+              );
+
+            audio.oncanplay =
+              finish;
+
+            audio.onerror =
+              fail;
+
+            if (
+              audio.readyState >= 2
+            ) {
+              finish();
+            }
+          }
+        );
+
+        console.log(
+          "[TV AUDIO] PLAYING:",
+          text
+        );
+
+        /*
+         * QUAN TRỌNG:
+         * play trên chính audio element
+         * đã được unlock.
+         */
+        const playPromise =
+          audio.play();
+
+        await playPromise;
+
+        /*
+         * Gắn handler ngay sau play().
+         */
+        await new Promise<void>(
+          (
+            resolve,
+            reject
+          ) => {
+            let finished =
+              false;
 
             const cleanup =
               () => {
@@ -583,11 +868,7 @@ function useGoogleTTS() {
 
             const finish =
               () => {
-                if (
-                  finished
-                ) {
-                  return;
-                }
+                if (finished) return;
 
                 finished = true;
 
@@ -598,11 +879,7 @@ function useGoogleTTS() {
 
             const fail =
               () => {
-                if (
-                  finished
-                ) {
-                  return;
-                }
+                if (finished) return;
 
                 finished = true;
 
@@ -635,321 +912,29 @@ function useGoogleTTS() {
         );
 
         /*
-         * Cleanup sau khi phát xong.
+         * Cleanup.
          */
-        audio.pause();
+        if (
+          currentObjectUrlRef.current
+        ) {
+          URL.revokeObjectURL(
+            currentObjectUrlRef.current
+          );
 
-        try {
-          audio.currentTime = 0;
-        } catch {}
+          currentObjectUrlRef.current =
+            null;
+        }
 
         audio.removeAttribute(
           "src"
         );
 
         audio.load();
-
-        cleanupCurrentAudio();
       },
       [
-        cleanupCurrentAudio,
         getAudio,
         getAudioContext,
-        waitForAudioReady,
       ]
-    );
-
-  /* ==========================================================
-     UNLOCK AUDIO
-     ========================================================== */
-
-  const unlock =
-    useCallback(async () => {
-      console.log(
-        "[TV AUDIO] ===== UNLOCK START ====="
-      );
-
-      try {
-        const audio =
-          getAudio();
-
-        const ctx =
-          getAudioContext();
-
-        /*
-         * Resume AudioContext ngay trong click.
-         */
-        if (ctx) {
-          try {
-            await ctx.resume();
-
-            console.log(
-              "[TV AUDIO] AudioContext:",
-              ctx.state
-            );
-          } catch (error) {
-            console.warn(
-              "[TV AUDIO] AudioContext resume failed:",
-              error
-            );
-          }
-        }
-
-        /*
-         * Tạo MediaElementSource đúng 1 lần.
-         */
-        if (
-          ctx &&
-          !sourceNodeRef.current
-        ) {
-          try {
-            sourceNodeRef.current =
-              ctx.createMediaElementSource(
-                audio
-              );
-
-            sourceNodeRef.current.connect(
-              ctx.destination
-            );
-
-            console.log(
-              "[TV AUDIO] MediaElementSource connected"
-            );
-          } catch (error) {
-            console.warn(
-              "[TV AUDIO] Cannot create MediaElementSource:",
-              error
-            );
-          }
-        }
-
-        setAudioStatus(
-          "Đang kiểm tra Google TTS..."
-        );
-
-        const testText =
-          "Âm thanh thông báo đã được bật";
-
-        const response =
-          await fetch(
-            `/api/tts?text=${encodeURIComponent(
-              testText
-            )}`,
-            {
-              method: "GET",
-              cache: "no-store",
-            }
-          );
-
-        console.log(
-          "[TV AUDIO] TTS TEST STATUS:",
-          response.status
-        );
-
-        if (!response.ok) {
-          throw new Error(
-            `Google TTS HTTP ${response.status}`
-          );
-        }
-
-        const blob =
-          await response.blob();
-
-        if (
-          !blob ||
-          blob.size === 0
-        ) {
-          throw new Error(
-            "Google TTS trả về audio rỗng"
-          );
-        }
-
-        const url =
-          URL.createObjectURL(
-            blob
-          );
-
-        cleanupCurrentAudio();
-
-        currentObjectUrlRef.current =
-          url;
-
-        audio.pause();
-
-        try {
-          audio.currentTime = 0;
-        } catch {}
-
-        audio.src = url;
-
-        audio.load();
-
-        await waitForAudioReady(
-          audio
-        );
-
-        /*
-         * Test play.
-         */
-        await audio.play();
-
-        console.log(
-          "[TV AUDIO] ===== TEST PLAY SUCCESS ====="
-        );
-
-        unlockedRef.current =
-          true;
-
-        setUnlocked(true);
-
-        setAudioStatus(
-          "Âm thanh Google đã bật"
-        );
-
-        /*
-         * Chờ test kết thúc.
-         */
-        await new Promise<void>(
-          (resolve) => {
-            let finished =
-              false;
-
-            const finish =
-              () => {
-                if (
-                  finished
-                ) {
-                  return;
-                }
-
-                finished = true;
-
-                audio.onended =
-                  null;
-
-                resolve();
-              };
-
-            audio.onended =
-              finish;
-
-            if (
-              audio.ended
-            ) {
-              finish();
-            }
-          }
-        );
-
-        audio.pause();
-
-        try {
-          audio.currentTime = 0;
-        } catch {}
-
-        audio.removeAttribute(
-          "src"
-        );
-
-        audio.load();
-
-        cleanupCurrentAudio();
-
-        setAudioStatus(
-          "Sẵn sàng gọi số"
-        );
-
-        console.log(
-          "[TV AUDIO] ===== UNLOCK COMPLETE ====="
-        );
-
-        return true;
-      } catch (error) {
-        console.error(
-          "[TV AUDIO] ===== UNLOCK FAILED =====",
-          error
-        );
-
-        unlockedRef.current =
-          false;
-
-        setUnlocked(false);
-
-        setAudioStatus(
-          "Không bật được âm thanh"
-        );
-
-        return false;
-      }
-    }, [
-      cleanupCurrentAudio,
-      getAudio,
-      getAudioContext,
-      waitForAudioReady,
-    ]);
-
-  /* ==========================================================
-     PLAY TEXT - REPEAT 2 TIMES
-     ========================================================== */
-
-  const playText =
-    useCallback(
-      async (
-        text: string
-      ) => {
-        if (
-          !unlockedRef.current
-        ) {
-          throw new Error(
-            "Audio chưa được unlock"
-          );
-        }
-
-        console.log(
-          "[TV AUDIO] ===== ANNOUNCEMENT START ====="
-        );
-
-        console.log(
-          "[TV AUDIO] TEXT:",
-          text
-        );
-
-        /*
-         * Đọc lần 1.
-         */
-        await playAudioOnce(
-          text
-        );
-
-        /*
-         * Nghỉ giữa 2 lần đọc.
-         */
-        await new Promise<void>(
-          (resolve) => {
-            window.setTimeout(
-              resolve,
-              350
-            );
-          }
-        );
-
-        /*
-         * Đọc lần 2.
-         */
-        console.log(
-          "[TV AUDIO] REPEAT:",
-          text
-        );
-
-        await playAudioOnce(
-          text
-        );
-
-        console.log(
-          "[TV AUDIO] ===== ANNOUNCEMENT END ====="
-        );
-      },
-      [playAudioOnce]
     );
 
   /* ==========================================================
@@ -981,7 +966,7 @@ function useGoogleTTS() {
         true;
 
       console.log(
-        "[TV AUDIO] ===== QUEUE START ====="
+        "[TV AUDIO] QUEUE START"
       );
 
       try {
@@ -1002,33 +987,62 @@ function useGoogleTTS() {
             job.text
           );
 
-          try {
-            await playText(
-              job.text
-            );
+          /*
+           * ==================================================
+           * PHÁT 2 LẦN
+           * ==================================================
+           */
 
-            console.log(
-              "[TV AUDIO] SUCCESS:",
-              job.id
-            );
-          } catch (error) {
-            console.error(
-              "[TV AUDIO] PLAY FAILED:",
-              job.id,
-              error
-            );
+          for (
+            let repeat = 1;
+            repeat <= 2;
+            repeat++
+          ) {
+            try {
+              console.log(
+                `[TV AUDIO] REPEAT ${repeat}/2:`,
+                job.id
+              );
+
+              await playText(
+                job.text
+              );
+
+              console.log(
+                `[TV AUDIO] REPEAT ${repeat}/2 SUCCESS:`,
+                job.id
+              );
+            } catch (error) {
+              console.error(
+                `[TV AUDIO] REPEAT ${repeat}/2 FAILED:`,
+                job.id,
+                error
+              );
+            }
+
+            /*
+             * Nghỉ giữa 2 lần đọc.
+             */
+            if (repeat === 1) {
+              await new Promise<void>(
+                (resolve) =>
+                  window.setTimeout(
+                    resolve,
+                    500
+                  )
+              );
+            }
           }
 
           /*
-           * Khoảng nghỉ giữa các lượt gọi.
+           * Nghỉ trước ticket tiếp theo.
            */
           await new Promise<void>(
-            (resolve) => {
+            (resolve) =>
               window.setTimeout(
                 resolve,
-                500
-              );
-            }
+                300
+              )
           );
         }
       } finally {
@@ -1036,17 +1050,17 @@ function useGoogleTTS() {
           false;
 
         console.log(
-          "[TV AUDIO] ===== QUEUE END ====="
+          "[TV AUDIO] QUEUE END"
         );
 
         /*
-         * Nếu có job mới vừa vào đúng lúc
-         * queue kết thúc.
+         * Nếu trong lúc đang phát có job
+         * mới được thêm vào thì xử lý tiếp.
          */
         if (
+          unlockedRef.current &&
           queueRef.current.length >
-            0 &&
-          unlockedRef.current
+            0
         ) {
           void processQueue();
         }
@@ -1077,7 +1091,7 @@ function useGoogleTTS() {
             .slice(2, 8)}`;
 
         console.log(
-          "[TV AUDIO] ===== ENQUEUE =====",
+          "[TV AUDIO] ENQUEUE:",
           {
             id,
             queueNumber,
@@ -1131,22 +1145,22 @@ function useGoogleTTS() {
         audio.remove();
       }
 
-      cleanupCurrentAudio();
+      if (
+        currentObjectUrlRef.current
+      ) {
+        URL.revokeObjectURL(
+          currentObjectUrlRef.current
+        );
+
+        currentObjectUrlRef.current =
+          null;
+      }
 
       try {
         audioContextRef.current?.close();
       } catch {}
-
-      audioRef.current =
-        null;
-
-      audioContextRef.current =
-        null;
-
-      sourceNodeRef.current =
-        null;
     };
-  }, [cleanupCurrentAudio]);
+  }, []);
 
   return {
     enqueue,
@@ -1161,19 +1175,20 @@ function useGoogleTTS() {
    ============================================================ */
 
 function useClock() {
-  const [now, setNow] =
-    useState<Date | null>(null);
+  const [
+    now,
+    setNow,
+  ] = useState<Date | null>(
+    null
+  );
 
   useEffect(() => {
     setNow(new Date());
 
     const id =
-      window.setInterval(
-        () => {
-          setNow(new Date());
-        },
-        1000
-      );
+      window.setInterval(() => {
+        setNow(new Date());
+      }, 1000);
 
     return () => {
       window.clearInterval(id);
@@ -1222,34 +1237,34 @@ export default function TvDisplayPage() {
     string | null
   >(null);
 
-  /* ==========================================================
-     ANNOUNCED CALLS
-     ========================================================== */
-
+  /*
+   * counter_code + called_at
+   *
+   * Một cuộc gọi chỉ được đưa vào audio queue 1 lần.
+   */
   const announcedCalls =
     useRef<Set<string>>(
       new Set()
     );
 
-  /* ==========================================================
-     REFRESH TIMER
-     ========================================================== */
-
   /*
-   * Dùng ReturnType<typeof window.setTimeout>
-   * để tránh lỗi:
+   * ==========================================================
+   * FIX BUILD VERCEL
    *
-   * Type 'number' is not assignable to type 'Timeout'
+   * window.setTimeout() => number
    *
-   * trên Vercel / browser TypeScript.
+   * Không dùng ReturnType<typeof setTimeout>
+   * vì Node typings có thể biến nó thành Timeout.
+   * ==========================================================
    */
   const refreshTimer =
-    useRef<
-      ReturnType<
-        typeof window.setTimeout
-      > | null
-    >(null);
+    useRef<number | null>(
+      null
+    );
 
+  /*
+   * Không cho refresh chạy song song.
+   */
   const loadingRef =
     useRef(false);
 
@@ -1388,10 +1403,6 @@ export default function TvDisplayPage() {
             continue;
           }
 
-          /*
-           * Mỗi counter + called_at
-           * chỉ đọc một lần.
-           */
           const callKey =
             `${call.counter_code}:${call.called_at}`;
 
@@ -1409,7 +1420,7 @@ export default function TvDisplayPage() {
             );
 
           /*
-           * Tìm đúng ticket.
+           * Tìm chính xác ticket.
            */
           const driver =
             queueList.find(
@@ -1430,10 +1441,6 @@ export default function TvDisplayPage() {
               }
             );
 
-            /*
-             * Không mark.
-             * Refresh sau sẽ thử lại.
-             */
             continue;
           }
 
@@ -1452,30 +1459,19 @@ export default function TvDisplayPage() {
           /*
            * QUAN TRỌNG:
            *
-           * Không dùng counter_code cho TTS.
+           * Không dùng call.counter_code để đọc.
            *
-           * counter_code:
-           * HCM014
+           * Ví dụ:
+           *   counter_code = HCM014
+           *   counter_name = Quầy 04
            *
-           * counter_name:
-           * Quầy 04
+           * Audio sẽ dùng:
+           *   Quầy 04
            */
           const counterName =
-            call.counter_name?.trim();
-
-          if (!counterName) {
-            console.warn(
-              "[TV] COUNTER NAME EMPTY:",
-              {
-                counterCode:
-                  call.counter_code,
-                queue:
-                  call.queue_number,
-              }
-            );
-
-            continue;
-          }
+            call.counter_name?.trim() ||
+            call.counter_code?.trim() ||
+            "quầy";
 
           console.log(
             "[TV] ===== NEW CALL =====",
@@ -1493,23 +1489,11 @@ export default function TvDisplayPage() {
 
           /*
            * Mark trước enqueue.
-           *
-           * Tránh realtime + watchdog
-           * tạo duplicate.
            */
           announcedCalls.current.add(
             callKey
           );
 
-          /*
-           * Google TTS sẽ đọc:
-           *
-           * "Kính mời tài xế có số A 0 1,
-           * Nguyễn Văn A,
-           * đến Quầy 04."
-           *
-           * và đọc lại lần 2.
-           */
           enqueueAudio(
             call.queue_number,
             driverName,
@@ -1521,8 +1505,8 @@ export default function TvDisplayPage() {
          * Không để Set phình vô hạn.
          */
         if (
-          announcedCalls.current
-            .size > 500
+          announcedCalls.current.size >
+          500
         ) {
           const values =
             Array.from(
@@ -1563,7 +1547,6 @@ export default function TvDisplayPage() {
         ]);
 
         setLoading(false);
-
         setErrorMessage(null);
 
         handleCalls(
@@ -1592,16 +1575,23 @@ export default function TvDisplayPage() {
   const scheduleRefresh =
     useCallback(() => {
       if (
-        refreshTimer.current
+        refreshTimer.current !==
+        null
       ) {
         window.clearTimeout(
           refreshTimer.current
         );
+
+        refreshTimer.current =
+          null;
       }
 
       refreshTimer.current =
         window.setTimeout(
           () => {
+            refreshTimer.current =
+              null;
+
             void refresh();
           },
           80
@@ -1687,21 +1677,17 @@ export default function TvDisplayPage() {
         );
 
     /*
-     * Watchdog 5 giây.
-     *
-     * Backup nếu realtime miss.
+     * Watchdog 5s.
      */
     const watchdog =
-      window.setInterval(
-        () => {
-          void refresh();
-        },
-        5000
-      );
+      window.setInterval(() => {
+        void refresh();
+      }, 5000);
 
     return () => {
       if (
-        refreshTimer.current
+        refreshTimer.current !==
+        null
       ) {
         window.clearTimeout(
           refreshTimer.current
@@ -1770,8 +1756,7 @@ export default function TvDisplayPage() {
     useMemo(
       () =>
         agentQueue.filter(
-          (q) =>
-            !q.agent_id
+          (q) => !q.agent_id
         ),
       [agentQueue]
     );
