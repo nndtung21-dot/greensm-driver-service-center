@@ -1,4 +1,4 @@
-```tsx
+tsx
 "use client";
 
 import {
@@ -1748,4 +1748,4 @@ function isCalledQueue(
       Boolean(counter.called_at)
   );
 }
-```
+
