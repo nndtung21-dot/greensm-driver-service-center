@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -60,36 +59,6 @@ const DIGIT_CLIP: Record<string, string> = {
   A: "chu_a",
 };
 
-function stripLeadingZeros(value: string) {
-  const stripped = value.replace(/^0+/, "");
-  return stripped.length > 0 ? stripped : "0";
-}
-
-function buildAnnouncementClips(
-  queueNumber: string,
-  counterCode: string
-): string[] {
-  const clips: string[] = ["intro"];
-
-  for (const ch of queueNumber.toUpperCase()) {
-    if (DIGIT_CLIP[ch]) {
-      clips.push(DIGIT_CLIP[ch]);
-    }
-  }
-
-  clips.push("den_quay_so");
-
-  const counterDigits = stripLeadingZeros(counterCode);
-
-  for (const ch of counterDigits) {
-    if (DIGIT_CLIP[ch]) {
-      clips.push(DIGIT_CLIP[ch]);
-    }
-  }
-
-  return clips;
-}
-
 const DIGIT_WORD: Record<string, string> = {
   "0": "không",
   "1": "một",
@@ -128,12 +97,39 @@ const SMALL_NUMBER_WORDS = [
   "hai mươi",
 ];
 
-function counterNumberToWords(
-  counterCode: string
-): string {
-  const stripped = counterCode.replace(/^0+/, "");
+function stripLeadingZeros(value: string) {
+  const stripped = value.replace(/^0+/, "");
+  return stripped.length > 0 ? stripped : "0";
+}
 
-  const n = parseInt(stripped, 10);
+function buildAnnouncementClips(
+  queueNumber: string,
+  counterCode: string
+): string[] {
+  const clips: string[] = ["intro"];
+
+  for (const ch of queueNumber.toUpperCase()) {
+    if (DIGIT_CLIP[ch]) {
+      clips.push(DIGIT_CLIP[ch]);
+    }
+  }
+
+  clips.push("den_quay_so");
+
+  const counterDigits = stripLeadingZeros(counterCode);
+
+  for (const ch of counterDigits) {
+    if (DIGIT_CLIP[ch]) {
+      clips.push(DIGIT_CLIP[ch]);
+    }
+  }
+
+  return clips;
+}
+
+function counterNumberToWords(counterCode: string): string {
+  const stripped = counterCode.replace(/^0+/, "");
+  const n = parseInt(stripped || "0", 10);
 
   if (
     !isNaN(n) &&
@@ -167,35 +163,22 @@ function buildAnnouncementText(
    ============================================================ */
 
 function useAnnouncer() {
-  const audioRef =
-    useRef<HTMLAudioElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const queueRef =
-    useRef<(() => Promise<void>)[]>([]);
+    useRef<Array<() => Promise<void>>>([]);
 
-  const playingRef =
-    useRef(false);
+  const playingRef = useRef(false);
 
-  const [unlocked, setUnlocked] =
-    useState(false);
+  const [unlocked, setUnlocked] = useState(false);
 
-  /*
-   * Tạo duy nhất 1 Audio element.
-   *
-   * Không tạo Audio mới cho từng announcement.
-   * Việc này giúp browser giữ trạng thái audio
-   * sau khi user đã click unlock.
-   */
   const getAudio = useCallback(() => {
     if (!audioRef.current) {
       const audio = new Audio();
 
       audio.preload = "auto";
       audio.volume = 1;
-      audio.setAttribute(
-        "playsinline",
-        ""
-      );
+      audio.setAttribute("playsinline", "");
 
       audioRef.current = audio;
     }
@@ -218,40 +201,25 @@ function useAnnouncer() {
 
       await audio.play();
 
-      /*
-       * Browser đã nhận user gesture.
-       * Pause lại sau khi play thành công.
-       */
-      setTimeout(() => {
-        try {
-          audio.pause();
-          audio.currentTime = 0;
-        } catch {}
-      }, 150);
+      audio.pause();
+      audio.currentTime = 0;
 
       setUnlocked(true);
 
-      console.log(
-        "TV audio unlocked successfully"
-      );
+      console.log("TV audio unlocked");
     } catch (error) {
       console.error(
         "Không unlock được audio:",
         error
       );
 
-      /*
-       * Fallback unlock bằng speech synthesis.
-       */
       try {
         if (
           typeof window !== "undefined" &&
           "speechSynthesis" in window
         ) {
           const utterance =
-            new SpeechSynthesisUtterance(
-              " "
-            );
+            new SpeechSynthesisUtterance(" ");
 
           utterance.volume = 0;
 
@@ -261,14 +229,10 @@ function useAnnouncer() {
           );
 
           setUnlocked(true);
-
-          console.log(
-            "Speech synthesis unlocked"
-          );
         }
       } catch (fallbackError) {
         console.error(
-          "Fallback unlock failed:",
+          "Speech unlock failed:",
           fallbackError
         );
       }
@@ -276,506 +240,355 @@ function useAnnouncer() {
   }, [getAudio]);
 
   /* ==========================================================
-     PLAY LOCAL MP3
+     PLAY ONE LOCAL CLIP
      ========================================================== */
 
-  const playLocalClips =
-    useCallback(
-      async (
-        clipNames: string[]
-      ) => {
-        const audio = getAudio();
+  const playLocalClip = useCallback(
+    async (
+      audio: HTMLAudioElement,
+      clipName: string
+    ) => {
+      await new Promise<void>(
+        (resolve, reject) => {
+          let finished = false;
 
-        for (
-          const clipName of clipNames
-        ) {
-          await new Promise<void>(
-            (
-              resolve,
-              reject
-            ) => {
-              let finished = false;
+          const cleanup = () => {
+            audio.onended = null;
+            audio.onerror = null;
+          };
 
-              const cleanup = () => {
-                audio.onended = null;
-                audio.onerror = null;
-              };
+          const done = () => {
+            if (finished) return;
 
-              const done = () => {
-                if (finished) return;
+            finished = true;
+            cleanup();
+            resolve();
+          };
 
-                finished = true;
-                cleanup();
+          const fail = () => {
+            if (finished) return;
 
-                resolve();
-              };
+            finished = true;
+            cleanup();
 
-              const fail = () => {
-                if (finished) return;
-
-                finished = true;
-                cleanup();
-
-                reject(
-                  new Error(
-                    `Không phát được ${clipName}.mp3`
-                  )
-                );
-              };
-
-              audio.pause();
-              audio.currentTime = 0;
-
-              audio.src =
-                `${CLIP_BASE}${clipName}.mp3`;
-
-              audio.onended = done;
-              audio.onerror = fail;
-
-              audio
-                .play()
-                .catch(fail);
-            }
-          );
-        }
-      },
-      [getAudio]
-    );
-
-  /* ==========================================================
-     PLAY REMOTE TTS
-     ========================================================== */
-
-  const playRemote =
-    useCallback(
-      async (url: string) => {
-        const audio = getAudio();
-
-        await new Promise<void>(
-          (
-            resolve,
-            reject
-          ) => {
-            let finished = false;
-
-            const cleanup = () => {
-              audio.onended = null;
-              audio.onerror = null;
-            };
-
-            const done = () => {
-              if (finished) return;
-
-              finished = true;
-              cleanup();
-
-              resolve();
-            };
-
-            const fail = () => {
-              if (finished) return;
-
-              finished = true;
-              cleanup();
-
-              reject(
-                new Error(
-                  "Không phát được TTS"
-                )
-              );
-            };
-
-            audio.pause();
-            audio.currentTime = 0;
-
-            audio.src = url;
-
-            audio.onended = done;
-            audio.onerror = fail;
-
-            audio
-              .play()
-              .catch(fail);
-          }
-        );
-      },
-      [getAudio]
-    );
-
-  /* ==========================================================
-     SPEECH SYNTHESIS FALLBACK
-     ========================================================== */
-
-  const playSpeech =
-    useCallback(
-      async (text: string) => {
-        if (
-          typeof window === "undefined" ||
-          !(
-            "speechSynthesis" in
-            window
-          )
-        ) {
-          throw new Error(
-            "Browser không hỗ trợ speech synthesis"
-          );
-        }
-
-        await new Promise<void>(
-          (
-            resolve,
-            reject
-          ) => {
-            window.speechSynthesis.cancel();
-
-            const utterance =
-              new SpeechSynthesisUtterance(
-                text
-              );
-
-            utterance.lang = "vi-VN";
-            utterance.rate = 0.9;
-            utterance.pitch = 1;
-            utterance.volume = 1;
-
-            utterance.onend = () => {
-              resolve();
-            };
-
-            utterance.onerror = () => {
-              reject(
-                new Error(
-                  "speechSynthesis failed"
-                )
-              );
-            };
-
-            window.speechSynthesis.speak(
-              utterance
+            reject(
+              new Error(
+                `Không phát được ${clipName}.mp3`
+              )
             );
-          }
+          };
+
+          audio.pause();
+          audio.currentTime = 0;
+          audio.src = `${CLIP_BASE}${clipName}.mp3`;
+
+          audio.onended = done;
+          audio.onerror = fail;
+
+          void audio.play().catch(fail);
+        }
+      );
+    },
+    []
+  );
+
+  /* ==========================================================
+     PLAY LOCAL ANNOUNCEMENT
+     ========================================================== */
+
+  const playLocalClips = useCallback(
+    async (clipNames: string[]) => {
+      const audio = getAudio();
+
+      for (const clipName of clipNames) {
+        await playLocalClip(
+          audio,
+          clipName
         );
-      },
-      []
-    );
+      }
+    },
+    [getAudio, playLocalClip]
+  );
+
+  /* ==========================================================
+     REMOTE TTS
+     ========================================================== */
+
+  const playRemote = useCallback(
+    async (url: string) => {
+      const audio = getAudio();
+
+      await new Promise<void>(
+        (resolve, reject) => {
+          let finished = false;
+
+          const cleanup = () => {
+            audio.onended = null;
+            audio.onerror = null;
+          };
+
+          const done = () => {
+            if (finished) return;
+
+            finished = true;
+            cleanup();
+            resolve();
+          };
+
+          const fail = () => {
+            if (finished) return;
+
+            finished = true;
+            cleanup();
+
+            reject(
+              new Error(
+                "Không phát được TTS"
+              )
+            );
+          };
+
+          audio.pause();
+          audio.currentTime = 0;
+          audio.src = url;
+
+          audio.onended = done;
+          audio.onerror = fail;
+
+          void audio.play().catch(fail);
+        }
+      );
+    },
+    [getAudio]
+  );
+
+  /* ==========================================================
+     SPEECH FALLBACK
+     ========================================================== */
+
+  const playSpeech = useCallback(
+    async (text: string) => {
+      if (
+        typeof window === "undefined" ||
+        !("speechSynthesis" in window)
+      ) {
+        throw new Error(
+          "Browser không hỗ trợ speech synthesis"
+        );
+      }
+
+      await new Promise<void>(
+        (resolve, reject) => {
+          window.speechSynthesis.cancel();
+
+          const utterance =
+            new SpeechSynthesisUtterance(text);
+
+          utterance.lang = "vi-VN";
+          utterance.rate = 0.9;
+          utterance.pitch = 1;
+          utterance.volume = 1;
+
+          utterance.onend = () => {
+            resolve();
+          };
+
+          utterance.onerror = () => {
+            reject(
+              new Error(
+                "speechSynthesis failed"
+              )
+            );
+          };
+
+          window.speechSynthesis.speak(
+            utterance
+          );
+        }
+      );
+    },
+    []
+  );
 
   /* ==========================================================
      PROCESS QUEUE
      ========================================================== */
 
-  const processQueue =
-    useCallback(async () => {
-      if (playingRef.current) {
-        return;
-      }
+  const processQueue = useCallback(async () => {
+    if (playingRef.current) {
+      return;
+    }
 
-      /*
-       * Browser chưa được user unlock.
-       */
-      if (!unlocked) {
-        return;
-      }
+    if (!unlocked) {
+      return;
+    }
 
-      playingRef.current = true;
+    playingRef.current = true;
 
-      try {
-        while (
-          queueRef.current.length >
-          0
-        ) {
-          const job =
-            queueRef.current.shift();
+    try {
+      while (queueRef.current.length > 0) {
+        const job =
+          queueRef.current.shift();
 
-          if (!job) {
-            continue;
-          }
+        if (!job) {
+          continue;
+        }
 
-          try {
-            await job();
-          } catch (error) {
-            console.warn(
-              "TV announcement failed:",
-              error
-            );
-          }
-
-          /*
-           * Khoảng nghỉ giữa 2 lượt gọi.
-           */
-          await new Promise(
-            (resolve) =>
-              setTimeout(
-                resolve,
-                300
-              )
+        try {
+          await job();
+        } catch (error) {
+          console.error(
+            "TV announcement failed:",
+            error
           );
         }
-      } finally {
-        playingRef.current = false;
-      }
-    }, [unlocked]);
 
-  /*
-   * Khi user vừa unlock xong,
-   * xử lý các announcement đang chờ.
-   */
+        await new Promise<void>(
+          (resolve) =>
+            setTimeout(resolve, 250)
+        );
+      }
+    } finally {
+      playingRef.current = false;
+    }
+  }, [unlocked]);
+
   useEffect(() => {
     if (unlocked) {
       void processQueue();
     }
-  }, [
-    unlocked,
-    processQueue,
-  ]);
+  }, [unlocked, processQueue]);
 
   /* ==========================================================
      ENQUEUE
      ========================================================== */
 
-  const enqueue =
-    useCallback(
-      (
-        queueNumber: string,
-        driverName: string,
-        counterCode: string
-      ) => {
-        const text =
-          buildAnnouncementText(
-            queueNumber,
-            driverName,
-            counterCode
-          );
-
-        queueRef.current.push(
-          async () => {
-            /* ================================================
-               LẦN 1
-               ================================================ */
-
-            let played = false;
-
-            /*
-             * 1. TTS API
-             */
-            try {
-              const response =
-                await fetch(
-                  `/api/tts?text=${encodeURIComponent(
-                    text
-                  )}`,
-                  {
-                    cache:
-                      "no-store",
-                  }
-                );
-
-              if (!response.ok) {
-                throw new Error(
-                  `TTS HTTP ${response.status}`
-                );
-              }
-
-              const blob =
-                await response.blob();
-
-              if (
-                !blob ||
-                blob.size === 0
-              ) {
-                throw new Error(
-                  "TTS trả về audio rỗng"
-                );
-              }
-
-              const url =
-                URL.createObjectURL(
-                  blob
-                );
-
-              try {
-                await playRemote(
-                  url
-                );
-
-                played = true;
-              } finally {
-                URL.revokeObjectURL(
-                  url
-                );
-              }
-            } catch (error) {
-              console.warn(
-                "TTS lần 1 failed:",
-                error
-              );
-            }
-
-            /*
-             * 2. Local MP3
-             */
-            if (!played) {
-              try {
-                await playLocalClips(
-                  buildAnnouncementClips(
-                    queueNumber,
-                    counterCode
-                  )
-                );
-
-                played = true;
-              } catch (error) {
-                console.warn(
-                  "Local audio lần 1 failed:",
-                  error
-                );
-              }
-            }
-
-            /*
-             * 3. Browser speech
-             */
-            if (!played) {
-              try {
-                await playSpeech(
-                  text
-                );
-
-                played = true;
-              } catch (error) {
-                console.error(
-                  "Speech fallback lần 1 failed:",
-                  error
-                );
-              }
-            }
-
-            /*
-             * Nghỉ trước lần 2.
-             */
-            await new Promise(
-              (resolve) =>
-                setTimeout(
-                  resolve,
-                  700
-                )
-            );
-
-            /* ================================================
-               LẦN 2
-               ================================================ */
-
-            played = false;
-
-            /*
-             * 1. TTS API
-             */
-            try {
-              const response =
-                await fetch(
-                  `/api/tts?text=${encodeURIComponent(
-                    text
-                  )}`,
-                  {
-                    cache:
-                      "no-store",
-                  }
-                );
-
-              if (!response.ok) {
-                throw new Error(
-                  `TTS HTTP ${response.status}`
-                );
-              }
-
-              const blob =
-                await response.blob();
-
-              if (
-                !blob ||
-                blob.size === 0
-              ) {
-                throw new Error(
-                  "TTS trả về audio rỗng"
-                );
-              }
-
-              const url =
-                URL.createObjectURL(
-                  blob
-                );
-
-              try {
-                await playRemote(
-                  url
-                );
-
-                played = true;
-              } finally {
-                URL.revokeObjectURL(
-                  url
-                );
-              }
-            } catch (error) {
-              console.warn(
-                "TTS lần 2 failed:",
-                error
-              );
-            }
-
-            /*
-             * 2. Local MP3
-             */
-            if (!played) {
-              try {
-                await playLocalClips(
-                  buildAnnouncementClips(
-                    queueNumber,
-                    counterCode
-                  )
-                );
-
-                played = true;
-              } catch (error) {
-                console.warn(
-                  "Local audio lần 2 failed:",
-                  error
-                );
-              }
-            }
-
-            /*
-             * 3. Browser speech
-             */
-            if (!played) {
-              try {
-                await playSpeech(
-                  text
-                );
-              } catch (error) {
-                console.error(
-                  "Không thể phát announcement:",
-                  error
-                );
-              }
-            }
-          }
+  const enqueue = useCallback(
+    (
+      queueNumber: string,
+      driverName: string,
+      counterCode: string
+    ) => {
+      const text =
+        buildAnnouncementText(
+          queueNumber,
+          driverName,
+          counterCode
         );
 
-        /*
-         * Chỉ xử lý ngay nếu đã unlock.
-         */
-        if (unlocked) {
-          void processQueue();
+      const localClips =
+        buildAnnouncementClips(
+          queueNumber,
+          counterCode
+        );
+
+      queueRef.current.push(
+        async () => {
+          let played = false;
+
+          /*
+           * ==================================================
+           * ƯU TIÊN LOCAL MP3
+           *
+           * Không chờ API TTS.
+           * Đây là điểm quan trọng để gọi số gần như ngay.
+           * ==================================================
+           */
+
+          try {
+            await playLocalClips(
+              localClips
+            );
+
+            played = true;
+          } catch (error) {
+            console.warn(
+              "Local audio failed:",
+              error
+            );
+          }
+
+          /*
+           * ==================================================
+           * FALLBACK TTS
+           * ==================================================
+           */
+
+          if (!played) {
+            try {
+              const response =
+                await fetch(
+                  `/api/tts?text=${encodeURIComponent(
+                    text
+                  )}`,
+                  {
+                    cache: "no-store",
+                  }
+                );
+
+              if (!response.ok) {
+                throw new Error(
+                  `TTS HTTP ${response.status}`
+                );
+              }
+
+              const blob =
+                await response.blob();
+
+              if (!blob || blob.size === 0) {
+                throw new Error(
+                  "TTS trả về audio rỗng"
+                );
+              }
+
+              const url =
+                URL.createObjectURL(blob);
+
+              try {
+                await playRemote(url);
+                played = true;
+              } finally {
+                URL.revokeObjectURL(url);
+              }
+            } catch (error) {
+              console.warn(
+                "Remote TTS failed:",
+                error
+              );
+            }
+          }
+
+          /*
+           * ==================================================
+           * FINAL FALLBACK
+           * ==================================================
+           */
+
+          if (!played) {
+            try {
+              await playSpeech(text);
+            } catch (error) {
+              console.error(
+                "Speech fallback failed:",
+                error
+              );
+            }
+          }
         }
-      },
-      [
-        unlocked,
-        processQueue,
-        playRemote,
-        playLocalClips,
-        playSpeech,
-      ]
-    );
+      );
+
+      if (unlocked) {
+        void processQueue();
+      }
+    },
+    [
+      unlocked,
+      processQueue,
+      playLocalClips,
+      playRemote,
+      playSpeech,
+    ]
+  );
 
   return {
     enqueue,
@@ -796,16 +609,46 @@ function useClock() {
     setNow(new Date());
 
     const id = setInterval(
-      () =>
-        setNow(new Date()),
+      () => setNow(new Date()),
       1000
     );
 
-    return () =>
-      clearInterval(id);
+    return () => clearInterval(id);
   }, []);
 
   return now;
+}
+
+/* ============================================================
+   HELPER
+   ============================================================ */
+
+function normalizeQueueNumber(
+  value: string | null | undefined
+) {
+  return (
+    value
+      ?.trim()
+      .toUpperCase() ?? ""
+  );
+}
+
+function isCalledQueue(
+  queue: AgentQueueRow,
+  counters: CounterStatusRow[]
+) {
+  const queueNumber =
+    normalizeQueueNumber(
+      queue.queue_number
+    );
+
+  return counters.some(
+    (counter) =>
+      normalizeQueueNumber(
+        counter.queue_number
+      ) === queueNumber &&
+      Boolean(counter.called_at)
+  );
 }
 
 /* ============================================================
@@ -824,16 +667,12 @@ export default function TvDisplayPage() {
   const [
     counters,
     setCounters,
-  ] = useState<
-    CounterStatusRow[]
-  >([]);
+  ] = useState<CounterStatusRow[]>([]);
 
   const [
     agentQueue,
     setAgentQueue,
-  ] = useState<
-    AgentQueueRow[]
-  >([]);
+  ] = useState<AgentQueueRow[]>([]);
 
   const [
     loading,
@@ -843,19 +682,11 @@ export default function TvDisplayPage() {
   const [
     errorMessage,
     setErrorMessage,
-  ] = useState<
-    string | null
-  >(null);
+  ] = useState<string | null>(null);
 
-  /*
-   * Lưu lần gọi cuối cùng theo từng quầy.
-   *
-   * counter_code -> called_at
-   */
-  const lastAnnouncedAt =
-    useRef<
-      Map<string, string>
-    >(new Map());
+  /* ==========================================================
+     AUDIO
+     ========================================================== */
 
   const {
     enqueue: enqueueAudio,
@@ -863,7 +694,37 @@ export default function TvDisplayPage() {
     unlocked,
   } = useAnnouncer();
 
+  /* ==========================================================
+     CLOCK
+     ========================================================== */
+
   const clock = useClock();
+
+  /* ==========================================================
+     LOAD CONTROL
+     ========================================================== */
+
+  const loadingRef =
+    useRef(false);
+
+  const refreshPendingRef =
+    useRef(false);
+
+  const refreshTimerRef =
+    useRef<ReturnType<
+      typeof setTimeout
+    > | null>(null);
+
+  const initialLoadedRef =
+    useRef(false);
+
+  /*
+   * counter_code -> called_at
+   */
+  const lastAnnouncedAt =
+    useRef<Map<string, string>>(
+      new Map()
+    );
 
   /* ==========================================================
      LOAD COUNTERS
@@ -888,32 +749,22 @@ export default function TvDisplayPage() {
           error
         );
 
-        setErrorMessage(
-          error.message
-        );
-
-        setCounters([]);
-
-        return [];
+        throw error;
       }
 
       const result =
-        (data as CounterStatusRow[]) ??
-        [];
-
-      result.sort(
-        (a, b) =>
-          a.display_order -
-          b.display_order
-      );
-
-      setCounters(result);
+        ((data as CounterStatusRow[]) ??
+          []).sort(
+          (a, b) =>
+            a.display_order -
+            b.display_order
+        );
 
       return result;
     }, [branchCode]);
 
   /* ==========================================================
-     LOAD QUEUE
+     LOAD AGENT QUEUE
      ========================================================== */
 
   const loadAgentQueue =
@@ -935,145 +786,300 @@ export default function TvDisplayPage() {
           error
         );
 
-        setAgentQueue([]);
-
-        return [];
+        throw error;
       }
 
       const result =
-        (data as AgentQueueRow[]) ??
-        [];
-
-      result.sort(
-        (a, b) =>
-          new Date(
-            a.created_at
-          ).getTime() -
-          new Date(
-            b.created_at
-          ).getTime()
-      );
-
-      setAgentQueue(result);
+        ((data as AgentQueueRow[]) ??
+          []).sort(
+          (a, b) =>
+            new Date(
+              a.created_at
+            ).getTime() -
+            new Date(
+              b.created_at
+            ).getTime()
+        );
 
       return result;
     }, [branchCode]);
 
   /* ==========================================================
-     LOAD ALL
+     ANNOUNCE NEW CALLS
+     ========================================================== */
+
+  const announceCalls =
+    useCallback(
+      (
+        counterList: CounterStatusRow[],
+        queueList: AgentQueueRow[]
+      ) => {
+        const activeCalls =
+          counterList
+            .filter(
+              (counter) =>
+                counter.queue_number &&
+                counter.called_at
+            )
+            .sort(
+              (a, b) =>
+                new Date(
+                  a.called_at!
+                ).getTime() -
+                new Date(
+                  b.called_at!
+                ).getTime()
+            );
+
+        for (const call of activeCalls) {
+          const previous =
+            lastAnnouncedAt.current.get(
+              call.counter_code
+            );
+
+          /*
+           * Đã phát rồi.
+           */
+          if (
+            previous === call.called_at
+          ) {
+            continue;
+          }
+
+          const targetQueue =
+            normalizeQueueNumber(
+              call.queue_number
+            );
+
+          const driver =
+            queueList.find(
+              (q) =>
+                normalizeQueueNumber(
+                  q.queue_number
+                ) === targetQueue
+            );
+
+          /*
+           * Chưa lấy được driver name.
+           *
+           * Không đánh dấu.
+           * Refresh sau sẽ thử lại.
+           */
+          if (
+            !driver?.driver_name?.trim()
+          ) {
+            continue;
+          }
+
+          enqueueAudio(
+            call.queue_number!,
+            driver.driver_name.trim(),
+            call.counter_code
+          );
+
+          /*
+           * Đánh dấu ngay.
+           */
+          lastAnnouncedAt.current.set(
+            call.counter_code,
+            call.called_at!
+          );
+        }
+      },
+      [enqueueAudio]
+    );
+
+  /* ==========================================================
+     CORE LOAD
      ========================================================== */
 
   const load =
     useCallback(async () => {
-      setErrorMessage(null);
-
-      const [
-        counterList,
-        queueList,
-      ] = await Promise.all([
-        loadCounters(),
-        loadAgentQueue(),
-      ]);
-
-      setLoading(false);
-
       /*
-       * Các ticket đang được gọi.
+       * Nếu đang load thì không tạo thêm
+       * request song song.
        */
-      const activeCalls =
-        counterList
-          .filter(
-            (counter) =>
-              counter.queue_number &&
-              counter.called_at
-          )
-          .sort(
-            (a, b) =>
-              new Date(
-                a.called_at!
-              ).getTime() -
-              new Date(
-                b.called_at!
-              ).getTime()
-          );
+      if (loadingRef.current) {
+        refreshPendingRef.current =
+          true;
 
-      for (
-        const call of activeCalls
-      ) {
-        const last =
-          lastAnnouncedAt.current.get(
-            call.counter_code
-          );
+        return;
+      }
+
+      loadingRef.current = true;
+
+      try {
+        /*
+         * Hai RPC chạy song song.
+         */
+        const [
+          counterResult,
+          queueResult,
+        ] = await Promise.allSettled([
+          loadCounters(),
+          loadAgentQueue(),
+        ]);
+
+        let counterList =
+          counters;
+
+        let queueList =
+          agentQueue;
 
         /*
-         * Cùng called_at => đã phát.
+         * COUNTERS
          */
         if (
-          last === call.called_at
+          counterResult.status ===
+          "fulfilled"
         ) {
-          continue;
+          counterList =
+            counterResult.value;
+
+          setCounters(
+            counterResult.value
+          );
+        } else {
+          console.error(
+            "Load counters failed:",
+            counterResult.reason
+          );
         }
 
         /*
-         * Tìm driver tương ứng.
+         * QUEUE
          */
-        const driver =
-          queueList.find(
-            (q) =>
-              q.queue_number
-                .trim()
-                .toUpperCase() ===
-              call.queue_number!
-                .trim()
-                .toUpperCase()
+        if (
+          queueResult.status ===
+          "fulfilled"
+        ) {
+          queueList =
+            queueResult.value;
+
+          setAgentQueue(
+            queueResult.value
           );
+        } else {
+          console.error(
+            "Load queue failed:",
+            queueResult.reason
+          );
+        }
 
         /*
-         * Chưa tìm thấy driver.
+         * Nếu cả 2 đều fail.
+         */
+        if (
+          counterResult.status ===
+            "rejected" &&
+          queueResult.status ===
+            "rejected"
+        ) {
+          setErrorMessage(
+            "Không tải được dữ liệu TV."
+          );
+        } else {
+          setErrorMessage(null);
+        }
+
+        /*
+         * Initial loading chỉ chạy lần đầu.
          *
-         * Không đánh dấu đã announce.
-         * Lần load tiếp theo sẽ thử lại.
+         * Những lần realtime refresh:
+         * KHÔNG hiện màn loading.
          */
-        if (
-          !driver?.driver_name?.trim()
-        ) {
-          console.warn(
-            "Không tìm thấy driver cho ticket:",
-            call.queue_number
-          );
+        if (!initialLoadedRef.current) {
+          initialLoadedRef.current =
+            true;
 
-          continue;
+          setLoading(false);
         }
 
         /*
-         * Đưa vào audio queue.
+         * Announcement.
          */
-        enqueueAudio(
-          call.queue_number!,
-          driver.driver_name.trim(),
-          call.counter_code
-        );
+        if (
+          counterResult.status ===
+            "fulfilled" &&
+          queueResult.status ===
+            "fulfilled"
+        ) {
+          announceCalls(
+            counterList,
+            queueList
+          );
+        }
+      } finally {
+        loadingRef.current = false;
 
         /*
-         * Đánh dấu ngay để tránh realtime
-         * enqueue nhiều lần.
+         * Nếu trong lúc load lại có event mới,
+         * chạy thêm 1 lần nữa.
          */
-        lastAnnouncedAt.current.set(
-          call.counter_code,
-          call.called_at!
-        );
+        if (
+          refreshPendingRef.current
+        ) {
+          refreshPendingRef.current =
+            false;
+
+          setTimeout(() => {
+            void load();
+          }, 50);
+        }
       }
     }, [
       loadCounters,
       loadAgentQueue,
-      enqueueAudio,
+      announceCalls,
+      counters,
+      agentQueue,
     ]);
+
+  /* ==========================================================
+     SMART REFRESH
+     ========================================================== */
+
+  const scheduleRefresh =
+    useCallback(() => {
+      /*
+       * Gom nhiều realtime event thành 1 request.
+       *
+       * Ví dụ check-in tạo:
+       * queue_tickets
+       * service_cases
+       *
+       * thay vì load 2 lần,
+       * chỉ load 1 lần.
+       */
+      if (
+        refreshTimerRef.current
+      ) {
+        clearTimeout(
+          refreshTimerRef.current
+        );
+      }
+
+      refreshTimerRef.current =
+        setTimeout(() => {
+          refreshTimerRef.current =
+            null;
+
+          void load();
+        }, 100);
+    }, [load]);
 
   /* ==========================================================
      REALTIME
      ========================================================== */
 
   useEffect(() => {
+    if (!branchCode) {
+      return;
+    }
+
+    /*
+     * Initial load.
+     */
     void load();
 
     const channel =
@@ -1081,6 +1087,10 @@ export default function TvDisplayPage() {
         .channel(
           `tv-${branchCode}`
         )
+
+        /*
+         * QUEUE
+         */
         .on(
           "postgres_changes",
           {
@@ -1089,9 +1099,13 @@ export default function TvDisplayPage() {
             table: "queue_tickets",
           },
           () => {
-            void load();
+            scheduleRefresh();
           }
         )
+
+        /*
+         * SERVICE CASE
+         */
         .on(
           "postgres_changes",
           {
@@ -1100,9 +1114,13 @@ export default function TvDisplayPage() {
             table: "service_cases",
           },
           () => {
-            void load();
+            scheduleRefresh();
           }
         )
+
+        /*
+         * COUNTERS
+         */
         .on(
           "postgres_changes",
           {
@@ -1111,34 +1129,47 @@ export default function TvDisplayPage() {
             table: "counters",
           },
           () => {
-            void load();
+            scheduleRefresh();
           }
         )
-        .subscribe();
+
+        .subscribe((status) => {
+          console.log(
+            `TV realtime: ${status}`
+          );
+        });
 
     /*
-     * Fallback polling.
+     * Polling dự phòng.
+     *
+     * 30s thay vì 15s.
+     *
+     * Realtime vẫn là kênh chính.
      */
     const interval =
-      setInterval(
-        () => {
-          void load();
-        },
-        15000
-      );
+      setInterval(() => {
+        void load();
+      }, 30000);
 
     return () => {
       supabase.removeChannel(
         channel
       );
 
-      clearInterval(
-        interval
-      );
+      clearInterval(interval);
+
+      if (
+        refreshTimerRef.current
+      ) {
+        clearTimeout(
+          refreshTimerRef.current
+        );
+      }
     };
   }, [
     branchCode,
     load,
+    scheduleRefresh,
   ]);
 
   /* ==========================================================
@@ -1151,9 +1182,7 @@ export default function TvDisplayPage() {
       AgentQueueRow[]
     >();
 
-  for (
-    const queue of agentQueue
-  ) {
+  for (const queue of agentQueue) {
     if (!queue.agent_id) {
       continue;
     }
@@ -1331,8 +1360,7 @@ export default function TvDisplayPage() {
 
       {errorMessage && (
         <div className="mx-[2.2vw] mt-[1vw] rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-body text-sm text-red-700">
-          Không tải được dữ liệu:
-          {" "}
+          Không tải được dữ liệu:{" "}
           {errorMessage}
         </div>
       )}
@@ -1380,19 +1408,12 @@ export default function TvDisplayPage() {
             >
               {counters.map(
                 (counter) => {
-                  /*
-                   * Ticket đang gọi tại quầy.
-                   */
                   const busy =
                     Boolean(
                       counter.queue_number &&
-                      counter.called_at
+                        counter.called_at
                     );
 
-                  /*
-                   * Queue của Agent đang đứng
-                   * tại quầy này.
-                   */
                   const myAgentQueue =
                     counter.agent_id
                       ? (
@@ -1402,19 +1423,18 @@ export default function TvDisplayPage() {
                         )
                       : [];
 
-                  /*
-                   * Không hiển thị ticket đang
-                   * được gọi trong danh sách chờ.
-                   */
+                  const currentQueue =
+                    normalizeQueueNumber(
+                      counter.queue_number
+                    );
+
                   const waitingForCounter =
                     myAgentQueue.filter(
                       (q) =>
-                        q.queue_number
-                          .trim()
-                          .toUpperCase() !==
-                        counter.queue_number
-                          ?.trim()
-                          .toUpperCase()
+                        normalizeQueueNumber(
+                          q.queue_number
+                        ) !==
+                        currentQueue
                     );
 
                   return (
@@ -1537,9 +1557,7 @@ export default function TvDisplayPage() {
                               "0.8vw",
                           }}
                         >
-                          Đang chờ
-                          {" "}
-                          (
+                          Đang chờ (
                           {
                             waitingForCounter.length
                           }
@@ -1631,8 +1649,7 @@ export default function TvDisplayPage() {
                           "0.9vw",
                       }}
                     >
-                      Branch:
-                      {" "}
+                      Branch:{" "}
                       {branchCode}
                     </p>
                   </div>
@@ -1667,9 +1684,9 @@ export default function TvDisplayPage() {
                         "0.95vw",
                     }}
                   >
-                    Chưa phân bổ Agent
-                    {" "}
-                    ({unassigned.length})
+                    Chưa phân bổ Agent (
+                    {unassigned.length}
+                    )
                   </p>
                 </div>
 
@@ -1724,28 +1741,3 @@ export default function TvDisplayPage() {
     </div>
   );
 }
-
-/* ============================================================
-   HELPER
-   ============================================================ */
-
-/*
- * Ticket đang được gọi thì không tính
- * vào "Đang chờ" trên header.
- */
-function isCalledQueue(
-  queue: AgentQueueRow,
-  counters: CounterStatusRow[]
-) {
-  return counters.some(
-    (counter) =>
-      counter.queue_number
-        ?.trim()
-        .toUpperCase() ===
-        queue.queue_number
-          .trim()
-          .toUpperCase() &&
-      Boolean(counter.called_at)
-  );
-}
-
