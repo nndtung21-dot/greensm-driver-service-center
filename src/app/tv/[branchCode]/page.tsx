@@ -146,121 +146,73 @@ function buildAnnouncementText(queueNumber: string, driverName: string, counterN
 }
 
 /* ============================================================
-   TV SPEECH ENGINE (OPTIMIZED)
+   TV SPEECH ENGINE (AUDIO VIA NEXT.JS API ROUTE)
    ============================================================ */
 
-function useTvSpeech() {
+function useTvSpeech(apiEndpoint: string = "/api/tts") {
   const queueRef = useRef<SpeechJob[]>([]);
   const speakingRef = useRef(false);
   const unlockedRef = useRef(false);
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   const [unlocked, setUnlocked] = useState(false);
   const [audioStatus, setAudioStatus] = useState("Chưa bật âm thanh");
 
-  // Load voices bất đồng bộ
-  useEffect(() => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-
-    const updateVoices = () => {
-      const availableVoices = window.speechSynthesis.getVoices();
-      setVoices(availableVoices);
-    };
-
-    updateVoices();
-    window.speechSynthesis.onvoiceschanged = updateVoices;
-
-    return () => {
-      window.speechSynthesis.onvoiceschanged = null;
-    };
-  }, []);
-
-  const getVietnameseVoice = useCallback(() => {
-    if (!voices.length) return null;
-    return (
-      voices.find((v) => v.lang.trim().toLowerCase() === "vi-vn") ??
-      voices.find((v) => v.lang.trim().toLowerCase().startsWith("vi-")) ??
-      null
-    );
-  }, [voices]);
-
-  const speak = useCallback(
+  const speakText = useCallback(
     (text: string): Promise<void> => {
       return new Promise((resolve) => {
-        if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-          resolve();
-          return;
-        }
-
-        const synthesis = window.speechSynthesis;
-        const voice = getVietnameseVoice();
-        if (!voice) {
-          resolve();
-          return;
-        }
-
-        synthesis.cancel(); // Clears pending queue
-
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = "vi-VN";
-        utterance.voice = voice;
-        utterance.rate = 0.9;
+        // Cắt tối đa 290 ký tự để không chạm ngưỡng 300 ký tự của API
+        const safeText = text.trim().slice(0, 290);
+        const audioUrl = `${apiEndpoint}?text=${encodeURIComponent(safeText)}`;
+        const audio = new Audio(audioUrl);
 
         let finished = false;
 
-        // Safety timeout phòng trường hợp Web Speech API bị treo trên TV
-        const timeoutId = setTimeout(() => {
-          if (!finished) {
-            finished = true;
-            synthesis.cancel();
-            resolve();
-          }
-        }, 12000);
+        const cleanup = () => {
+          audio.onended = null;
+          audio.onerror = null;
+        };
 
         const finish = () => {
           if (finished) return;
           finished = true;
-          clearTimeout(timeoutId);
-          utterance.onend = null;
-          utterance.onerror = null;
+          cleanup();
           resolve();
         };
 
-        utterance.onend = finish;
-        utterance.onerror = finish;
+        // Safety timeout 10 giây tránh nghẽn hàng đợi khi ngắt kết nối mạng
+        const timeoutId = setTimeout(() => {
+          finish();
+        }, 10000);
 
-        synthesis.speak(utterance);
+        audio.onended = () => {
+          clearTimeout(timeoutId);
+          finish();
+        };
+
+        audio.onerror = (e) => {
+          console.error("[TTS Client] Lỗi phát âm thanh:", e);
+          clearTimeout(timeoutId);
+          finish();
+        };
+
+        audio.play().catch((err) => {
+          console.error("[TTS Client] Trình duyệt chặn phát âm thanh:", err);
+          clearTimeout(timeoutId);
+          finish();
+        });
       });
     },
-    [getVietnameseVoice]
+    [apiEndpoint]
   );
 
-  const unlock = useCallback(async () => {
+  const unlock = useCallback(() => {
     try {
-      if (typeof window === "undefined" || !("speechSynthesis" in window)) return false;
-      const synthesis = window.speechSynthesis;
-      synthesis.cancel();
-      
-      const voice = getVietnameseVoice();
-      if (!voice) {
-        setUnlocked(false);
-        setAudioStatus("TV chưa có giọng tiếng Việt");
-        return false;
-      }
-
-      const test = new SpeechSynthesisUtterance("Âm thanh thông báo đã bật");
-      test.lang = "vi-VN";
-      test.voice = voice;
-      
-      await new Promise<void>((resolve) => {
-        test.onend = () => resolve();
-        test.onerror = () => resolve();
-        synthesis.speak(test);
-      });
-
       unlockedRef.current = true;
       setUnlocked(true);
-      setAudioStatus(`Sẵn sàng — ${voice.name}`);
+      setAudioStatus("Âm thanh sẵn sàng");
+
+      // Đọc test ngay 1 câu để mở khóa Audio Context
+      void speakText("Hệ thống gọi số đã bật âm thanh");
       return true;
     } catch {
       unlockedRef.current = false;
@@ -268,33 +220,32 @@ function useTvSpeech() {
       setAudioStatus("Không bật được âm thanh");
       return false;
     }
-  }, [getVietnameseVoice]);
+  }, [speakText]);
 
   const processQueue = useCallback(async () => {
     if (speakingRef.current || !unlockedRef.current || queueRef.current.length === 0) return;
     speakingRef.current = true;
+
     try {
       while (queueRef.current.length > 0) {
         const job = queueRef.current.shift();
         if (!job) continue;
+
+        // Đọc lặp lại 2 lần
         for (let r = 1; r <= 2; r++) {
           if (!unlockedRef.current) break;
-          try {
-            await speak(job.text);
-          } catch (e) {
-            console.error(e);
-          }
-          if (r === 1) await new Promise((res) => window.setTimeout(res, 900));
+          await speakText(job.text);
+          if (r === 1) await new Promise((res) => setTimeout(res, 800));
         }
-        await new Promise((res) => window.setTimeout(res, 700));
+        await new Promise((res) => setTimeout(res, 600));
       }
     } finally {
       speakingRef.current = false;
       if (unlockedRef.current && queueRef.current.length > 0) {
-        window.setTimeout(() => void processQueue(), 100);
+        setTimeout(() => void processQueue(), 100);
       }
     }
-  }, [speak]);
+  }, [speakText]);
 
   const enqueue = useCallback(
     (queueNumber: string, driverName: string, counterName: string) => {
@@ -333,9 +284,9 @@ export default function TvDisplayPage() {
   const [counters, setCounters] = useState<CounterStatusRow[]>([]);
   const [agentQueue, setAgentQueue] = useState<AgentQueueRow[]>([]);
 
-  // Giới hạn lịch sử gọi để tránh Memory Leak khi chạy TV liên tục
+  // Giới hạn lịch sử các số đã gọi để chống lọt bộ nhớ (Memory Leak)
   const announcedCalls = useRef<Set<string>>(new Set());
-  const { enqueue: enqueueAudio, unlock: unlockAudio, unlocked, audioStatus } = useTvSpeech();
+  const { enqueue: enqueueAudio, unlock: unlockAudio, unlocked, audioStatus } = useTvSpeech("/api/tts");
   const clock = useClock();
 
   const loadData = useCallback(async () => {
@@ -346,24 +297,29 @@ export default function TvDisplayPage() {
       supabase.rpc("tv_agent_queue_list", { p_branch_code: branchCode }),
     ]);
 
-    const counterList = ((cRes.data ?? []) as CounterStatusRow[]).sort((a, b) => a.display_order - b.display_order);
-    const queueList = ((qRes.data ?? []) as AgentQueueRow[]).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    const counterList = ((cRes.data ?? []) as CounterStatusRow[]).sort(
+      (a, b) => a.display_order - b.display_order
+    );
+    const queueList = ((qRes.data ?? []) as AgentQueueRow[]).sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
 
     setCounters(counterList);
     setAgentQueue(queueList);
 
-    // Audio Call logic
+    // Logic kiểm tra và đưa lượt gọi mới vào danh sách đọc
     const activeCalls = counterList.filter((c) => Boolean(c.queue_number) && Boolean(c.called_at));
     for (const call of activeCalls) {
       if (!call.queue_number || !call.called_at) continue;
       const callKey = `${call.counter_code}:${call.called_at}`;
-      
       if (announcedCalls.current.has(callKey)) continue;
 
-      const driver = queueList.find((q) => normalizeQueue(q.queue_number) === normalizeQueue(call.queue_number));
+      const driver = queueList.find(
+        (q) => normalizeQueue(q.queue_number) === normalizeQueue(call.queue_number)
+      );
       if (!driver?.driver_name) continue;
 
-      // Giữ Set dưới 200 phần tử để tránh leak memory
+      // Xóa bớt lịch sử cũ nếu danh sách quá 200 lượt
       if (announcedCalls.current.size > 200) {
         const firstKey = announcedCalls.current.values().next().value;
         if (firstKey) announcedCalls.current.delete(firstKey);
@@ -381,12 +337,12 @@ export default function TvDisplayPage() {
     return () => window.clearInterval(interval);
   }, [branchCode, loadData]);
 
-  // Lọc lấy danh sách đang chờ (chưa được gọi)
+  // Lọc danh sách lượt chờ phục vụ
   const waitingQueue = useMemo(() => {
     return agentQueue.filter((q) => !isCalledQueue(q, counters));
   }, [agentQueue, counters]);
 
-  // Gom nhóm hàng chờ theo Agent/Counter
+  // Phân nhóm danh sách chờ theo từng quầy
   const queueByCounter = useMemo(() => {
     const map = new Map<string, AgentQueueRow[]>();
     counters.forEach((c) => {
