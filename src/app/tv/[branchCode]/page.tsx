@@ -264,7 +264,7 @@ function useTvSpeech() {
 }
 
 /* ============================================================
-   MAIN TV COMPONENT (FULL FIX WIDTH & SCALE CHO TV & LAPTOP)
+   MAIN TV COMPONENT (UI GỐC)
    ============================================================ */
 
 export default function TvDisplayPage() {
@@ -291,14 +291,10 @@ export default function TvDisplayPage() {
   }, [branchCode]);
 
   const loadAgentQueue = useCallback(async () => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("agent_queues")
       .select("*")
       .order("created_at", { ascending: true });
-
-    if (error) {
-      console.error("[TV ERROR]: Lỗi fetch agent_queues:", error.message);
-    }
 
     const result = (data ?? []) as AgentQueueRow[];
     setAgentQueue(result);
@@ -370,13 +366,8 @@ export default function TvDisplayPage() {
     };
   }, [branchCode, refresh]);
 
-  /* 
-    ============================================================
-    FIX CHUẨN LOGIC HÀNG CHỜ
-    ============================================================
-  */
+  // FIX LỖI ẨN HÀNG CHỜ: Sửa lại bộ lọc chính xác
   const waitingQueue = useMemo(() => {
-    // Tập hợp những số ĐANG ĐƯỢC GỌI ở các quầy
     const callingNumbers = new Set(
       counters
         .map((c) => normalizeQueue(c.queue_number))
@@ -386,17 +377,16 @@ export default function TvDisplayPage() {
     return agentQueue.filter((q) => {
       const qNum = normalizeQueue(q.queue_number);
       if (!qNum) return false;
-
-      // 1. Bỏ qua nếu số này đang nằm trên bảng gọi số của quầy
+      
+      // Ẩn các số đang được hiển thị ở màn hình chính của Quầy
       if (callingNumbers.has(qNum)) return false;
 
-      // 2. Chỉ bỏ qua nếu phiếu đã HOÀN THÀNH hoặc HỦY
-      const status = (q.status ?? "").trim().toUpperCase();
-      if (["DONE", "CANCELLED", "COMPLETED", "FINISHED"].includes(status)) {
+      // Chỉ bỏ qua nếu phiếu đã hoàn tất hoặc bị hủy
+      const st = (q.status ?? "").trim().toUpperCase();
+      if (["DONE", "CANCELLED", "COMPLETED", "FINISHED"].includes(st)) {
         return false;
       }
 
-      // Còn lại (WAITING, PENDING, CALLING, CHECKED_IN, NULL,...) giữ lại hiển thị ở Hàng Chờ
       return true;
     });
   }, [agentQueue, counters]);
@@ -411,7 +401,7 @@ export default function TvDisplayPage() {
 
   return (
     <div className="w-screen h-screen bg-slate-950 text-white font-sans overflow-hidden select-none p-[1.5vh] flex flex-col justify-between gap-[1.5vh]">
-      {/* HEADER: Chiều cao cố định 10% màn hình */}
+      {/* HEADER */}
       <header className="w-full h-[10vh] bg-slate-900 border-2 border-slate-800 rounded-2xl px-[2vw] flex items-center justify-between shrink-0">
         <h1 className="text-[2.2vw] font-black text-amber-400 tracking-wider uppercase">
           HỆ THỐNG GỌI SỐ TỰ ĐỘNG
@@ -434,9 +424,9 @@ export default function TvDisplayPage() {
         </div>
       </header>
 
-      {/* BODY: Chiều cao cố định 87% màn hình */}
+      {/* BODY */}
       <main className="w-full h-[87vh] flex gap-[1.5vw] overflow-hidden shrink-0">
-        {/* CỘT TRÁI (QUẦY PHỤC VỤ): Chiều rộng cố định 62% */}
+        {/* CỘT TRÁI (QUẦY PHỤC VỤ) */}
         <section className="w-[62%] h-full grid grid-cols-2 gap-[1.2vw] auto-rows-fr">
           {counters.map((counter) => {
             const isCalling = Boolean(counter.called_at && counter.queue_number);
@@ -487,7 +477,7 @@ export default function TvDisplayPage() {
           })}
         </section>
 
-        {/* CỘT PHẢI (DANH SÁCH CHỜ): Chiều rộng cố định 38% */}
+        {/* CỘT PHẢI (DANH SÁCH CHỜ) - UI GỐC */}
         <section className="w-[38%] h-full bg-slate-900/80 border-2 border-slate-800 rounded-3xl p-[1.5vw] flex flex-col overflow-hidden">
           <div className="w-full flex justify-between items-center border-b-2 border-slate-800 pb-[1vh] mb-[1.5vh] shrink-0">
             <h2 className="text-[2vw] font-black text-amber-400 uppercase tracking-wide">
@@ -498,19 +488,19 @@ export default function TvDisplayPage() {
             </span>
           </div>
 
-          {/* FIX LỖI ẨN HÀNG CHỜ: Sử dụng Flex col gap thay cho height % cứng */}
-          <div className="w-full flex-1 flex flex-col gap-[1vh] overflow-y-auto pr-[0.5vw]">
+          {/* Danh sách các vé chờ dạng Grid/Flex */}
+          <div className="w-full flex-1 flex flex-col gap-[1vh] overflow-hidden justify-start">
             {waitingQueue.length === 0 ? (
               <div className="w-full h-full flex items-center justify-center text-[1.8vw] font-bold text-slate-600 italic">
                 Chưa có tài xế check-in
               </div>
             ) : (
-              waitingQueue.map((item) => {
+              waitingQueue.slice(0, 6).map((item) => {
                 const driver = cleanDriverName(item.driver_name);
                 return (
                   <div
                     key={item.ticket_code || item.queue_number || Math.random()}
-                    className="w-full py-[1.2vh] px-[1.2vw] bg-slate-950 border-2 border-slate-800/80 rounded-2xl flex items-center justify-between shrink-0"
+                    className="w-full h-[13%] min-h-[50px] bg-slate-950 border-2 border-slate-800/80 px-[1.2vw] rounded-2xl flex items-center justify-between shrink-0"
                   >
                     <span className="text-[3vw] font-black font-mono text-emerald-400 leading-none">
                       {item.queue_number}
