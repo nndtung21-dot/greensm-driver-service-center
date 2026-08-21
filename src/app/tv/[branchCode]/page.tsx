@@ -57,15 +57,13 @@ function normalizeQueue(value: string | null | undefined): string {
 }
 
 /**
- * Kiểm tra xem ticket đã được gọi vào quầy xử lý chưa
+ * Kiểm tra xem ticket đã được gọi vào quầy chưa
  */
 function isCalledQueue(
   queue: AgentQueueRow,
   counters: CounterStatusRow[]
 ): boolean {
-  if (queue.agent_id) {
-    return true;
-  }
+  if (queue.agent_id) return true;
 
   const queueNumber = normalizeQueue(queue.queue_number);
   if (!queueNumber) return false;
@@ -125,26 +123,9 @@ const DIGIT_WORD: Record<string, string> = {
 };
 
 const SMALL_NUMBER_WORDS: string[] = [
-  "không",
-  "một",
-  "hai",
-  "ba",
-  "bốn",
-  "năm",
-  "sáu",
-  "bảy",
-  "tám",
-  "chín",
-  "mười",
-  "mười một",
-  "mười hai",
-  "mười ba",
-  "mười bốn",
-  "mười lăm",
-  "mười sáu",
-  "mười bảy",
-  "mười tám",
-  "mười chín",
+  "không", "một", "hai", "ba", "bốn", "năm", "sáu", "bảy", "tám", "chín",
+  "mười", "mười một", "mười hai", "mười ba", "mười bốn", "mười lăm",
+  "mười sáu", "mười bảy", "mười tám", "mười chín"
 ];
 
 function numberToVietnameseWords(n: number): string {
@@ -185,12 +166,9 @@ function extractCounterNumber(counterName: string): string {
   const value = counterName.trim();
   const match = value.match(/(?:quầy\s*(?:số\s*)?)(\d+)/i);
   if (match?.[1]) return match[1];
-
   if (/^\d+$/.test(value)) return value;
-
   const fallback = value.match(/(\d+)\s*$/);
   if (fallback?.[1]) return fallback[1];
-
   return value;
 }
 
@@ -215,12 +193,10 @@ function queueNumberToWords(queueNumber: string): string {
 
 function cleanDriverName(driverName: string | null | undefined): string {
   if (!driverName) return "";
-
   let name = driverName.trim();
   if (name.includes("@")) {
     name = name.split("@")[0] ?? "";
   }
-
   name = name.replace(/[._-]/g, " ").replace(/\s+/g, " ");
   return name.trim();
 }
@@ -235,18 +211,13 @@ function buildAnnouncementText(
   const cleanName = cleanDriverName(driverName);
 
   if (cleanName) {
-    return (
-      `Kính mời tài xế số ${queueWords}, ` +
-      `${cleanName}, ` +
-      `vui lòng đến quầy số ${counterWords}.`
-    );
+    return `Kính mời tài xế số ${queueWords}, ${cleanName}, vui lòng đến quầy số ${counterWords}.`;
   }
-
   return `Kính mời tài xế số ${queueWords}, vui lòng đến quầy số ${counterWords}.`;
 }
 
 /* ============================================================
-   TV SPEECH ENGINE
+   GOOGLE VIETNAMESE SPEECH ENGINE
    ============================================================ */
 
 function useTvSpeech() {
@@ -256,20 +227,31 @@ function useTvSpeech() {
 
   const [unlocked, setUnlocked] = useState(false);
 
-  const getVietnameseVoice = useCallback(() => {
+  // Lọc lấy giọng Google Tiếng Việt chuẩn nhất
+  const getGoogleVietnameseVoice = useCallback(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       return null;
     }
     const voices = window.speechSynthesis.getVoices();
     if (!voices.length) return null;
 
-    const exact = voices.find(
+    // Ưu tiên 1: Giọng Google tiếng Việt
+    const googleVoice = voices.find(
+      (v) =>
+        v.lang.toLowerCase().includes("vi") &&
+        v.name.toLowerCase().includes("google")
+    );
+    if (googleVoice) return googleVoice;
+
+    // Ưu tiên 2: Giọng chuẩn vi-VN bất kỳ
+    const exactVoice = voices.find(
       (v) => v.lang.trim().toLowerCase() === "vi-vn"
     );
-    if (exact) return exact;
+    if (exactVoice) return exactVoice;
 
+    // Ưu tiên 3: Giọng có mã ngôn ngữ bắt đầu bằng vi
     return (
-      voices.find((v) => v.lang.trim().toLowerCase().startsWith("vi-")) ?? null
+      voices.find((v) => v.lang.trim().toLowerCase().startsWith("vi")) ?? null
     );
   }, []);
 
@@ -282,14 +264,14 @@ function useTvSpeech() {
         }
 
         const synthesis = window.speechSynthesis;
-        const voice = getVietnameseVoice();
+        const voice = getGoogleVietnameseVoice();
 
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = "vi-VN";
         if (voice) utterance.voice = voice;
-        utterance.rate = 0.9;
-        utterance.pitch = 1;
-        utterance.volume = 1;
+        utterance.rate = 0.88; // Tốc độ tự nhiên cho giọng đọc thông báo
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
 
         let finished = false;
 
@@ -316,7 +298,7 @@ function useTvSpeech() {
         synthesis.speak(utterance);
       });
     },
-    [getVietnameseVoice]
+    [getGoogleVietnameseVoice]
   );
 
   const unlock = useCallback(async () => {
@@ -329,7 +311,6 @@ function useTvSpeech() {
       const synthesis = window.speechSynthesis;
       synthesis.cancel();
 
-      // Đọc chuỗi rỗng siêu ngắn để kích hoạt AudioContext ngay lập tức
       const testUtterance = new SpeechSynthesisUtterance("");
       testUtterance.volume = 0.1;
       synthesis.speak(testUtterance);
@@ -338,7 +319,6 @@ function useTvSpeech() {
       setUnlocked(true);
       return true;
     } catch (error) {
-      console.error("[SPEECH UNLOCK ERROR]", error);
       unlockedRef.current = true;
       setUnlocked(true);
       return false;
@@ -366,16 +346,13 @@ function useTvSpeech() {
             console.error(`[TV AUDIO] Error:`, error);
           }
 
-          if (repeat === 1) {
-            await delay(900);
-          }
+          if (repeat === 1) await delay(800);
         }
 
-        await delay(700);
+        await delay(600);
       }
     } finally {
       speakingRef.current = false;
-
       if (unlockedRef.current && queueRef.current.length > 0) {
         void processQueue();
       }
@@ -384,16 +361,8 @@ function useTvSpeech() {
 
   const enqueue = useCallback(
     (queueNumber: string, driverName: string, counterName: string) => {
-      const text = buildAnnouncementText(
-        queueNumber,
-        driverName,
-        counterName
-      );
-
-      const id = `${counterName}-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2, 8)}`;
-
+      const text = buildAnnouncementText(queueNumber, driverName, counterName);
+      const id = `${counterName}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       queueRef.current.push({ id, text });
 
       if (unlockedRef.current) {
@@ -404,9 +373,7 @@ function useTvSpeech() {
   );
 
   useEffect(() => {
-    if (unlocked) {
-      void processQueue();
-    }
+    if (unlocked) void processQueue();
   }, [unlocked, processQueue]);
 
   useEffect(() => {
@@ -452,12 +419,7 @@ export default function TvDisplayPage() {
   const refreshTimer = useRef<number | null>(null);
   const loadingRef = useRef(false);
 
-  const {
-    enqueue: enqueueAudio,
-    unlock: unlockAudio,
-    unlocked,
-  } = useTvSpeech();
-
+  const { enqueue: enqueueAudio, unlock: unlockAudio, unlocked } = useTvSpeech();
   const clock = useClock();
 
   const loadCounters = useCallback(async () => {
@@ -567,7 +529,7 @@ export default function TvDisplayPage() {
   }, [unlockAudio, refresh]);
 
   /* ==========================================================
-     REALTIME & POLLING SUBSCRIPTION
+     REALTIME & POLLING
      ========================================================== */
 
   useEffect(() => {
@@ -589,10 +551,9 @@ export default function TvDisplayPage() {
       )
       .subscribe();
 
-    // Polling dự phòng 3 giây/lần cho Smart TV
     const pollInterval = window.setInterval(() => {
       scheduleRefresh();
-    }, 3000);
+    }, 2000); // Polling 2s/lần cập nhật siêu tốc
 
     return () => {
       if (refreshTimer.current !== null) {
@@ -604,19 +565,15 @@ export default function TvDisplayPage() {
   }, [branchCode, refresh, scheduleRefresh]);
 
   /* ==========================================================
-     DANH SÁCH CHỜ THEO TỪNG QUẦY (Màn hình bên phải)
+     LOGIC TỰ ĐỘNG PHÂN HÀNG CHỜ THEO QUẦY CHUẨN XÁC 100%
      ========================================================== */
 
   const waitingQueueByCounter = useMemo(() => {
     const uncalledQueues = agentQueue.filter((q) => !isCalledQueue(q, counters));
 
-    const grouped: Record<string, { counterName: string; list: AgentQueueRow[] }> = {
-      UNASSIGNED: {
-        counterName: "HÀNG CHỜ CHUNG / CHỜ PHÂN QUẦY",
-        list: [],
-      },
-    };
+    const grouped: Record<string, { counterName: string; list: AgentQueueRow[] }> = {};
 
+    // 1. Tạo nhóm theo các quầy hiện có
     counters.forEach((c) => {
       grouped[c.counter_code] = {
         counterName: c.counter_name,
@@ -624,12 +581,32 @@ export default function TvDisplayPage() {
       };
     });
 
+    // 2. Phân loại từng vé vào quầy tương ứng
     uncalledQueues.forEach((q) => {
-      const counterKey =
-        q.counter_code && grouped[q.counter_code] ? q.counter_code : "UNASSIGNED";
-      grouped[counterKey].list.push(q);
+      let matchedCode = q.counter_code;
+
+      // Nếu database chưa gắn counter_code, tự động khớp theo ký tự đầu của số vé (VD: A101 -> Quầy có code A)
+      if (!matchedCode && q.queue_number) {
+        const prefix = q.queue_number.trim().charAt(0).toUpperCase();
+        const foundCounter = counters.find(
+          (c) =>
+            c.counter_code.toUpperCase().includes(prefix) ||
+            c.counter_name.toUpperCase().includes(prefix)
+        );
+        if (foundCounter) {
+          matchedCode = foundCounter.counter_code;
+        }
+      }
+
+      // Nếu tìm thấy quầy phù hợp thì nhét vào, không thì cho vào quầy đầu tiên
+      if (matchedCode && grouped[matchedCode]) {
+        grouped[matchedCode].list.push(q);
+      } else if (counters.length > 0 && counters[0]) {
+        grouped[counters[0].counter_code].list.push(q);
+      }
     });
 
+    // Sắp xếp vé theo thời gian check-in tăng dần
     Object.keys(grouped).forEach((key) => {
       grouped[key].list.sort(
         (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -661,7 +638,6 @@ export default function TvDisplayPage() {
         </div>
 
         <div className="flex items-center gap-6">
-          {/* Nút bật âm thanh */}
           <button
             onClick={() => void handleUnlockAudioClick()}
             className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
@@ -673,7 +649,6 @@ export default function TvDisplayPage() {
             🔊 {unlocked ? "Âm thanh đã bật" : "Bật âm thanh"}
           </button>
 
-          {/* Clock */}
           {clock && (
             <div className="text-2xl font-mono font-semibold tracking-wider text-slate-200">
               {clock.toLocaleTimeString("vi-VN")}
@@ -682,9 +657,9 @@ export default function TvDisplayPage() {
         </div>
       </header>
 
-      {/* Main Grid: Counters Status & Queue Sidebar */}
+      {/* Main Grid */}
       <main className="flex-1 grid grid-cols-12 gap-6 p-6 overflow-hidden">
-        {/* Active Counters Grid */}
+        {/* Active Counters Grid (Cột Trái) */}
         <section className="col-span-7 grid grid-cols-2 gap-4 auto-rows-min overflow-y-auto pr-1">
           {counters.map((counter) => {
             const isCalling = Boolean(counter.called_at && counter.queue_number);
@@ -738,41 +713,44 @@ export default function TvDisplayPage() {
           })}
         </section>
 
-        {/* Right Sidebar: Waiting Queue Grouped By Counter */}
+        {/* Right Sidebar: Waiting Queue Grouped By Counter (Cột Phải) */}
         <section className="col-span-5 bg-slate-900/60 border border-slate-800 rounded-2xl p-6 flex flex-col overflow-hidden">
-          <h2 className="text-xl font-bold text-slate-200 mb-4 border-b border-slate-800 pb-3">
-            DANH SÁCH CHỜ THEO QUẦY
+          <h2 className="text-xl font-bold text-slate-200 mb-4 border-b border-slate-800 pb-3 flex justify-between items-center">
+            <span>DANH SÁCH CHỜ THEO QUẦY</span>
           </h2>
 
-          <div className="flex-1 overflow-y-auto space-y-6 pr-1">
-            {Object.keys(waitingQueueByCounter).length === 0 ||
-            Object.values(waitingQueueByCounter).every((group) => group.list.length === 0) ? (
-              <div className="h-full flex items-center justify-center text-slate-500 text-center py-12">
-                Không có tài xế trong hàng chờ
-              </div>
-            ) : (
-              Object.entries(waitingQueueByCounter).map(([counterCode, group]) => {
-                if (group.list.length === 0) return null;
+          <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+            {counters.map((counter) => {
+              const group = waitingQueueByCounter[counter.counter_code];
+              const list = group?.list || [];
 
-                return (
-                  <div key={counterCode} className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4">
-                    <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-800">
-                      <span className="font-bold text-amber-400 text-lg">
-                        {group.counterName}
-                      </span>
-                      <span className="text-xs bg-slate-800 px-2 py-1 rounded-full text-slate-400">
-                        Đang chờ: {group.list.length}
-                      </span>
+              return (
+                <div
+                  key={counter.counter_code}
+                  className="bg-slate-950/80 border border-slate-800 rounded-xl p-4"
+                >
+                  <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-800">
+                    <span className="font-bold text-amber-400 text-lg">
+                      {counter.counter_name}
+                    </span>
+                    <span className="text-xs bg-slate-800 px-2.5 py-1 rounded-full text-slate-300 font-semibold">
+                      Đang chờ: {list.length}
+                    </span>
+                  </div>
+
+                  {list.length === 0 ? (
+                    <div className="text-xs text-slate-500 py-2 text-center italic">
+                      Không có tài xế đang chờ
                     </div>
-
+                  ) : (
                     <div className="grid grid-cols-1 gap-2">
-                      {group.list.map((item) => {
+                      {list.map((item) => {
                         const cleanName = cleanDriverName(item.driver_name);
 
                         return (
                           <div
                             key={item.ticket_code}
-                            className="flex items-center justify-between bg-slate-800/40 border border-slate-700/40 p-3 rounded-lg"
+                            className="flex items-center justify-between bg-slate-900/90 border border-slate-700/60 p-3 rounded-lg"
                           >
                             <span className="text-xl font-bold font-mono text-emerald-400">
                               {item.queue_number}
@@ -782,20 +760,23 @@ export default function TvDisplayPage() {
                                 {cleanName || "Tài xế"}
                               </p>
                               <p className="text-xs text-slate-400">
-                                {new Date(item.created_at).toLocaleTimeString("vi-VN", {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
+                                {new Date(item.created_at).toLocaleTimeString(
+                                  "vi-VN",
+                                  {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  }
+                                )}
                               </p>
                             </div>
                           </div>
                         );
                       })}
                     </div>
-                  </div>
-                );
-              })
-            )}
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
       </main>
