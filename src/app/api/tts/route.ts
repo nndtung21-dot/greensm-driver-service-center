@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server";
 
-export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
@@ -18,7 +17,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const url =
+  const googleUrl =
     `https://translate.google.com/translate_tts` +
     `?ie=UTF-8` +
     `&q=${encodeURIComponent(text)}` +
@@ -26,20 +25,19 @@ export async function GET(req: NextRequest) {
     `&client=tw-ob`;
 
   try {
-    const response = await fetch(url, {
+    const response = await fetch(googleUrl, {
       method: "GET",
-
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-          "AppleWebKit/537.36 (KHTML, like Gecko) " +
-          "Chrome/151.0.0.0 Safari/537.36",
-
-        Accept:
-          "audio/mpeg,audio/*;q=0.9,*/*;q=0.8",
+          "AppleWebKit/537.36 " +
+          "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
 
         Referer:
           "https://translate.google.com/",
+
+        Accept:
+          "audio/mpeg,audio/*,*/*;q=0.8",
       },
 
       cache: "no-store",
@@ -79,35 +77,33 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const audioBuffer =
+    const buffer =
       await response.arrayBuffer();
 
-    if (audioBuffer.byteLength === 0) {
+    if (buffer.byteLength === 0) {
       return new Response(
-        "Google TTS returned empty audio",
+        "Empty Google TTS audio",
         {
           status: 502,
         }
       );
     }
 
-    return new Response(audioBuffer, {
+    return new Response(buffer, {
       status: 200,
 
       headers: {
         "Content-Type": "audio/mpeg",
 
-        "Content-Length":
-          String(audioBuffer.byteLength),
-
         /*
-         * Không cache tại browser trong lúc test.
-         * Khi ổn định rồi mới cache.
+         * Không cache tại browser/CDN vì cùng
+         * ticket có thể thay đổi tên/quầy.
          */
         "Cache-Control":
           "no-store, no-cache, must-revalidate",
 
-        "Accept-Ranges": "bytes",
+        "Content-Length":
+          String(buffer.byteLength),
       },
     });
   } catch (error) {
