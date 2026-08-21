@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
@@ -11,7 +17,13 @@ import { supabase } from "@/lib/supabase/client";
 type CounterStatusRow = {
   counter_code: string;
   counter_name: string;
-  counter_status: "OPEN" | "CLOSED" | "AVAILABLE" | "BUSY" | "OFFLINE" | string;
+  counter_status:
+    | "OPEN"
+    | "CLOSED"
+    | "AVAILABLE"
+    | "BUSY"
+    | "OFFLINE"
+    | string;
   agent_id: string | null;
   agent_name: string | null;
   queue_number: string | null;
@@ -21,13 +33,10 @@ type CounterStatusRow = {
 
 type AgentQueueRow = {
   agent_id: string | null;
-  counter_code?: string | null;
-  counter_name?: string | null;
   ticket_code: string;
   queue_number: string;
   driver_name: string;
   created_at: string;
-  status?: string | null;
 };
 
 type SpeechJob = {
@@ -39,175 +48,375 @@ type SpeechJob = {
    HELPERS
    ============================================================ */
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 function normalizeQueue(value: string | null | undefined): string {
   return (value ?? "").trim().toUpperCase();
 }
 
-function cleanDriverName(driverName: string | null | undefined): string {
-  if (!driverName) return "";
-  let name = driverName.trim();
-  if (name.includes("@")) {
-    name = name.split("@")[0] ?? "";
+function isCalledQueue(
+  queue: AgentQueueRow,
+  counters: CounterStatusRow[]
+): boolean {
+  const queueNumber = normalizeQueue(queue.queue_number);
+
+  if (!queueNumber) {
+    return false;
   }
-  return name.replace(/[._-]/g, " ").replace(/\s+/g, " ").trim();
+
+  return counters.some(
+    (counter) =>
+      normalizeQueue(counter.queue_number) === queueNumber &&
+      Boolean(counter.called_at)
+  );
 }
 
 /* ============================================================
-   AUDIO ENGINE (SPEECH + GOOGLE MP3 FALLBACK CHO SMART TV)
+   VIETNAMESE NUMBER / CHARACTER WORDS
+   ============================================================ */
+
+const DIGIT_WORD: Record<string, string> = {
+  "0": "không",
+  "1": "một",
+  "2": "hai",
+  "3": "ba",
+  "4": "bốn",
+  "5": "năm",
+  "6": "sáu",
+  "7": "bảy",
+  "8": "tám",
+  "9": "chín",
+
+  A: "a",
+  B: "bê",
+  C: "xê",
+  D: "đê",
+  E: "e",
+  F: "ép",
+  G: "gờ",
+  H: "hát",
+  I: "i",
+  J: "gi",
+  K: "ca",
+  L: "e lờ",
+  M: "em",
+  N: "en",
+  O: "ô",
+  P: "pê",
+  Q: "quy",
+  R: "e rờ",
+  S: "ét",
+  T: "tê",
+  U: "u",
+  V: "vê",
+  W: "vê kép",
+  X: "ích",
+  Y: "i dài",
+  Z: "dét",
+};
+
+const SMALL_NUMBER_WORDS: string[] = [
+  "không",
+  "một",
+  "hai",
+  "ba",
+  "bốn",
+  "năm",
+  "sáu",
+  "bảy",
+  "tám",
+  "chín",
+  "mười",
+  "mười một",
+  "mười hai",
+  "mười ba",
+  "mười bốn",
+  "mười lăm",
+  "mười sáu",
+  "mười bảy",
+  "mười tám",
+  "mười chín",
+];
+
+/* ============================================================
+   VIETNAMESE NUMBER TO WORD
+   ============================================================ */
+
+function numberToVietnameseWords(n: number): string {
+  if (!Number.isFinite(n) || n < 0) {
+    return "";
+  }
+
+  n = Math.floor(n);
+
+  if (n < 20) {
+    return SMALL_NUMBER_WORDS[n] ?? "";
+  }
+
+  if (n < 100) {
+    const tens = Math.floor(n / 10);
+    const units = n % 10;
+
+    const result = `${DIGIT_WORD[String(tens)]} mươi`;
+
+    if (units === 0) return result;
+    if (units === 1) return `${result} mốt`;
+    if (units === 4) return `${result} tư`;
+    if (units === 5) return `${result} lăm`;
+
+    return `${result} ${DIGIT_WORD[String(units)]}`;
+  }
+
+  if (n < 1000) {
+    const hundreds = Math.floor(n / 100);
+    const remainder = n % 100;
+    const result = `${DIGIT_WORD[String(hundreds)]} trăm`;
+
+    if (remainder === 0) return result;
+    if (remainder < 10) {
+      return `${result} lẻ ${DIGIT_WORD[String(remainder)]}`;
+    }
+
+    return `${result} ${numberToVietnameseWords(remainder)}`;
+  }
+
+  return String(n)
+    .split("")
+    .map((ch) => DIGIT_WORD[ch] ?? ch)
+    .join(" ");
+}
+
+/* ============================================================
+   COUNTER NUMBER
+   ============================================================ */
+
+function extractCounterNumber(counterName: string): string {
+  const value = counterName.trim();
+  const match = value.match(/(?:quầy\s*(?:số\s*)?)(\d+)/i);
+
+  if (match?.[1]) return match[1];
+  if (/^\d+$/.test(value)) return value;
+
+  const fallback = value.match(/(\d+)\s*$/);
+  if (fallback?.[1]) return fallback[1];
+
+  return value;
+}
+
+function counterNumberToWords(counterName: string): string {
+  const number = extractCounterNumber(counterName);
+  const numeric = Number(number);
+
+  if (Number.isFinite(numeric) && numeric >= 0 && numeric < 1000) {
+    return numberToVietnameseWords(numeric);
+  }
+
+  return [...number]
+    .map((ch) => DIGIT_WORD[ch.toUpperCase()] ?? ch)
+    .join(" ");
+}
+
+/* ============================================================
+   QUEUE NUMBER
+   ============================================================ */
+
+function queueNumberToWords(queueNumber: string): string {
+  return [...queueNumber.trim().toUpperCase()]
+    .map((ch) => DIGIT_WORD[ch] ?? ch)
+    .join(" ");
+}
+
+/* ============================================================
+   DRIVER NAME
+   ============================================================ */
+
+function cleanDriverName(driverName: string): string {
+  return driverName.trim().replace(/\s+/g, " ");
+}
+
+/* ============================================================
+   ANNOUNCEMENT TEXT
+   ============================================================ */
+
+function buildAnnouncementText(
+  queueNumber: string,
+  driverName: string,
+  counterName: string
+): string {
+  const queueWords = queueNumberToWords(queueNumber);
+  const counterWords = counterNumberToWords(counterName);
+  const cleanName = cleanDriverName(driverName);
+
+  return (
+    `Kính mời tài xế số ${queueWords}, ` +
+    `${cleanName}, ` +
+    `vui lòng đến quầy số ${counterWords}.`
+  );
+}
+
+/* ============================================================
+   TV SPEECH ENGINE
    ============================================================ */
 
 function useTvSpeech() {
   const queueRef = useRef<SpeechJob[]>([]);
   const speakingRef = useRef(false);
   const unlockedRef = useRef(false);
-  const audioObjRef = useRef<HTMLAudioElement | null>(null);
 
   const [unlocked, setUnlocked] = useState(false);
+  const [audioStatus, setAudioStatus] = useState("Chưa bật âm thanh");
 
-  // Phát file MP3 giọng Nữ Google qua Proxy/API Online
-  const playGoogleTtsMp3 = useCallback((text: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      const encodedText = encodeURIComponent(text);
-      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=vi&client=tw-ob`;
+  const getVietnameseVoice = useCallback(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      return null;
+    }
 
-      if (!audioObjRef.current) {
-        audioObjRef.current = new Audio();
-      }
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices.length) return null;
 
-      const audio = audioObjRef.current;
-      audio.src = url;
-      audio.playbackRate = 0.95;
+    const exact = voices.find(
+      (v) => v.lang.trim().toLowerCase() === "vi-vn"
+    );
+    if (exact) return exact;
 
-      const onEnded = () => {
-        cleanup();
-        resolve();
-      };
-
-      const onError = (e: Event) => {
-        cleanup();
-        reject(e);
-      };
-
-      const cleanup = () => {
-        audio.removeEventListener("ended", onEnded);
-        audio.removeEventListener("error", onError);
-      };
-
-      audio.addEventListener("ended", onEnded);
-      audio.addEventListener("error", onError);
-
-      audio.play().catch((err) => {
-        cleanup();
-        reject(err);
-      });
-    });
+    return (
+      voices.find((v) => v.lang.trim().toLowerCase().startsWith("vi-")) ?? null
+    );
   }, []);
 
-  // Web Speech API
-  const playWebSpeech = useCallback((text: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
+  const getVietnameseVoices = useCallback(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      return [];
+    }
+
+    return window.speechSynthesis
+      .getVoices()
+      .filter((v) => v.lang.trim().toLowerCase().startsWith("vi-"));
+  }, []);
+
+  const speak = useCallback(
+    (text: string): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+          reject(new Error("Speech synthesis not supported"));
+          return;
+        }
+
+        const synthesis = window.speechSynthesis;
+        const voice = getVietnameseVoice();
+
+        if (!voice) {
+          reject(new Error("Không tìm thấy giọng tiếng Việt"));
+          return;
+        }
+
+        synthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = "vi-VN";
+        utterance.voice = voice;
+        utterance.rate = 0.9;
+        utterance.pitch = 1;
+        utterance.volume = 1;
+
+        let finished = false;
+
+        const cleanup = () => {
+          utterance.onend = null;
+          utterance.onerror = null;
+          utterance.removeEventListener("cancel", finish);
+        };
+
+        const finish = () => {
+          if (finished) return;
+          finished = true;
+          cleanup();
+          resolve();
+        };
+
+        const fail = (event: SpeechSynthesisErrorEvent) => {
+          if (finished) return;
+          finished = true;
+          cleanup();
+          reject(new Error(`Speech synthesis failed: ${event.error}`));
+        };
+
+        utterance.onend = finish;
+        utterance.onerror = fail;
+        utterance.addEventListener("cancel", finish);
+
+        synthesis.speak(utterance);
+      });
+    },
+    [getVietnameseVoice]
+  );
+
+  const unlock = useCallback(async () => {
+    try {
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-        reject(new Error("WebSpeech API không khả dụng"));
-        return;
+        throw new Error("Speech synthesis not supported");
       }
 
       const synthesis = window.speechSynthesis;
       synthesis.cancel();
 
-      const voices = synthesis.getVoices();
-      const viVoices = voices.filter((v) =>
-        v.lang.toLowerCase().replace("_", "-").startsWith("vi")
+      const vietnameseVoice = getVietnameseVoice();
+
+      if (!vietnameseVoice) {
+        unlockedRef.current = false;
+        setUnlocked(false);
+        setAudioStatus("TV chưa có giọng tiếng Việt");
+        return false;
+      }
+
+      const test = new SpeechSynthesisUtterance(
+        "Âm thanh thông báo đã được bật"
       );
+      test.lang = "vi-VN";
+      test.voice = vietnameseVoice;
+      test.rate = 0.9;
 
-      if (!viVoices.length) {
-        reject(new Error("Không tìm thấy Giọng Tiếng Việt hệ thống"));
-        return;
-      }
+      await new Promise<void>((resolve, reject) => {
+        let finished = false;
 
-      const femaleVoice =
-        viVoices.find((v) => {
-          const name = v.name.toLowerCase();
-          return (
-            name.includes("female") ||
-            name.includes("nữ") ||
-            name.includes("hoaimy") ||
-            name.includes("linh") ||
-            name.includes("google")
-          );
-        }) || viVoices[0];
+        const cleanup = () => {
+          test.onend = null;
+          test.onerror = null;
+          test.removeEventListener("cancel", finish);
+        };
 
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "vi-VN";
-      if (femaleVoice) utterance.voice = femaleVoice;
-      utterance.rate = 0.9;
-      utterance.pitch = 1.1;
+        const finish = () => {
+          if (finished) return;
+          finished = true;
+          cleanup();
+          resolve();
+        };
 
-      let finished = false;
+        const fail = (e: SpeechSynthesisErrorEvent) => {
+          if (finished) return;
+          finished = true;
+          cleanup();
+          reject(new Error(`Fail: ${e.error}`));
+        };
 
-      const finish = () => {
-        if (finished) return;
-        finished = true;
-        utterance.onend = null;
-        utterance.onerror = null;
-        resolve();
-      };
+        test.onend = finish;
+        test.onerror = fail;
+        test.addEventListener("cancel", finish);
 
-      const fail = (err: SpeechSynthesisErrorEvent) => {
-        if (finished) return;
-        finished = true;
-        utterance.onend = null;
-        utterance.onerror = null;
-        reject(new Error(`WebSpeech error: ${err.error}`));
-      };
-
-      utterance.onend = finish;
-      utterance.onerror = fail;
-
-      synthesis.speak(utterance);
-    });
-  }, []);
-
-  const speakText = useCallback(
-    async (text: string) => {
-      try {
-        await playWebSpeech(text);
-      } catch {
-        try {
-          await playGoogleTtsMp3(text);
-        } catch (mp3Err) {
-          console.error("[AUDIO ENGINE] Thất bại:", mp3Err);
-        }
-      }
-    },
-    [playWebSpeech, playGoogleTtsMp3]
-  );
-
-  const unlock = useCallback(async () => {
-    try {
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-        const testUtterance = new SpeechSynthesisUtterance("");
-        window.speechSynthesis.speak(testUtterance);
-      }
-
-      if (!audioObjRef.current) {
-        audioObjRef.current = new Audio();
-      }
-      audioObjRef.current.src =
-        "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
-      await audioObjRef.current.play();
+        synthesis.speak(test);
+      });
 
       unlockedRef.current = true;
       setUnlocked(true);
+      setAudioStatus(`Sẵn sàng gọi số — ${vietnameseVoice.name}`);
       return true;
-    } catch {
-      unlockedRef.current = true;
-      setUnlocked(true);
+    } catch (error) {
+      unlockedRef.current = false;
+      setUnlocked(false);
+      setAudioStatus(
+        error instanceof Error ? error.message : "Không bật được âm thanh"
+      );
       return false;
     }
-  }, []);
+  }, [getVietnameseVoice]);
 
   const processQueue = useCallback(async () => {
     if (speakingRef.current || !unlockedRef.current || queueRef.current.length === 0) {
@@ -223,30 +432,42 @@ function useTvSpeech() {
 
         for (let repeat = 1; repeat <= 2; repeat++) {
           if (!unlockedRef.current) break;
-          await speakText(job.text);
-          if (repeat === 1) await delay(800);
+
+          try {
+            await speak(job.text);
+          } catch (error) {
+            console.error(`[TV AUDIO] REPEAT ${repeat}/2 FAILED:`, error);
+          }
+
+          if (repeat === 1) {
+            await new Promise((r) => window.setTimeout(r, 900));
+          }
         }
 
-        await delay(600);
+        await new Promise((r) => window.setTimeout(r, 700));
       }
     } finally {
       speakingRef.current = false;
+
       if (unlockedRef.current && queueRef.current.length > 0) {
-        void processQueue();
+        window.setTimeout(() => {
+          void processQueue();
+        }, 100);
       }
     }
-  }, [speakText]);
+  }, [speak]);
 
   const enqueue = useCallback(
     (queueNumber: string, driverName: string, counterName: string) => {
-      const cleanName = cleanDriverName(driverName);
-      const counterClean = counterName.replace(/quầy/i, "").trim();
+      const text = buildAnnouncementText(
+        queueNumber,
+        driverName,
+        counterName
+      );
+      const id = `${counterName}-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
 
-      const text = cleanName
-        ? `Mời tài xế số ${queueNumber}, ${cleanName}, đến quầy ${counterClean}`
-        : `Mời tài xế số ${queueNumber}, đến quầy ${counterClean}`;
-
-      const id = `${counterName}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       queueRef.current.push({ id, text });
 
       if (unlockedRef.current) {
@@ -257,14 +478,71 @@ function useTvSpeech() {
   );
 
   useEffect(() => {
-    if (unlocked) void processQueue();
+    if (unlocked) {
+      void processQueue();
+    }
   }, [unlocked, processQueue]);
 
-  return { enqueue, unlock, unlocked };
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      return;
+    }
+
+    const synthesis = window.speechSynthesis;
+    const handleVoicesChanged = () => {
+      const vietnamese = synthesis
+        .getVoices()
+        .filter((v) => v.lang.toLowerCase().startsWith("vi-"));
+
+      if (!unlockedRef.current) {
+        if (vietnamese.length > 0) {
+          setAudioStatus(`Đã tìm thấy giọng Việt: ${vietnamese[0].name}`);
+        } else {
+          setAudioStatus("TV chưa có giọng tiếng Việt");
+        }
+      }
+    };
+
+    synthesis.addEventListener("voiceschanged", handleVoicesChanged);
+    handleVoicesChanged();
+
+    return () => {
+      synthesis.removeEventListener("voiceschanged", handleVoicesChanged);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+      queueRef.current = [];
+      speakingRef.current = false;
+      unlockedRef.current = false;
+    };
+  }, []);
+
+  return { enqueue, unlock, unlocked, audioStatus };
 }
 
 /* ============================================================
-   MAIN TV COMPONENT (UI GỐC)
+   CLOCK
+   ============================================================ */
+
+function useClock() {
+  const [now, setNow] = useState<Date | null>(null);
+
+  useEffect(() => {
+    setNow(new Date());
+    const id = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  return now;
+}
+
+/* ============================================================
+   TV DISPLAY MAIN COMPONENT
    ============================================================ */
 
 export default function TvDisplayPage() {
@@ -274,32 +552,51 @@ export default function TvDisplayPage() {
   const [counters, setCounters] = useState<CounterStatusRow[]>([]);
   const [agentQueue, setAgentQueue] = useState<AgentQueueRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const announcedCalls = useRef<Set<string>>(new Set());
+  const refreshTimer = useRef<number | null>(null);
+  const loadingRef = useRef(false);
 
-  const { enqueue: enqueueAudio, unlock: unlockAudio, unlocked } = useTvSpeech();
+  const { enqueue: enqueueAudio, unlock: unlockAudio, unlocked, audioStatus } =
+    useTvSpeech();
+  const clock = useClock();
 
   const loadCounters = useCallback(async () => {
-    const { data } = await supabase.rpc("tv_counter_status", {
+    const { data, error } = await supabase.rpc("tv_counter_status", {
       p_branch_code: branchCode,
     });
+
+    if (error) {
+      setErrorMessage(error.message);
+      return [];
+    }
+
     const result = ((data ?? []) as CounterStatusRow[])
       .slice()
       .sort((a, b) => a.display_order - b.display_order);
+
     setCounters(result);
     return result;
   }, [branchCode]);
 
   const loadAgentQueue = useCallback(async () => {
-    const { data } = await supabase
-      .from("agent_queues")
-      .select("*")
-      .order("created_at", { ascending: true });
+    const { data, error } = await supabase.rpc("tv_agent_queue_list", {
+      p_branch_code: branchCode,
+    });
 
-    const result = (data ?? []) as AgentQueueRow[];
+    if (error) return [];
+
+    const result = ((data ?? []) as AgentQueueRow[])
+      .slice()
+      .sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+
     setAgentQueue(result);
     return result;
-  }, []);
+  }, [branchCode]);
 
   const handleCalls = useCallback(
     (counterList: CounterStatusRow[], queueList: AgentQueueRow[]) => {
@@ -318,209 +615,244 @@ export default function TvDisplayPage() {
           (q) => normalizeQueue(q.queue_number) === targetQueue
         );
 
-        const rawDriverName = driver?.driver_name || call.agent_name || "";
-        const counterName = call.counter_name?.trim() || call.counter_code;
+        if (!driver) continue;
+
+        const driverName = driver.driver_name?.trim();
+        if (!driverName) continue;
+
+        const counterName =
+          call.counter_name?.trim() || call.counter_code?.trim() || "quầy";
 
         announcedCalls.current.add(callKey);
-        enqueueAudio(call.queue_number, rawDriverName, counterName);
+        enqueueAudio(call.queue_number, driverName, counterName);
+      }
+
+      if (announcedCalls.current.size > 500) {
+        const values = Array.from(announcedCalls.current);
+        announcedCalls.current = new Set(values.slice(-200));
       }
     },
     [enqueueAudio]
   );
 
   const refresh = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+
     try {
       const [counterList, queueList] = await Promise.all([
         loadCounters(),
         loadAgentQueue(),
       ]);
+
       setLoading(false);
+      setErrorMessage(null);
       handleCalls(counterList, queueList);
-    } catch (err) {
-      console.error("[TV ERROR]:", err);
+    } catch (error) {
+      console.error("[TV] REFRESH ERROR:", error);
+    } finally {
+      loadingRef.current = false;
     }
   }, [loadCounters, loadAgentQueue, handleCalls]);
 
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimer.current !== null) {
+      window.clearTimeout(refreshTimer.current);
+      refreshTimer.current = null;
+    }
+
+    refreshTimer.current = window.setTimeout(() => {
+      refreshTimer.current = null;
+      void refresh();
+    }, 80);
+  }, [refresh]);
+
+  /* ==========================================================
+     REALTIME SUBSCRIPTION & INITIAL LOAD
+     ========================================================== */
+
   useEffect(() => {
+    if (!branchCode) return;
+
     void refresh();
 
     const channel = supabase
-      .channel(`tv-realtime-${branchCode}`)
+      .channel(`tv-display-${branchCode}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "agent_queues" },
-        () => void refresh()
+        {
+          event: "*",
+          schema: "public",
+          table: "queues",
+        },
+        () => {
+          scheduleRefresh();
+        }
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "counters" },
-        () => void refresh()
+        {
+          event: "*",
+          schema: "public",
+          table: "counters",
+        },
+        () => {
+          scheduleRefresh();
+        }
       )
       .subscribe();
 
-    const interval = setInterval(() => void refresh(), 2000);
+    const fallbackInterval = window.setInterval(() => {
+      void refresh();
+    }, 5000);
 
     return () => {
-      clearInterval(interval);
       void supabase.removeChannel(channel);
-    };
-  }, [branchCode, refresh]);
-
-  // FIX LỖI ẨN HÀNG CHỜ: Sửa lại bộ lọc chính xác
-  const waitingQueue = useMemo(() => {
-    const callingNumbers = new Set(
-      counters
-        .map((c) => normalizeQueue(c.queue_number))
-        .filter((num) => Boolean(num) && num !== "---")
-    );
-
-    return agentQueue.filter((q) => {
-      const qNum = normalizeQueue(q.queue_number);
-      if (!qNum) return false;
-      
-      // Ẩn các số đang được hiển thị ở màn hình chính của Quầy
-      if (callingNumbers.has(qNum)) return false;
-
-      // Chỉ bỏ qua nếu phiếu đã hoàn tất hoặc bị hủy
-      const st = (q.status ?? "").trim().toUpperCase();
-      if (["DONE", "CANCELLED", "COMPLETED", "FINISHED"].includes(st)) {
-        return false;
+      window.clearInterval(fallbackInterval);
+      if (refreshTimer.current !== null) {
+        window.clearTimeout(refreshTimer.current);
       }
+    };
+  }, [branchCode, refresh, scheduleRefresh]);
 
-      return true;
-    });
+  /* ==========================================================
+     RENDER
+     ========================================================== */
+
+  const waitingQueue = useMemo(() => {
+    return agentQueue.filter((q) => !isCalledQueue(q, counters));
   }, [agentQueue, counters]);
 
-  if (loading) {
-    return (
-      <div className="w-screen h-screen flex items-center justify-center bg-slate-950 text-white font-black text-[3vw]">
-        ĐANG KHỞI ĐỘNG HỆ THỐNG TV...
-      </div>
-    );
-  }
-
   return (
-    <div className="w-screen h-screen bg-slate-950 text-white font-sans overflow-hidden select-none p-[1.5vh] flex flex-col justify-between gap-[1.5vh]">
-      {/* HEADER */}
-      <header className="w-full h-[10vh] bg-slate-900 border-2 border-slate-800 rounded-2xl px-[2vw] flex items-center justify-between shrink-0">
-        <h1 className="text-[2.2vw] font-black text-amber-400 tracking-wider uppercase">
-          HỆ THỐNG GỌI SỐ TỰ ĐỘNG
-        </h1>
+    <div className="flex h-screen w-screen flex-col bg-slate-950 text-white select-none overflow-hidden font-sans">
+      {/* Header */}
+      <header className="flex h-20 items-center justify-between border-b border-slate-800 bg-slate-900/80 px-8">
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold tracking-wide text-amber-400">
+            HỆ THỐNG GỌI SỐ - CHI NHÁNH {branchCode?.toUpperCase()}
+          </h1>
+        </div>
 
-        <div className="flex items-center gap-[1.5vw]">
-          {!unlocked ? (
-            <button
-              onClick={() => void unlockAudio()}
-              className="px-[1.5vw] py-[1vh] bg-amber-500 text-slate-950 font-black text-[1.4vw] rounded-xl animate-bounce shadow-lg shadow-amber-500/50"
-            >
-              🔊 NHẤP ĐỂ BẬT ÂM THANH TV
-            </button>
-          ) : (
-            <span className="text-emerald-400 font-bold text-[1.3vw] flex items-center gap-[0.5vw]">
-              <span className="h-[1vw] w-[1vw] rounded-full bg-emerald-500 animate-ping"></span>
-              ÂM THANH SẴN SÀNG
-            </span>
-          )}
+        <div className="flex items-center gap-6">
+          <button
+            onClick={() => void unlockAudio()}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition-colors ${
+              unlocked
+                ? "bg-emerald-600/30 text-emerald-400 border border-emerald-500/30"
+                : "bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30"
+            }`}
+          >
+            <span>{audioStatus}</span>
+          </button>
+
+          <div className="text-right font-mono text-2xl font-semibold tracking-wider text-slate-200">
+            {clock ? clock.toLocaleTimeString("vi-VN") : "--:--:--"}
+          </div>
         </div>
       </header>
 
-      {/* BODY */}
-      <main className="w-full h-[87vh] flex gap-[1.5vw] overflow-hidden shrink-0">
-        {/* CỘT TRÁI (QUẦY PHỤC VỤ) */}
-        <section className="w-[62%] h-full grid grid-cols-2 gap-[1.2vw] auto-rows-fr">
-          {counters.map((counter) => {
-            const isCalling = Boolean(counter.called_at && counter.queue_number);
-            const driverName = cleanDriverName(counter.agent_name);
+      {/* Main Grid */}
+      <main className="grid flex-1 grid-cols-12 gap-6 p-6 overflow-hidden">
+        {/* Left 8 Cols: Counter Status */}
+        <section className="col-span-8 flex flex-col gap-4 overflow-y-auto pr-2">
+          <h2 className="text-xl font-semibold text-slate-400 border-b border-slate-800 pb-2">
+            TRẠNG THÁI QUẦY PHỤC VỤ
+          </h2>
 
-            return (
-              <div
-                key={counter.counter_code}
-                className={`w-full h-full flex flex-col justify-between p-[1.5vw] rounded-3xl border-[0.3vw] transition-all overflow-hidden ${
-                  isCalling
-                    ? "bg-slate-900 border-amber-400 shadow-[0_0_50px_rgba(251,191,36,0.3)]"
-                    : "bg-slate-900/70 border-slate-800"
-                }`}
-              >
-                {/* Tên quầy */}
-                <div className="w-full flex justify-between items-center border-b-2 border-slate-800 pb-[0.8vh]">
-                  <span className="text-[1.8vw] font-extrabold text-slate-200 truncate">
-                    {counter.counter_name}
-                  </span>
-                  <span
-                    className={`text-[1vw] font-bold px-[0.8vw] py-[0.3vh] rounded-lg border ${
-                      counter.counter_status === "OPEN" || counter.counter_status === "AVAILABLE"
-                        ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40"
-                        : "bg-slate-800 text-slate-400 border-transparent"
-                    }`}
-                  >
-                    {counter.counter_status}
-                  </span>
-                </div>
+          {loading ? (
+            <div className="flex flex-1 items-center justify-center text-xl text-slate-500">
+              Đang tải thông tin quầy...
+            </div>
+          ) : errorMessage ? (
+            <div className="flex flex-1 items-center justify-center text-xl text-rose-500">
+              Lỗi: {errorMessage}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              {counters.map((counter) => {
+                const isServing = Boolean(
+                  counter.queue_number && counter.called_at
+                );
 
-                {/* Số lượt hiển thị CỰC ĐẠI */}
-                <div className="w-full flex-1 flex items-center justify-center">
-                  <span
-                    className={`text-[6.5vw] font-black font-mono leading-none tracking-tight ${
-                      isCalling ? "text-amber-400 animate-pulse" : "text-white"
-                    }`}
-                  >
-                    {counter.queue_number || "---"}
-                  </span>
-                </div>
-
-                {/* Tên tài xế */}
-                <div className="w-full border-t-2 border-slate-800 pt-[0.8vh] text-[1.4vw] font-bold text-slate-400 truncate">
-                  Tài xế: <span className="text-white">{driverName || "---"}</span>
-                </div>
-              </div>
-            );
-          })}
-        </section>
-
-        {/* CỘT PHẢI (DANH SÁCH CHỜ) - UI GỐC */}
-        <section className="w-[38%] h-full bg-slate-900/80 border-2 border-slate-800 rounded-3xl p-[1.5vw] flex flex-col overflow-hidden">
-          <div className="w-full flex justify-between items-center border-b-2 border-slate-800 pb-[1vh] mb-[1.5vh] shrink-0">
-            <h2 className="text-[2vw] font-black text-amber-400 uppercase tracking-wide">
-              DANH SÁCH CHỜ
-            </h2>
-            <span className="bg-amber-500/20 text-amber-300 font-extrabold text-[1.5vw] px-[1vw] py-[0.2vh] rounded-full border border-amber-500/30">
-              {waitingQueue.length}
-            </span>
-          </div>
-
-          {/* Danh sách các vé chờ dạng Grid/Flex */}
-          <div className="w-full flex-1 flex flex-col gap-[1vh] overflow-hidden justify-start">
-            {waitingQueue.length === 0 ? (
-              <div className="w-full h-full flex items-center justify-center text-[1.8vw] font-bold text-slate-600 italic">
-                Chưa có tài xế check-in
-              </div>
-            ) : (
-              waitingQueue.slice(0, 6).map((item) => {
-                const driver = cleanDriverName(item.driver_name);
                 return (
                   <div
-                    key={item.ticket_code || item.queue_number || Math.random()}
-                    className="w-full h-[13%] min-h-[50px] bg-slate-950 border-2 border-slate-800/80 px-[1.2vw] rounded-2xl flex items-center justify-between shrink-0"
+                    key={counter.counter_code}
+                    className={`flex flex-col justify-between rounded-xl border p-5 transition-all ${
+                      isServing
+                        ? "border-amber-500/50 bg-amber-500/10 shadow-lg shadow-amber-500/5 animate-pulse"
+                        : "border-slate-800 bg-slate-900/50"
+                    }`}
                   >
-                    <span className="text-[3vw] font-black font-mono text-emerald-400 leading-none">
-                      {item.queue_number}
-                    </span>
-                    <div className="text-right truncate max-w-[60%]">
-                      <p className="text-[1.3vw] font-bold text-slate-100 truncate leading-tight">
-                        {driver || "Tài xế"}
-                      </p>
-                      <p className="text-[1vw] font-mono text-slate-400 leading-tight">
-                        {item.created_at
-                          ? new Date(item.created_at).toLocaleTimeString("vi-VN", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : "--:--"}
-                      </p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-2xl font-bold text-slate-200">
+                        {counter.counter_name}
+                      </span>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          counter.counter_status === "AVAILABLE" ||
+                          counter.counter_status === "OPEN"
+                            ? "bg-emerald-500/20 text-emerald-400"
+                            : counter.counter_status === "BUSY"
+                            ? "bg-amber-500/20 text-amber-400"
+                            : "bg-slate-800 text-slate-400"
+                        }`}
+                      >
+                        {counter.counter_status}
+                      </span>
+                    </div>
+
+                    <div className="my-4 text-center">
+                      <div className="text-sm uppercase tracking-wider text-slate-400">
+                        Số vé đang gọi
+                      </div>
+                      <div className="text-5xl font-extrabold tracking-tight text-amber-400 mt-1">
+                        {counter.queue_number ?? "---"}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-sm text-slate-400 border-t border-slate-800/80 pt-3">
+                      <span>Nhân viên: {counter.agent_name ?? "Chưa rõ"}</span>
                     </div>
                   </div>
                 );
-              })
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Right 4 Cols: Queue List */}
+        <section className="col-span-4 flex flex-col rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+          <h2 className="text-xl font-semibold text-slate-400 border-b border-slate-800 pb-3 mb-3">
+            HÀNG ĐỢI CHO CỜI ({waitingQueue.length})
+          </h2>
+
+          <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+            {waitingQueue.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-slate-500">
+                Không có tài xế chờ
+              </div>
+            ) : (
+              waitingQueue.map((item) => (
+                <div
+                  key={item.ticket_code}
+                  className="flex items-center justify-between rounded-lg border border-slate-800/80 bg-slate-900/80 p-3"
+                >
+                  <div>
+                    <div className="text-lg font-bold text-slate-100">
+                      {item.queue_number}
+                    </div>
+                    <div className="text-sm text-slate-400">
+                      {item.driver_name}
+                    </div>
+                  </div>
+                  <div className="font-mono text-xs text-slate-500">
+                    {new Date(item.created_at).toLocaleTimeString("vi-VN", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </div>
+                </div>
+              ))
             )}
           </div>
         </section>
