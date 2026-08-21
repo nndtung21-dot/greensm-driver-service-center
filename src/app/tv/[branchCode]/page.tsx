@@ -57,7 +57,7 @@ function normalizeQueue(value: string | null | undefined): string {
 }
 
 /**
- * Kiểm tra xem ticket đã được gọi vào quầy chưa
+ * Kiểm tra xem ticket đã được gọi vào quầy xử lý chưa
  */
 function isCalledQueue(
   queue: AgentQueueRow,
@@ -284,14 +284,9 @@ function useTvSpeech() {
         const synthesis = window.speechSynthesis;
         const voice = getVietnameseVoice();
 
-        if (!voice) {
-          reject(new Error("Không tìm thấy voice"));
-          return;
-        }
-
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = "vi-VN";
-        utterance.voice = voice;
+        if (voice) utterance.voice = voice;
         utterance.rate = 0.9;
         utterance.pitch = 1;
         utterance.volume = 1;
@@ -327,33 +322,28 @@ function useTvSpeech() {
   const unlock = useCallback(async () => {
     try {
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+        setUnlocked(false);
         return false;
       }
 
       const synthesis = window.speechSynthesis;
       synthesis.cancel();
 
-      const voice = getVietnameseVoice();
-      if (!voice) {
-        unlockedRef.current = false;
-        setUnlocked(false);
-        return false;
-      }
-
-      const testUtterance = new SpeechSynthesisUtterance("Đã bật âm thanh");
-      testUtterance.lang = "vi-VN";
-      testUtterance.voice = voice;
+      // Đọc chuỗi rỗng siêu ngắn để kích hoạt AudioContext ngay lập tức
+      const testUtterance = new SpeechSynthesisUtterance("");
+      testUtterance.volume = 0.1;
       synthesis.speak(testUtterance);
 
       unlockedRef.current = true;
       setUnlocked(true);
       return true;
     } catch (error) {
-      unlockedRef.current = false;
-      setUnlocked(false);
+      console.error("[SPEECH UNLOCK ERROR]", error);
+      unlockedRef.current = true;
+      setUnlocked(true);
       return false;
     }
-  }, [getVietnameseVoice]);
+  }, []);
 
   const processQueue = useCallback(async () => {
     if (speakingRef.current || !unlockedRef.current || queueRef.current.length === 0) {
@@ -571,8 +561,13 @@ export default function TvDisplayPage() {
     }, 80);
   }, [refresh]);
 
+  const handleUnlockAudioClick = useCallback(async () => {
+    await unlockAudio();
+    void refresh();
+  }, [unlockAudio, refresh]);
+
   /* ==========================================================
-     REALTIME SUBSCRIPTION
+     REALTIME & POLLING SUBSCRIPTION
      ========================================================== */
 
   useEffect(() => {
@@ -594,9 +589,10 @@ export default function TvDisplayPage() {
       )
       .subscribe();
 
+    // Polling dự phòng 3 giây/lần cho Smart TV
     const pollInterval = window.setInterval(() => {
       scheduleRefresh();
-    }, 10000);
+    }, 3000);
 
     return () => {
       if (refreshTimer.current !== null) {
@@ -614,9 +610,13 @@ export default function TvDisplayPage() {
   const waitingQueueByCounter = useMemo(() => {
     const uncalledQueues = agentQueue.filter((q) => !isCalledQueue(q, counters));
 
-    const grouped: Record<string, { counterName: string; list: AgentQueueRow[] }> = {};
+    const grouped: Record<string, { counterName: string; list: AgentQueueRow[] }> = {
+      UNASSIGNED: {
+        counterName: "HÀNG CHỜ CHUNG / CHỜ PHÂN QUẦY",
+        list: [],
+      },
+    };
 
-    // Khởi tạo khung nhóm theo danh sách quầy hiện có
     counters.forEach((c) => {
       grouped[c.counter_code] = {
         counterName: c.counter_name,
@@ -624,19 +624,12 @@ export default function TvDisplayPage() {
       };
     });
 
-    // Gom vé chờ vào đúng quầy tương ứng
     uncalledQueues.forEach((q) => {
-      const counterKey = q.counter_code || "UNASSIGNED";
-      if (!grouped[counterKey]) {
-        grouped[counterKey] = {
-          counterName: q.counter_name || "Hàng chờ chung",
-          list: [],
-        };
-      }
+      const counterKey =
+        q.counter_code && grouped[q.counter_code] ? q.counter_code : "UNASSIGNED";
       grouped[counterKey].list.push(q);
     });
 
-    // Sắp xếp các vé trong từng quầy theo thời gian tạo (cũ nhất lên trước)
     Object.keys(grouped).forEach((key) => {
       grouped[key].list.sort(
         (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -668,10 +661,10 @@ export default function TvDisplayPage() {
         </div>
 
         <div className="flex items-center gap-6">
-          {/* Nút bật/mở khóa âm thanh */}
+          {/* Nút bật âm thanh */}
           <button
-            onClick={() => void unlockAudio()}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+            onClick={() => void handleUnlockAudioClick()}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
               unlocked
                 ? "bg-emerald-600/20 text-emerald-400 border border-emerald-500/30"
                 : "bg-amber-500 hover:bg-amber-600 text-slate-950 animate-pulse"
