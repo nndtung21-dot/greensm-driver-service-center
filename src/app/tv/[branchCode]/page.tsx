@@ -55,7 +55,7 @@ function cleanDriverName(driverName: string | null | undefined): string {
 }
 
 /* ============================================================
-   AUDIO ENGINE (HYBRID SPEECH + GOOGLE MP3 FALLBACK)
+   AUDIO ENGINE (SPEECH + GOOGLE MP3 FALLBACK CHO SMART TV)
    ============================================================ */
 
 function useTvSpeech() {
@@ -66,6 +66,7 @@ function useTvSpeech() {
 
   const [unlocked, setUnlocked] = useState(false);
 
+  // Phát file MP3 giọng Nữ Google qua Proxy/API Online
   const playGoogleTtsMp3 = useCallback((text: string): Promise<void> => {
     return new Promise((resolve, reject) => {
       const encodedText = encodeURIComponent(text);
@@ -104,6 +105,7 @@ function useTvSpeech() {
     });
   }, []);
 
+  // Web Speech API
   const playWebSpeech = useCallback((text: string): Promise<void> => {
     return new Promise((resolve, reject) => {
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
@@ -262,7 +264,7 @@ function useTvSpeech() {
 }
 
 /* ============================================================
-   MAIN TV COMPONENT (FIX FULL RESPONSIVE LAPTOP + TV 65 INCH)
+   MAIN TV COMPONENT (FULL FIX WIDTH & SCALE CHO TV & LAPTOP)
    ============================================================ */
 
 export default function TvDisplayPage() {
@@ -288,7 +290,6 @@ export default function TvDisplayPage() {
     return result;
   }, [branchCode]);
 
-  // Nâng cấp: Lấy toàn bộ danh sách check-in trong ngày
   const loadAgentQueue = useCallback(async () => {
     const { data, error } = await supabase
       .from("agent_queues")
@@ -296,8 +297,7 @@ export default function TvDisplayPage() {
       .order("created_at", { ascending: true });
 
     if (error) {
-      console.error("[SUPABASE ERROR] Lỗi tải agent_queues:", error.message);
-      return [];
+      console.error("[TV ERROR]: Lỗi fetch agent_queues:", error.message);
     }
 
     const result = (data ?? []) as AgentQueueRow[];
@@ -371,12 +371,13 @@ export default function TvDisplayPage() {
   }, [branchCode, refresh]);
 
   /* 
-    Sửa chuẩn Logic Lọc Hàng Chờ:
-    Chỉ ẩn số nếu số đó đang hiển thị Gọi trực tiếp ở màn hình chính của Quầy,
-    hoặc đã DONE / CANCELLED.
+    ============================================================
+    FIX CHUẨN LOGIC HÀNG CHỜ
+    ============================================================
   */
   const waitingQueue = useMemo(() => {
-    const activeCallingNumbers = new Set(
+    // Tập hợp những số ĐANG ĐƯỢC GỌI ở các quầy
+    const callingNumbers = new Set(
       counters
         .map((c) => normalizeQueue(c.queue_number))
         .filter((num) => Boolean(num) && num !== "---")
@@ -386,56 +387,57 @@ export default function TvDisplayPage() {
       const qNum = normalizeQueue(q.queue_number);
       if (!qNum) return false;
 
-      // Nếu số đang được hiển thị ở màn hình lớn của quầy -> Ẩn khỏi hàng chờ
-      if (activeCallingNumbers.has(qNum)) return false;
+      // 1. Bỏ qua nếu số này đang nằm trên bảng gọi số của quầy
+      if (callingNumbers.has(qNum)) return false;
 
-      // Ẩn các trạng thái hoàn tất/hủy
-      const st = (q.status ?? "").trim().toUpperCase();
-      if (["DONE", "CANCELLED", "COMPLETED", "FINISHED"].includes(st)) {
+      // 2. Chỉ bỏ qua nếu phiếu đã HOÀN THÀNH hoặc HỦY
+      const status = (q.status ?? "").trim().toUpperCase();
+      if (["DONE", "CANCELLED", "COMPLETED", "FINISHED"].includes(status)) {
         return false;
       }
 
+      // Còn lại (WAITING, PENDING, CALLING, CHECKED_IN, NULL,...) giữ lại hiển thị ở Hàng Chờ
       return true;
     });
   }, [agentQueue, counters]);
 
   if (loading) {
     return (
-      <div className="w-screen h-screen flex items-center justify-center bg-slate-950 text-white font-black text-2xl">
-        ĐANG KHỞI ĐỘNG HỆ THỐNG MÀN HÌNH...
+      <div className="w-screen h-screen flex items-center justify-center bg-slate-950 text-white font-black text-[3vw]">
+        ĐANG KHỞI ĐỘNG HỆ THỐNG TV...
       </div>
     );
   }
 
   return (
-    <div className="w-screen h-screen bg-slate-950 text-white font-sans overflow-hidden select-none p-3 lg:p-4 flex flex-col gap-3 lg:gap-4">
-      {/* HEADER RESPONISVE */}
-      <header className="w-full h-[8vh] min-h-[50px] bg-slate-900 border border-slate-800 rounded-xl px-4 lg:px-8 flex items-center justify-between shrink-0">
-        <h1 className="text-xl lg:text-3xl font-black text-amber-400 tracking-wider uppercase">
+    <div className="w-screen h-screen bg-slate-950 text-white font-sans overflow-hidden select-none p-[1.5vh] flex flex-col justify-between gap-[1.5vh]">
+      {/* HEADER: Chiều cao cố định 10% màn hình */}
+      <header className="w-full h-[10vh] bg-slate-900 border-2 border-slate-800 rounded-2xl px-[2vw] flex items-center justify-between shrink-0">
+        <h1 className="text-[2.2vw] font-black text-amber-400 tracking-wider uppercase">
           HỆ THỐNG GỌI SỐ TỰ ĐỘNG
         </h1>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-[1.5vw]">
           {!unlocked ? (
             <button
               onClick={() => void unlockAudio()}
-              className="px-4 py-2 bg-amber-500 text-slate-950 font-black text-sm lg:text-lg rounded-lg animate-bounce shadow-lg shadow-amber-500/50 cursor-pointer"
+              className="px-[1.5vw] py-[1vh] bg-amber-500 text-slate-950 font-black text-[1.4vw] rounded-xl animate-bounce shadow-lg shadow-amber-500/50"
             >
-              🔊 BẬT ÂM THANH TV
+              🔊 NHẤP ĐỂ BẬT ÂM THANH TV
             </button>
           ) : (
-            <span className="text-emerald-400 font-bold text-xs lg:text-base flex items-center gap-2">
-              <span className="h-3 w-3 rounded-full bg-emerald-500 animate-ping"></span>
+            <span className="text-emerald-400 font-bold text-[1.3vw] flex items-center gap-[0.5vw]">
+              <span className="h-[1vw] w-[1vw] rounded-full bg-emerald-500 animate-ping"></span>
               ÂM THANH SẴN SÀNG
             </span>
           )}
         </div>
       </header>
 
-      {/* BODY DISPLAY: Flex Layout co giãn tự động theo kích thước màn hình */}
-      <main className="w-full flex-1 flex flex-col lg:flex-row gap-3 lg:gap-4 overflow-hidden">
-        {/* CỘT TRÁI (QUẦY PHỤC VỤ): Chiếm 60% trên Laptop/TV */}
-        <section className="w-full lg:w-[60%] h-full grid grid-cols-2 gap-3 lg:gap-4 auto-rows-fr">
+      {/* BODY: Chiều cao cố định 87% màn hình */}
+      <main className="w-full h-[87vh] flex gap-[1.5vw] overflow-hidden shrink-0">
+        {/* CỘT TRÁI (QUẦY PHỤC VỤ): Chiều rộng cố định 62% */}
+        <section className="w-[62%] h-full grid grid-cols-2 gap-[1.2vw] auto-rows-fr">
           {counters.map((counter) => {
             const isCalling = Boolean(counter.called_at && counter.queue_number);
             const driverName = cleanDriverName(counter.agent_name);
@@ -443,19 +445,19 @@ export default function TvDisplayPage() {
             return (
               <div
                 key={counter.counter_code}
-                className={`w-full h-full flex flex-col justify-between p-3 lg:p-5 rounded-2xl border-2 transition-all overflow-hidden ${
+                className={`w-full h-full flex flex-col justify-between p-[1.5vw] rounded-3xl border-[0.3vw] transition-all overflow-hidden ${
                   isCalling
-                    ? "bg-slate-900 border-amber-400 shadow-[0_0_30px_rgba(251,191,36,0.3)]"
+                    ? "bg-slate-900 border-amber-400 shadow-[0_0_50px_rgba(251,191,36,0.3)]"
                     : "bg-slate-900/70 border-slate-800"
                 }`}
               >
                 {/* Tên quầy */}
-                <div className="w-full flex justify-between items-center border-b border-slate-800 pb-2">
-                  <span className="text-lg lg:text-2xl font-extrabold text-slate-200 truncate">
+                <div className="w-full flex justify-between items-center border-b-2 border-slate-800 pb-[0.8vh]">
+                  <span className="text-[1.8vw] font-extrabold text-slate-200 truncate">
                     {counter.counter_name}
                   </span>
                   <span
-                    className={`text-xs lg:text-sm font-bold px-2 py-0.5 rounded border ${
+                    className={`text-[1vw] font-bold px-[0.8vw] py-[0.3vh] rounded-lg border ${
                       counter.counter_status === "OPEN" || counter.counter_status === "AVAILABLE"
                         ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40"
                         : "bg-slate-800 text-slate-400 border-transparent"
@@ -465,10 +467,10 @@ export default function TvDisplayPage() {
                   </span>
                 </div>
 
-                {/* Số lượt hiển thị */}
-                <div className="w-full flex-1 flex items-center justify-center my-1">
+                {/* Số lượt hiển thị CỰC ĐẠI */}
+                <div className="w-full flex-1 flex items-center justify-center">
                   <span
-                    className={`text-5xl lg:text-8xl font-black font-mono leading-none tracking-tight ${
+                    className={`text-[6.5vw] font-black font-mono leading-none tracking-tight ${
                       isCalling ? "text-amber-400 animate-pulse" : "text-white"
                     }`}
                   >
@@ -477,7 +479,7 @@ export default function TvDisplayPage() {
                 </div>
 
                 {/* Tên tài xế */}
-                <div className="w-full border-t border-slate-800 pt-2 text-sm lg:text-xl font-bold text-slate-400 truncate">
+                <div className="w-full border-t-2 border-slate-800 pt-[0.8vh] text-[1.4vw] font-bold text-slate-400 truncate">
                   Tài xế: <span className="text-white">{driverName || "---"}</span>
                 </div>
               </div>
@@ -485,21 +487,21 @@ export default function TvDisplayPage() {
           })}
         </section>
 
-        {/* CỘT PHẢI (DANH SÁCH CHỜ): Chiếm 40% trên Laptop/TV */}
-        <section className="w-full lg:w-[40%] h-full bg-slate-900/80 border border-slate-800 rounded-2xl p-3 lg:p-5 flex flex-col overflow-hidden">
-          <div className="w-full flex justify-between items-center border-b border-slate-800 pb-3 mb-3 shrink-0">
-            <h2 className="text-lg lg:text-2xl font-black text-amber-400 uppercase tracking-wide">
+        {/* CỘT PHẢI (DANH SÁCH CHỜ): Chiều rộng cố định 38% */}
+        <section className="w-[38%] h-full bg-slate-900/80 border-2 border-slate-800 rounded-3xl p-[1.5vw] flex flex-col overflow-hidden">
+          <div className="w-full flex justify-between items-center border-b-2 border-slate-800 pb-[1vh] mb-[1.5vh] shrink-0">
+            <h2 className="text-[2vw] font-black text-amber-400 uppercase tracking-wide">
               DANH SÁCH CHỜ
             </h2>
-            <span className="bg-amber-500/20 text-amber-300 font-extrabold text-sm lg:text-xl px-3 py-1 rounded-full border border-amber-500/30">
+            <span className="bg-amber-500/20 text-amber-300 font-extrabold text-[1.5vw] px-[1vw] py-[0.2vh] rounded-full border border-amber-500/30">
               {waitingQueue.length}
             </span>
           </div>
 
-          {/* Render mượt danh sách chờ có cuộn tự động nếu danh sách dài */}
-          <div className="w-full flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+          {/* FIX LỖI ẨN HÀNG CHỜ: Sử dụng Flex col gap thay cho height % cứng */}
+          <div className="w-full flex-1 flex flex-col gap-[1vh] overflow-y-auto pr-[0.5vw]">
             {waitingQueue.length === 0 ? (
-              <div className="w-full h-full flex items-center justify-center text-base lg:text-xl font-bold text-slate-600 italic">
+              <div className="w-full h-full flex items-center justify-center text-[1.8vw] font-bold text-slate-600 italic">
                 Chưa có tài xế check-in
               </div>
             ) : (
@@ -507,21 +509,23 @@ export default function TvDisplayPage() {
                 const driver = cleanDriverName(item.driver_name);
                 return (
                   <div
-                    key={item.ticket_code || item.queue_number}
-                    className="w-full bg-slate-950 border border-slate-800/90 p-3 lg:p-4 rounded-xl flex items-center justify-between"
+                    key={item.ticket_code || item.queue_number || Math.random()}
+                    className="w-full py-[1.2vh] px-[1.2vw] bg-slate-950 border-2 border-slate-800/80 rounded-2xl flex items-center justify-between shrink-0"
                   >
-                    <span className="text-2xl lg:text-4xl font-black font-mono text-emerald-400 leading-none">
+                    <span className="text-[3vw] font-black font-mono text-emerald-400 leading-none">
                       {item.queue_number}
                     </span>
-                    <div className="text-right truncate max-w-[65%]">
-                      <p className="text-sm lg:text-lg font-bold text-slate-100 truncate">
+                    <div className="text-right truncate max-w-[60%]">
+                      <p className="text-[1.3vw] font-bold text-slate-100 truncate leading-tight">
                         {driver || "Tài xế"}
                       </p>
-                      <p className="text-xs lg:text-sm font-mono text-slate-400">
-                        {new Date(item.created_at).toLocaleTimeString("vi-VN", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
+                      <p className="text-[1vw] font-mono text-slate-400 leading-tight">
+                        {item.created_at
+                          ? new Date(item.created_at).toLocaleTimeString("vi-VN", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "--:--"}
                       </p>
                     </div>
                   </div>
