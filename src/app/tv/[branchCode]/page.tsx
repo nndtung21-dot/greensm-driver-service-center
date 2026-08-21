@@ -223,11 +223,6 @@ function numberToVietnameseWords(
     );
   }
 
-  /*
-   * Counter của hệ thống thực tế thường < 1000.
-   * Nếu vượt quá thì đọc từng chữ số để
-   * tránh phát sinh logic số lớn không cần thiết.
-   */
   return String(n)
     .split("")
     .map(
@@ -247,11 +242,6 @@ function extractCounterNumber(
   const value =
     counterName.trim();
 
-  /*
-   * Quầy 04
-   * Quầy số 04
-   * QUẦY 04
-   */
   const match =
     value.match(
       /(?:quầy\s*(?:số\s*)?)(\d+)/i
@@ -261,17 +251,10 @@ function extractCounterNumber(
     return match[1];
   }
 
-  /*
-   * Chỉ là số
-   */
   if (/^\d+$/.test(value)) {
     return value;
   }
 
-  /*
-   * Fallback:
-   * lấy cụm số cuối.
-   */
   const fallback =
     value.match(/(\d+)\s*$/);
 
@@ -303,9 +286,6 @@ function counterNumberToWords(
     );
   }
 
-  /*
-   * Fallback nếu counter không phải số.
-   */
   return [...number]
     .map(
       (ch) =>
@@ -319,20 +299,6 @@ function counterNumberToWords(
 /* ============================================================
    QUEUE NUMBER
    ============================================================ */
-
-/*
- * Queue là MÃ.
- *
- * A012
- * =>
- * "a không một hai"
- *
- * 012
- * =>
- * "không một hai"
- *
- * Không đọc 012 thành "mười hai".
- */
 
 function queueNumberToWords(
   queueNumber: string
@@ -392,20 +358,6 @@ function buildAnnouncementText(
    TV SPEECH ENGINE
    ============================================================ */
 
-/*
- * Không dùng Google TTS nữa.
- *
- * Lý do:
- * - Không phụ thuộc /api/tts
- * - Không phụ thuộc Google Translate
- * - Không fetch MP3
- * - Không Blob/Object URL
- * - Không gặp autoplay policy với audio element
- *
- * Chrome / Edge trên TV sẽ sử dụng SpeechSynthesis
- * trực tiếp.
- */
-
 function useTvSpeech() {
   const queueRef =
     useRef<SpeechJob[]>([]);
@@ -451,12 +403,22 @@ function useTvSpeech() {
       }
 
       /*
-       * Ưu tiên vi-VN.
+       * CHỈ CHẤP NHẬN GIỌNG TIẾNG VIỆT.
+       *
+       * Ưu tiên:
+       * 1. vi-VN
+       * 2. các voice bắt đầu bằng vi-
+       *
+       * TUYỆT ĐỐI KHÔNG fallback sang
+       * English/default voice.
        */
+
       const exact =
         voices.find(
           (voice) =>
-            voice.lang.toLowerCase() ===
+            voice.lang
+              .trim()
+              .toLowerCase() ===
             "vi-vn"
         );
 
@@ -464,18 +426,44 @@ function useTvSpeech() {
         return exact;
       }
 
-      /*
-       * Fallback các voice bắt đầu bằng vi.
-       */
       const vietnamese =
         voices.find(
           (voice) =>
             voice.lang
+              .trim()
               .toLowerCase()
-              .startsWith("vi")
+              .startsWith("vi-")
         );
 
       return vietnamese ?? null;
+    }, []);
+
+  /* ==========================================================
+     GET ALL VIETNAMESE VOICES
+     ========================================================== */
+
+  const getVietnameseVoices =
+    useCallback(() => {
+      if (
+        typeof window ===
+        "undefined" ||
+        !(
+          "speechSynthesis" in
+          window
+        )
+      ) {
+        return [];
+      }
+
+      return window.speechSynthesis
+        .getVoices()
+        .filter(
+          (voice) =>
+            voice.lang
+              .trim()
+              .toLowerCase()
+              .startsWith("vi-")
+        );
     }, []);
 
   /* ==========================================================
@@ -524,6 +512,22 @@ function useTvSpeech() {
               window.speechSynthesis;
 
             /*
+             * KHÔNG BAO GIỜ dùng default voice.
+             */
+            const voice =
+              getVietnameseVoice();
+
+            if (!voice) {
+              reject(
+                new Error(
+                  "Không tìm thấy giọng tiếng Việt (vi-VN) trên thiết bị"
+                )
+              );
+
+              return;
+            }
+
+            /*
              * Xoá speech cũ trước khi đọc.
              */
             synthesis.cancel();
@@ -533,8 +537,14 @@ function useTvSpeech() {
                 text
               );
 
+            /*
+             * Bắt buộc tiếng Việt.
+             */
             utterance.lang =
               "vi-VN";
+
+            utterance.voice =
+              voice;
 
             utterance.rate =
               0.9;
@@ -545,29 +555,15 @@ function useTvSpeech() {
             utterance.volume =
               1;
 
-            const voice =
-              getVietnameseVoice();
-
-            if (voice) {
-              utterance.voice =
-                voice;
-            }
-
             let finished =
               false;
 
             const cleanup =
               () => {
                 /*
-                 * TypeScript DOM lib hiện tại
-                 * không expose property `oncancel`
-                 * trên SpeechSynthesisUtterance.
-                 *
-                 * Vì vậy chỉ cleanup các handler
-                 * mà TS hỗ trợ trực tiếp.
-                 *
-                 * Handler oncancel vẫn được gán
-                 * bên dưới để xử lý cancel event.
+                 * Không dùng .oncancel = null
+                 * vì lib.dom của TypeScript
+                 * không expose property này.
                  */
                 utterance.onend =
                   null;
@@ -615,15 +611,10 @@ function useTvSpeech() {
               fail;
 
             /*
-             * TypeScript lib.dom hiện tại không
-             * khai báo `oncancel` trên type
-             * SpeechSynthesisUtterance.
+             * TypeScript không expose
+             * `utterance.oncancel`.
              *
-             * Nhưng browser thực tế hỗ trợ event này.
-             *
-             * Dùng addEventListener để vừa:
-             * - giữ được cancel handler
-             * - không lỗi TypeScript build
+             * Dùng event listener.
              */
             utterance.addEventListener(
               "cancel",
@@ -635,11 +626,9 @@ function useTvSpeech() {
               {
                 text,
                 voice:
-                  voice?.name ??
-                  "browser default",
+                  voice.name,
                 lang:
-                  voice?.lang ??
-                  "vi-VN",
+                  voice.lang,
               }
             );
 
@@ -687,12 +676,12 @@ function useTvSpeech() {
           window.speechSynthesis;
 
         /*
-         * Xoá mọi speech đang chạy.
+         * Xoá speech đang chạy.
          */
         synthesis.cancel();
 
         /*
-         * Log toàn bộ voice để debug TV.
+         * Log toàn bộ voice.
          */
         const voices =
           synthesis.getVoices();
@@ -705,18 +694,39 @@ function useTvSpeech() {
               lang: voice.lang,
               default:
                 voice.default,
+              isVietnamese:
+                voice.lang
+                  .toLowerCase()
+                  .startsWith(
+                    "vi-"
+                  ),
             })
           )
         );
 
         /*
-         * Tìm voice tiếng Việt.
+         * Chỉ lấy voice Việt.
          */
+        const vietnameseVoices =
+          getVietnameseVoices();
+
+        console.log(
+          "[TV AUDIO] VIETNAMESE VOICES:",
+          vietnameseVoices.map(
+            (voice) => ({
+              name: voice.name,
+              lang: voice.lang,
+              default:
+                voice.default,
+            })
+          )
+        );
+
         const vietnameseVoice =
           getVietnameseVoice();
 
         console.log(
-          "[TV AUDIO] VIETNAMESE VOICE:",
+          "[TV AUDIO] SELECTED VIETNAMESE VOICE:",
           vietnameseVoice
             ? {
                 name:
@@ -728,14 +738,34 @@ function useTvSpeech() {
         );
 
         /*
-         * QUAN TRỌNG:
+         * KHÔNG CÓ VOICE VIỆT:
          *
-         * Speech được gọi trực tiếp từ
-         * click handler.
+         * Dừng ngay.
          *
-         * Không fetch.
-         * Không await network.
-         * Không tạo audio element.
+         * Không cho browser tự chọn
+         * English/default voice.
+         */
+        if (!vietnameseVoice) {
+          unlockedRef.current =
+            false;
+
+          setUnlocked(false);
+
+          setAudioStatus(
+            "TV chưa có giọng tiếng Việt"
+          );
+
+          console.error(
+            "[TV AUDIO] NO VIETNAMESE VOICE"
+          );
+
+          return false;
+        }
+
+        /*
+         * Test speech.
+         *
+         * Voice được chỉ định trực tiếp.
          */
         const test =
           new SpeechSynthesisUtterance(
@@ -745,6 +775,9 @@ function useTvSpeech() {
         test.lang =
           "vi-VN";
 
+        test.voice =
+          vietnameseVoice;
+
         test.rate =
           0.9;
 
@@ -753,13 +786,6 @@ function useTvSpeech() {
 
         test.volume =
           1;
-
-        if (
-          vietnameseVoice
-        ) {
-          test.voice =
-            vietnameseVoice;
-        }
 
         await new Promise<void>(
           (
@@ -771,11 +797,6 @@ function useTvSpeech() {
 
             const cleanup =
               () => {
-                /*
-                 * Không dùng test.oncancel = null
-                 * vì TypeScript không expose property
-                 * này trên SpeechSynthesisUtterance.
-                 */
                 test.onend =
                   null;
 
@@ -821,13 +842,21 @@ function useTvSpeech() {
             test.onerror =
               fail;
 
-            /*
-             * Dùng addEventListener thay cho
-             * test.oncancel để tránh TypeScript error.
-             */
             test.addEventListener(
               "cancel",
               finish
+            );
+
+            console.log(
+              "[TV AUDIO] TEST SPEAK:",
+              {
+                text:
+                  "Âm thanh thông báo đã được bật",
+                voice:
+                  vietnameseVoice.name,
+                lang:
+                  vietnameseVoice.lang,
+              }
             );
 
             synthesis.speak(
@@ -837,8 +866,7 @@ function useTvSpeech() {
         );
 
         /*
-         * Nếu tới đây nghĩa là browser
-         * đã phát được speech.
+         * Chỉ unlock sau khi test thành công.
          */
         unlockedRef.current =
           true;
@@ -846,7 +874,7 @@ function useTvSpeech() {
         setUnlocked(true);
 
         setAudioStatus(
-          "Sẵn sàng gọi số"
+          `Sẵn sàng gọi số — ${vietnameseVoice.name}`
         );
 
         console.log(
@@ -866,12 +894,17 @@ function useTvSpeech() {
         setUnlocked(false);
 
         setAudioStatus(
-          "Không bật được âm thanh"
+          error instanceof Error
+            ? error.message
+            : "Không bật được âm thanh"
         );
 
         return false;
       }
-    }, [getVietnameseVoice]);
+    }, [
+      getVietnameseVoice,
+      getVietnameseVoices,
+    ]);
 
   /* ==========================================================
      PROCESS QUEUE
@@ -959,9 +992,6 @@ function useTvSpeech() {
               );
             }
 
-            /*
-             * Khoảng cách giữa 2 lần đọc.
-             */
             if (
               repeat === 1
             ) {
@@ -994,10 +1024,6 @@ function useTvSpeech() {
           "[TV AUDIO] ===== QUEUE END ====="
         );
 
-        /*
-         * Nếu có ticket mới được enqueue
-         * trong lúc đang xử lý thì chạy tiếp.
-         */
         if (
           unlockedRef.current &&
           queueRef.current.length >
@@ -1052,15 +1078,6 @@ function useTvSpeech() {
           text,
         });
 
-        /*
-         * Nếu audio đã bật thì xử lý ngay.
-         *
-         * Nếu chưa bật:
-         * giữ trong queue.
-         *
-         * Khi user bấm bật âm thanh,
-         * useEffect phía dưới sẽ xử lý.
-         */
         if (
           unlockedRef.current
         ) {
@@ -1107,6 +1124,14 @@ function useTvSpeech() {
         const voices =
           synthesis.getVoices();
 
+        const vietnamese =
+          voices.filter(
+            (voice) =>
+              voice.lang
+                .toLowerCase()
+                .startsWith("vi-")
+          );
+
         console.log(
           "[TV AUDIO] VOICES LOADED:",
           voices.map(
@@ -1114,6 +1139,31 @@ function useTvSpeech() {
               `${voice.name} (${voice.lang})`
           )
         );
+
+        console.log(
+          "[TV AUDIO] VIETNAMESE VOICES:",
+          vietnamese.map(
+            (voice) =>
+              `${voice.name} (${voice.lang})`
+          )
+        );
+
+        if (
+          !unlockedRef.current
+        ) {
+          if (
+            vietnamese.length >
+            0
+          ) {
+            setAudioStatus(
+              `Đã tìm thấy giọng Việt: ${vietnamese[0].name}`
+            );
+          } else {
+            setAudioStatus(
+              "TV chưa có giọng tiếng Việt"
+            );
+          }
+        }
       };
 
     synthesis.addEventListener(
@@ -1121,10 +1171,6 @@ function useTvSpeech() {
       handleVoicesChanged
     );
 
-    /*
-     * Một số browser load voice ngay,
-     * một số browser load async.
-     */
     handleVoicesChanged();
 
     return () => {
@@ -1396,15 +1442,6 @@ export default function TvDisplayPage() {
             continue;
           }
 
-          /*
-           * Một lần gọi được xác định bằng:
-           *
-           * counter_code + called_at
-           *
-           * Nếu cùng vé vẫn đang hiển thị
-           * trên counter thì watchdog không
-           * đọc lại.
-           */
           const callKey =
             `${call.counter_code}:${call.called_at}`;
 
@@ -1421,9 +1458,6 @@ export default function TvDisplayPage() {
               call.queue_number
             );
 
-          /*
-           * Tìm đúng ticket.
-           */
           const driver =
             queueList.find(
               (q) =>
@@ -1446,13 +1480,6 @@ export default function TvDisplayPage() {
               }
             );
 
-            /*
-             * KHÔNG mark announced ở đây.
-             *
-             * Nếu queue list chưa kịp cập nhật,
-             * lần refresh sau vẫn có cơ hội
-             * tìm được driver.
-             */
             continue;
           }
 
@@ -1465,22 +1492,9 @@ export default function TvDisplayPage() {
               call.queue_number
             );
 
-            /*
-             * Không mark để tránh mất
-             * announcement nếu dữ liệu driver
-             * vừa được cập nhật.
-             */
             continue;
           }
 
-          /*
-           * Ưu tiên counter_name.
-           *
-           * Ví dụ:
-           * HCM014 + Quầy 04
-           *
-           * => Quầy số bốn
-           */
           const counterName =
             call.counter_name?.trim() ||
             call.counter_code?.trim() ||
@@ -1491,28 +1505,15 @@ export default function TvDisplayPage() {
             {
               queueNumber:
                 call.queue_number,
-
               driverName,
-
               counterCode:
                 call.counter_code,
-
               counterName,
-
               calledAt:
                 call.called_at,
             }
           );
 
-          /*
-           * MARK TRƯỚC ENQUEUE.
-           *
-           * Vì enqueue luôn giữ ticket trong
-           * queue nếu audio chưa bật.
-           *
-           * Do đó không bị duplicate bởi
-           * watchdog / realtime.
-           */
           announcedCalls.current.add(
             callKey
           );
@@ -1524,9 +1525,6 @@ export default function TvDisplayPage() {
           );
         }
 
-        /*
-         * Không để Set phình vô hạn.
-         */
         if (
           announcedCalls.current
             .size > 500
@@ -1634,9 +1632,6 @@ export default function TvDisplayPage() {
       return;
     }
 
-    /*
-     * Initial load.
-     */
     void refresh();
 
     console.log(
@@ -1703,11 +1698,6 @@ export default function TvDisplayPage() {
           }
         );
 
-    /*
-     * Watchdog 5s.
-     *
-     * Realtime fail vẫn có fallback.
-     */
     const watchdog =
       window.setInterval(
         () => {
@@ -1821,20 +1811,12 @@ export default function TvDisplayPage() {
   return (
     <div className="flex min-h-screen w-screen flex-col overflow-hidden bg-paper">
 
-      {/* ======================================================
-          AUDIO
-          ====================================================== */}
+      {/* AUDIO */}
 
       {!unlocked && (
         <button
           type="button"
           onClick={() => {
-            /*
-             * KHÔNG await.
-             *
-             * unlockAudio() bắt đầu trực tiếp
-             * từ user click.
-             */
             void unlockAudio();
           }}
           className="w-full bg-warn px-4 py-3 text-center font-body font-bold text-white hover:bg-warn/90"
@@ -1862,9 +1844,6 @@ export default function TvDisplayPage() {
           <button
             type="button"
             onClick={() => {
-              /*
-               * Test lại bằng chính SpeechSynthesis.
-               */
               void unlockAudio();
             }}
             className="rounded-md bg-white/15 px-3 py-1 hover:bg-white/25"
@@ -1874,9 +1853,7 @@ export default function TvDisplayPage() {
         </div>
       )}
 
-      {/* ======================================================
-          HEADER
-          ====================================================== */}
+      {/* HEADER */}
 
       <div
         className="flex items-center justify-between border-b border-line bg-white shadow-sm"
@@ -1977,9 +1954,7 @@ export default function TvDisplayPage() {
         </div>
       </div>
 
-      {/* ======================================================
-          ERROR
-          ====================================================== */}
+      {/* ERROR */}
 
       {errorMessage && (
         <div className="mx-[2.2vw] mt-[1vw] rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-body text-sm text-red-700">
@@ -1989,9 +1964,7 @@ export default function TvDisplayPage() {
         </div>
       )}
 
-      {/* ======================================================
-          CONTENT
-          ====================================================== */}
+      {/* CONTENT */}
 
       <div
         className="flex-1"
@@ -2012,9 +1985,7 @@ export default function TvDisplayPage() {
           </div>
         ) : (
           <>
-            {/* ==================================================
-                COUNTERS
-                ================================================== */}
+            {/* COUNTERS */}
 
             <div
               className="grid"
@@ -2065,8 +2036,6 @@ export default function TvDisplayPage() {
                       }
                       className="flex flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-sm"
                     >
-                      {/* COUNTER HEADER */}
-
                       <div
                         className="bg-brand-700"
                         style={{
@@ -2098,8 +2067,6 @@ export default function TvDisplayPage() {
                           }
                         </p>
                       </div>
-
-                      {/* CURRENT CALL */}
 
                       <div
                         className={`text-center ${
@@ -2161,8 +2128,6 @@ export default function TvDisplayPage() {
                           </p>
                         )}
                       </div>
-
-                      {/* WAITING */}
 
                       <div
                         className="flex-1 border-t border-line"
@@ -2278,9 +2243,7 @@ export default function TvDisplayPage() {
               )}
             </div>
 
-            {/* ==================================================
-                UNASSIGNED
-                ================================================== */}
+            {/* UNASSIGNED */}
 
             {unassigned.length >
               0 && (
