@@ -1,10 +1,17 @@
 import { NextRequest } from "next/server";
 
-export async function GET(req: NextRequest) {
+export async function GET(
+  req: NextRequest
+) {
   const text =
-    req.nextUrl.searchParams.get("text");
+    req.nextUrl.searchParams.get(
+      "text"
+    );
 
-  if (!text) {
+  if (
+    !text ||
+    text.trim().length === 0
+  ) {
     return new Response(
       "Missing text",
       { status: 400 }
@@ -31,19 +38,33 @@ export async function GET(req: NextRequest) {
         method: "GET",
         headers: {
           "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/151 Safari/537.36",
-          Accept:
-            "audio/mpeg,audio/*,*/*;q=0.8",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
           Referer:
             "https://translate.google.com/",
+          Accept:
+            "audio/mpeg,audio/*,*/*;q=0.8",
         },
         cache: "no-store",
       });
 
-    if (!response.ok) {
+    const contentType =
+      response.headers.get(
+        "content-type"
+      ) ?? "";
+
+    if (
+      !response.ok ||
+      !contentType.includes(
+        "audio"
+      )
+    ) {
       console.error(
-        "[TTS] Google HTTP:",
-        response.status
+        "[TTS] Google response:",
+        {
+          status:
+            response.status,
+          contentType,
+        }
       );
 
       return new Response(
@@ -52,30 +73,37 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const buffer =
+    const audio =
       await response.arrayBuffer();
 
-    if (!buffer.byteLength) {
+    if (
+      audio.byteLength === 0
+    ) {
       return new Response(
-        "Empty audio",
+        "Google TTS returned empty audio",
         { status: 502 }
       );
     }
 
-    return new Response(buffer, {
-      status: 200,
-      headers: {
-        "Content-Type":
-          "audio/mpeg",
-        "Content-Length":
-          String(buffer.byteLength),
-        "Cache-Control":
-          "no-store, no-cache, must-revalidate",
-      },
-    });
+    return new Response(
+      audio,
+      {
+        status: 200,
+        headers: {
+          "Content-Type":
+            "audio/mpeg",
+          "Content-Length":
+            String(
+              audio.byteLength
+            ),
+          "Cache-Control":
+            "no-store, max-age=0",
+        },
+      }
+    );
   } catch (error) {
     console.error(
-      "[TTS] Google fetch failed:",
+      "[TTS] Fetch failed:",
       error
     );
 
