@@ -169,7 +169,7 @@ function numberToVietnameseWords(
     const tens = Math.floor(n / 10);
     const units = n % 10;
 
-    let result =
+    const result =
       `${DIGIT_WORD[String(tens)]} mươi`;
 
     if (units === 0) {
@@ -201,7 +201,7 @@ function numberToVietnameseWords(
     const remainder =
       n % 100;
 
-    let result =
+    const result =
       `${DIGIT_WORD[String(hundreds)]} trăm`;
 
     if (remainder === 0) {
@@ -556,6 +556,26 @@ function useTvSpeech() {
             let finished =
               false;
 
+            const cleanup =
+              () => {
+                /*
+                 * TypeScript DOM lib hiện tại
+                 * không expose property `oncancel`
+                 * trên SpeechSynthesisUtterance.
+                 *
+                 * Vì vậy chỉ cleanup các handler
+                 * mà TS hỗ trợ trực tiếp.
+                 *
+                 * Handler oncancel vẫn được gán
+                 * bên dưới để xử lý cancel event.
+                 */
+                utterance.onend =
+                  null;
+
+                utterance.onerror =
+                  null;
+              };
+
             const finish =
               () => {
                 if (finished) {
@@ -564,14 +584,7 @@ function useTvSpeech() {
 
                 finished = true;
 
-                utterance.onend =
-                  null;
-
-                utterance.onerror =
-                  null;
-
-                utterance.oncancel =
-                  null;
+                cleanup();
 
                 resolve();
               };
@@ -586,14 +599,7 @@ function useTvSpeech() {
 
                 finished = true;
 
-                utterance.onend =
-                  null;
-
-                utterance.onerror =
-                  null;
-
-                utterance.oncancel =
-                  null;
+                cleanup();
 
                 reject(
                   new Error(
@@ -608,8 +614,21 @@ function useTvSpeech() {
             utterance.onerror =
               fail;
 
-            utterance.oncancel =
-              finish;
+            /*
+             * TypeScript lib.dom hiện tại không
+             * khai báo `oncancel` trên type
+             * SpeechSynthesisUtterance.
+             *
+             * Nhưng browser thực tế hỗ trợ event này.
+             *
+             * Dùng addEventListener để vừa:
+             * - giữ được cancel handler
+             * - không lỗi TypeScript build
+             */
+            utterance.addEventListener(
+              "cancel",
+              finish
+            );
 
             console.log(
               "[TV AUDIO] SPEAK:",
@@ -750,6 +769,20 @@ function useTvSpeech() {
             let finished =
               false;
 
+            const cleanup =
+              () => {
+                /*
+                 * Không dùng test.oncancel = null
+                 * vì TypeScript không expose property
+                 * này trên SpeechSynthesisUtterance.
+                 */
+                test.onend =
+                  null;
+
+                test.onerror =
+                  null;
+              };
+
             const finish =
               () => {
                 if (finished) {
@@ -758,14 +791,7 @@ function useTvSpeech() {
 
                 finished = true;
 
-                test.onend =
-                  null;
-
-                test.onerror =
-                  null;
-
-                test.oncancel =
-                  null;
+                cleanup();
 
                 resolve();
               };
@@ -780,14 +806,7 @@ function useTvSpeech() {
 
                 finished = true;
 
-                test.onend =
-                  null;
-
-                test.onerror =
-                  null;
-
-                test.oncancel =
-                  null;
+                cleanup();
 
                 reject(
                   new Error(
@@ -802,8 +821,14 @@ function useTvSpeech() {
             test.onerror =
               fail;
 
-            test.oncancel =
-              finish;
+            /*
+             * Dùng addEventListener thay cho
+             * test.oncancel để tránh TypeScript error.
+             */
+            test.addEventListener(
+              "cancel",
+              finish
+            );
 
             synthesis.speak(
               test
@@ -1275,8 +1300,7 @@ export default function TvDisplayPage() {
 
         const result =
           (
-            (data ??
-              []) as CounterStatusRow[]
+            (data ?? []) as CounterStatusRow[]
           )
             .slice()
             .sort(
@@ -1321,8 +1345,7 @@ export default function TvDisplayPage() {
 
         const result =
           (
-            (data ??
-              []) as AgentQueueRow[]
+            (data ?? []) as AgentQueueRow[]
           )
             .slice()
             .sort(
