@@ -54,21 +54,32 @@ function normalizeQueue(value: string | null | undefined): string {
   return (value ?? "").trim().toUpperCase();
 }
 
+/**
+ * LOGIC HÀNG CHỜ chuẩn:
+ * Một vé trong agent_queues CHỈ ĐƯỢC COI LÀ ĐÃ GỌI khi:
+ * 1. Đã được gán agent_id (đã vào quầy xử lý).
+ * 2. HOẶC quầy gọi số này VÀ thời gian gọi (called_at) xảy ra SAU HOẶC BẰNG thời gian check-in (created_at).
+ */
 function isCalledQueue(
   queue: AgentQueueRow,
   counters: CounterStatusRow[]
 ): boolean {
-  const queueNumber = normalizeQueue(queue.queue_number);
-
-  if (!queueNumber) {
-    return false;
+  if (queue.agent_id) {
+    return true;
   }
 
-  return counters.some(
-    (counter) =>
-      normalizeQueue(counter.queue_number) === queueNumber &&
-      Boolean(counter.called_at)
-  );
+  const queueNumber = normalizeQueue(queue.queue_number);
+  if (!queueNumber) return false;
+
+  const createdTime = new Date(queue.created_at).getTime();
+
+  return counters.some((counter) => {
+    if (normalizeQueue(counter.queue_number) !== queueNumber) return false;
+    if (!counter.called_at) return false;
+
+    const calledTime = new Date(counter.called_at).getTime();
+    return calledTime >= createdTime;
+  });
 }
 
 /* ============================================================
@@ -243,7 +254,6 @@ function buildAnnouncementText(
   const counterWords = counterNumberToWords(counterName);
   const cleanName = cleanDriverName(driverName);
 
-  // Nếu lọc xong vẫn còn tên người thì đọc kèm tên, ngược lại chỉ đọc Số và Quầy
   if (cleanName) {
     return (
       `Kính mời tài xế số ${queueWords}, ` +
@@ -572,7 +582,6 @@ export default function TvDisplayPage() {
           (q) => normalizeQueue(q.queue_number) === targetQueue
         );
 
-        // Lấy driver_name hoặc agent_name từ quầy làm dự phòng
         const rawDriverName = driver?.driver_name || call.agent_name || "";
         const counterName =
           call.counter_name?.trim() || call.counter_code?.trim() || "quầy";
@@ -581,7 +590,6 @@ export default function TvDisplayPage() {
         enqueueAudio(call.queue_number, rawDriverName, counterName);
       }
 
-      // Giới hạn kích thước Set để tránh tràn bộ nhớ
       if (announcedCalls.current.size > 500) {
         const values = Array.from(announcedCalls.current);
         announcedCalls.current = new Set(values.slice(-200));
@@ -645,7 +653,6 @@ export default function TvDisplayPage() {
       )
       .subscribe();
 
-    // Fallback Polling 10 giây một lần đề phòng đứt kết nối WebSocket
     const pollInterval = window.setInterval(() => {
       scheduleRefresh();
     }, 10000);
@@ -659,8 +666,17 @@ export default function TvDisplayPage() {
     };
   }, [branchCode, refresh, scheduleRefresh]);
 
+  /* ==========================================================
+     DANH SÁCH HÀNG CHỜ (Màn hình bên phải)
+     ========================================================== */
+
   const waitingQueue = useMemo(() => {
-    return agentQueue.filter((q) => !isCalledQueue(q, counters));
+    return agentQueue
+      .filter((q) => !isCalledQueue(q, counters))
+      .sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
   }, [agentQueue, counters]);
 
   if (loading) {
