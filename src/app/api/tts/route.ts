@@ -1,11 +1,14 @@
 import { NextRequest } from "next/server";
 
-export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+export async function GET(
+  req: NextRequest
+) {
   const text =
-    req.nextUrl.searchParams.get("text")?.trim();
+    req.nextUrl.searchParams.get(
+      "text"
+    );
 
   if (!text) {
     return new Response(
@@ -16,7 +19,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  if (text.length > 300) {
+  if (text.length > 250) {
     return new Response(
       "Text too long",
       {
@@ -25,53 +28,36 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const googleUrl =
-    "https://translate.google.com/translate_tts" +
+  const url =
+    `https://translate.google.com/translate_tts` +
     `?ie=UTF-8` +
-    `&client=tw-ob` +
+    `&q=${encodeURIComponent(text)}` +
     `&tl=vi` +
-    `&q=${encodeURIComponent(text)}`;
+    `&client=tw-ob`;
 
   try {
-    console.log(
-      "[TTS] Request:",
-      text
-    );
-
     const response =
-      await fetch(
-        googleUrl,
-        {
-          method: "GET",
-          headers: {
-            Accept:
-              "audio/mpeg,audio/*,*/*;q=0.8",
-
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36",
-
-            Referer:
-              "https://translate.google.com/",
-          },
-
-          cache: "no-store",
-        }
-      );
+      await fetch(url, {
+        method: "GET",
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36",
+          Accept:
+            "audio/mpeg,audio/*,*/*",
+          Referer:
+            "https://translate.google.com/",
+        },
+        cache: "no-store",
+      });
 
     if (!response.ok) {
-      const body =
-        await response.text().catch(
-          () => ""
-        );
-
       console.error(
-        "[TTS] Google HTTP error:",
-        response.status,
-        body
+        "[TTS] Google HTTP",
+        response.status
       );
 
       return new Response(
-        "Google TTS HTTP error",
+        "Google TTS unavailable",
         {
           status: 502,
         }
@@ -83,47 +69,52 @@ export async function GET(req: NextRequest) {
         "content-type"
       ) ?? "";
 
-    console.log(
-      "[TTS] Google content-type:",
-      contentType
-    );
+    if (
+      !contentType.includes(
+        "audio"
+      )
+    ) {
+      console.error(
+        "[TTS] Not audio:",
+        contentType
+      );
 
-    const buffer =
-      await response.arrayBuffer();
-
-    if (!buffer.byteLength) {
       return new Response(
-        "Google returned empty audio",
+        "Google did not return audio",
         {
           status: 502,
         }
       );
     }
 
-    return new Response(
-      buffer,
-      {
-        status: 200,
-        headers: {
-          "Content-Type":
-            "audio/mpeg",
+    const buffer =
+      await response.arrayBuffer();
 
-          "Content-Length":
-            String(buffer.byteLength),
+    if (!buffer.byteLength) {
+      return new Response(
+        "Empty audio",
+        {
+          status: 502,
+        }
+      );
+    }
 
-          "Cache-Control":
-            "no-store, no-cache, must-revalidate",
-
-          Pragma: "no-cache",
-
-          "X-TTS-Provider":
-            "Google Translate",
-        },
-      }
-    );
+    return new Response(buffer, {
+      status: 200,
+      headers: {
+        "Content-Type":
+          "audio/mpeg",
+        "Content-Length":
+          String(
+            buffer.byteLength
+          ),
+        "Cache-Control":
+          "no-store, no-cache, must-revalidate",
+      },
+    });
   } catch (error) {
     console.error(
-      "[TTS] Fetch failed:",
+      "[TTS] Fetch failed",
       error
     );
 
