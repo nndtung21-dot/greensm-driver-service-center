@@ -17,6 +17,28 @@
 --   thẳng /rest/v1/feedback bằng JWT Supervisor.
 -- =====================================================================
 
+-- =====================================================================
+-- Tu phuc hoi: current_role_name()/current_branch_id() bao cao la KHONG
+-- TON TAI o schema nao tren database that (dieu tra qua pg_proc), du duoc
+-- dinh nghia tu 0001 va hau het RLS policy/RPC deu goi toi no. Khong ro
+-- nguyen nhan chinh xac (co the mat trong qua trinh copy-paste thu cong
+-- qua nhieu lan chay migration). De khong phai doan them, tao lai CA HAI
+-- ham voi dung dinh nghia CUOI CUNG (ban SECURITY DEFINER chong doi quy -
+-- xem 0005 va docs/security-fixes-log.md #7) truoc khi dung chung o cac
+-- policy ben duoi. CREATE OR REPLACE nen an toan chay lai nhieu lan du
+-- ham co san hay khong.
+-- =====================================================================
+
+create or replace function public.current_role_name()
+returns user_role language sql stable security definer set search_path = public as $$
+  select role from profiles where id = (select auth.uid());
+$$;
+
+create or replace function public.current_branch_id()
+returns uuid language sql stable security definer set search_path = public as $$
+  select branch_id from profiles where id = (select auth.uid());
+$$;
+
 drop policy if exists counters_staff_select on counters;
 create policy counters_staff_select on counters for select
   using (
