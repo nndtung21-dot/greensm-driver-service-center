@@ -28,6 +28,7 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // form state for onboarding a pending user
   const [onboardName, setOnboardName] = useState<Record<string, string>>({});
@@ -42,14 +43,16 @@ export default function AdminUsersPage() {
   const [newBranch, setNewBranch] = useState("");
 
   const load = useCallback(async () => {
-    const [{ data: p }, { data: pu }, { data: b }] = await Promise.all([
+    const [{ data: p }, { data: pu }, { data: b }, { data: sessionData }] = await Promise.all([
       supabase.from("profiles").select("id, full_name, email, role, branch_id, department_id, status"),
       supabase.rpc("admin_list_pending_users"),
       supabase.from("branches").select("id, branch_code, branch_name"),
+      supabase.auth.getSession(),
     ]);
     setProfiles((p as AdminProfileRow[]) ?? []);
     setPending((pu as PendingUser[]) ?? []);
     setBranches(b ?? []);
+    setCurrentUserId(sessionData.session?.user.id ?? null);
     setLoading(false);
   }, []);
 
@@ -260,15 +263,22 @@ export default function AdminUsersPage() {
               </tr>
             </thead>
             <tbody>
-              {profiles.map((p) => (
+              {profiles.map((p) => {
+                const isSelf = p.id === currentUserId;
+                return (
                 <tr key={p.id} className="border-b border-line last:border-0">
-                  <td className="py-2 pr-3">{p.full_name}</td>
+                  <td className="py-2 pr-3">
+                    {p.full_name}
+                    {isSelf && <span className="ml-1 text-xs text-ink/40">(bạn)</span>}
+                  </td>
                   <td className="py-2 pr-3 text-ink/60">{p.email}</td>
                   <td className="py-2 pr-3">
                     <select
                       value={p.role}
+                      disabled={isSelf}
+                      title={isSelf ? "Không thể tự đổi vai trò của chính mình." : undefined}
                       onChange={(e) => updateProfile(p.id, { role: e.target.value as UserRole })}
-                      className="rounded-lg border-2 border-line px-2 py-1 text-xs"
+                      className="rounded-lg border-2 border-line px-2 py-1 text-xs disabled:opacity-40"
                     >
                       <option value="agent">Agent</option>
                       <option value="supervisor">Supervisor</option>
@@ -292,24 +302,26 @@ export default function AdminUsersPage() {
                   <td className="py-2 pr-3">
                     <ToggleSwitch
                       checked={p.status === "ACTIVE"}
-                      onChange={() =>
+                      onChange={() => {
+                        if (isSelf) return;
                         updateProfile(p.id, {
                           status: p.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
-                        })
-                      }
+                        });
+                      }}
                     />
                   </td>
                   <td className="py-2 pr-3">
                     <button
                       onClick={() => handleDeleteUser(p.id, p.full_name)}
-                      disabled={busy}
+                      disabled={busy || isSelf}
+                      title={isSelf ? "Không thể tự xoá chính mình." : undefined}
                       className="font-body text-xs text-danger underline disabled:opacity-40"
                     >
                       Xoá
                     </button>
                   </td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
         </div>
