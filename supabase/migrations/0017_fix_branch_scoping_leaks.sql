@@ -20,20 +20,20 @@
 drop policy if exists counters_staff_select on counters;
 create policy counters_staff_select on counters for select
   using (
-    current_role_name() = 'admin'
-    or branch_id = current_branch_id()
+    public.current_role_name() = 'admin'
+    or branch_id = public.current_branch_id()
   );
 
 drop policy if exists feedback_staff_select on feedback;
 create policy feedback_staff_select on feedback for select
   using (
-    current_role_name() = 'admin'
+    public.current_role_name() = 'admin'
     or (
-      current_role_name() = 'supervisor'
+      public.current_role_name() = 'supervisor'
       and exists (
         select 1 from service_cases cs
         join queue_tickets qt on qt.id = cs.ticket_id
-        where cs.id = feedback.case_id and qt.branch_id = current_branch_id()
+        where cs.id = feedback.case_id and qt.branch_id = public.current_branch_id()
       )
     )
   );
@@ -46,11 +46,11 @@ create policy feedback_staff_select on feedback for select
 drop policy if exists agent_category_assignments_staff_select on agent_category_assignments;
 create policy agent_category_assignments_staff_select on agent_category_assignments for select
   using (
-    current_role_name() = 'admin'
+    public.current_role_name() = 'admin'
     or exists (
       select 1 from profiles p
       where p.id = agent_category_assignments.agent_id
-        and p.branch_id = current_branch_id()
+        and p.branch_id = public.current_branch_id()
     )
   );
 
@@ -60,9 +60,9 @@ create policy agent_category_assignments_staff_select on agent_category_assignme
 drop policy if exists sla_rules_staff_select on sla_rules;
 create policy sla_rules_staff_select on sla_rules for select
   using (
-    current_role_name() = 'admin'
+    public.current_role_name() = 'admin'
     or (
-      current_role_name() = 'supervisor'
-      and (branch_id = current_branch_id() or branch_id is null)
+      public.current_role_name() = 'supervisor'
+      and (branch_id = public.current_branch_id() or branch_id is null)
     )
   );
