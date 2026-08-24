@@ -48,7 +48,9 @@ type SpeechJob = {
    HELPERS
    ============================================================ */
 
-function normalizeQueue(value: string | null | undefined): string {
+function normalizeQueue(
+  value: string | null | undefined
+): string {
   return (value ?? "").trim().toUpperCase();
 }
 
@@ -56,13 +58,19 @@ function isCalledQueue(
   queue: AgentQueueRow,
   counters: CounterStatusRow[]
 ): boolean {
-  const queueNumber = normalizeQueue(queue.queue_number);
+  const queueNumber = normalizeQueue(
+    queue.queue_number
+  );
 
-  if (!queueNumber) return false;
+  if (!queueNumber) {
+    return false;
+  }
 
   return counters.some(
     (counter) =>
-      normalizeQueue(counter.queue_number) === queueNumber &&
+      normalizeQueue(
+        counter.queue_number
+      ) === queueNumber &&
       Boolean(counter.called_at)
   );
 }
@@ -71,7 +79,10 @@ function isCalledQueue(
    VIETNAMESE NUMBER / CHARACTER WORDS
    ============================================================ */
 
-const DIGIT_WORD: Record<string, string> = {
+const DIGIT_WORD: Record<
+  string,
+  string
+> = {
   "0": "không",
   "1": "một",
   "2": "hai",
@@ -134,8 +145,19 @@ const SMALL_NUMBER_WORDS: string[] = [
   "mười chín",
 ];
 
-function numberToVietnameseWords(n: number): string {
-  if (!Number.isFinite(n) || n < 0) return "";
+/* ============================================================
+   VIETNAMESE NUMBER TO WORD
+   ============================================================ */
+
+function numberToVietnameseWords(
+  n: number
+): string {
+  if (
+    !Number.isFinite(n) ||
+    n < 0
+  ) {
+    return "";
+  }
 
   n = Math.floor(n);
 
@@ -147,43 +169,83 @@ function numberToVietnameseWords(n: number): string {
     const tens = Math.floor(n / 10);
     const units = n % 10;
 
-    const result = `${DIGIT_WORD[String(tens)]} mươi`;
+    const result =
+      `${DIGIT_WORD[String(tens)]} mươi`;
 
-    if (units === 0) return result;
-    if (units === 1) return `${result} mốt`;
-    if (units === 4) return `${result} tư`;
-    if (units === 5) return `${result} lăm`;
+    if (units === 0) {
+      return result;
+    }
 
-    return `${result} ${DIGIT_WORD[String(units)]}`;
+    if (units === 1) {
+      return `${result} mốt`;
+    }
+
+    if (units === 4) {
+      return `${result} tư`;
+    }
+
+    if (units === 5) {
+      return `${result} lăm`;
+    }
+
+    return (
+      `${result} ` +
+      `${DIGIT_WORD[String(units)]}`
+    );
   }
 
   if (n < 1000) {
-    const hundreds = Math.floor(n / 100);
-    const remainder = n % 100;
+    const hundreds =
+      Math.floor(n / 100);
 
-    const result = `${DIGIT_WORD[String(hundreds)]} trăm`;
+    const remainder =
+      n % 100;
 
-    if (remainder === 0) return result;
+    const result =
+      `${DIGIT_WORD[String(hundreds)]} trăm`;
 
-    if (remainder < 10) {
-      return `${result} lẻ ${DIGIT_WORD[String(remainder)]}`;
+    if (remainder === 0) {
+      return result;
     }
 
-    return `${result} ${numberToVietnameseWords(remainder)}`;
+    if (remainder < 10) {
+      return (
+        `${result} lẻ ` +
+        `${DIGIT_WORD[String(remainder)]}`
+      );
+    }
+
+    return (
+      `${result} ` +
+      `${numberToVietnameseWords(
+        remainder
+      )}`
+    );
   }
 
   return String(n)
     .split("")
-    .map((ch) => DIGIT_WORD[ch] ?? ch)
+    .map(
+      (ch) =>
+        DIGIT_WORD[ch] ?? ch
+    )
     .join(" ");
 }
 
-function extractCounterNumber(counterName: string): string {
-  const value = counterName.trim();
+/* ============================================================
+   COUNTER NUMBER
+   ============================================================ */
 
-  const match = value.match(
-    /(?:quầy\s*(?:số\s*)?)(\d+)/i
-  );
+function extractCounterNumber(
+  counterName: string
+): string {
+  const value =
+    counterName.trim();
+
+  const match =
+    value.match(
+      /(?:quầy\s*(?:số\s*)?)(\d+)/i
+    );
 
   if (match?.[1]) {
     return match[1];
@@ -193,7 +255,8 @@ function extractCounterNumber(counterName: string): string {
     return value;
   }
 
-  const fallback = value.match(/(\d+)\s*$/);
+  const fallback =
+    value.match(/(\d+)\s*$/);
 
   if (fallback?.[1]) {
     return fallback[1];
@@ -202,222 +265,467 @@ function extractCounterNumber(counterName: string): string {
   return value;
 }
 
-function counterNumberToWords(counterName: string): string {
-  const number = extractCounterNumber(counterName);
-  const numeric = Number(number);
+function counterNumberToWords(
+  counterName: string
+): string {
+  const number =
+    extractCounterNumber(
+      counterName
+    );
+
+  const numeric =
+    Number(number);
 
   if (
     Number.isFinite(numeric) &&
     numeric >= 0 &&
     numeric < 1000
   ) {
-    return numberToVietnameseWords(numeric);
+    return numberToVietnameseWords(
+      numeric
+    );
   }
 
   return [...number]
     .map(
-      (ch) => DIGIT_WORD[ch.toUpperCase()] ?? ch
+      (ch) =>
+        DIGIT_WORD[
+          ch.toUpperCase()
+        ] ?? ch
     )
     .join(" ");
 }
 
-function queueNumberToWords(queueNumber: string): string {
+/* ============================================================
+   QUEUE NUMBER
+   ============================================================ */
+
+function queueNumberToWords(
+  queueNumber: string
+): string {
   return [...queueNumber.trim().toUpperCase()]
-    .map((ch) => DIGIT_WORD[ch] ?? ch)
+    .map(
+      (ch) =>
+        DIGIT_WORD[ch] ?? ch
+    )
     .join(" ");
 }
+
+/* ============================================================
+   DRIVER NAME
+   ============================================================ */
+
+function cleanDriverName(
+  driverName: string
+): string {
+  return driverName
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+/* ============================================================
+   ANNOUNCEMENT TEXT
+   ============================================================ */
 
 function buildAnnouncementText(
   queueNumber: string,
   driverName: string,
   counterName: string
 ): string {
+  const queueWords =
+    queueNumberToWords(
+      queueNumber
+    );
+
+  const counterWords =
+    counterNumberToWords(
+      counterName
+    );
+
+  const cleanName =
+    cleanDriverName(
+      driverName
+    );
+
   return (
-    `Kính mời tài xế số ${queueNumberToWords(queueNumber)}, ` +
-    `${driverName.trim().replace(/\s+/g, " ")}, ` +
-    `vui lòng đến quầy số ${counterNumberToWords(counterName)}.`
+    `Kính mời tài xế số ${queueWords}, ` +
+    `${cleanName}, ` +
+    `vui lòng đến quầy số ${counterWords}.`
   );
 }
 
 /* ============================================================
-   TV SPEECH ENGINE
-   GOOGLE TTS /api/tts
+   TV TTS ENGINE
    ============================================================ */
 
-function useTvSpeech(
-  apiEndpoint: string = "/api/tts"
-) {
-  const queueRef = useRef<SpeechJob[]>([]);
-  const speakingRef = useRef(false);
-  const unlockedRef = useRef(false);
+/*
+ * Dùng Google TTS thông qua /api/tts.
+ *
+ * Flow:
+ *
+ * TV
+ *   ↓
+ * /api/tts?text=...
+ *   ↓
+ * Google Translate TTS
+ *   ↓
+ * audio/mpeg
+ *   ↓
+ * Audio()
+ *
+ * Không dùng SpeechSynthesis nữa.
+ */
 
-  /*
-   * Dùng ref để luôn gọi processQueue phiên bản mới nhất,
-   * tránh stale closure trong các callback.
-   */
-  const processQueueRef =
-    useRef<() => void>(() => {});
+function useTvSpeech() {
+  const queueRef =
+    useRef<SpeechJob[]>([]);
+
+  const speakingRef =
+    useRef(false);
+
+  const unlockedRef =
+    useRef(false);
+
+  const audioRef =
+    useRef<HTMLAudioElement | null>(
+      null
+    );
 
   const [unlocked, setUnlocked] =
     useState(false);
 
   const [audioStatus, setAudioStatus] =
-    useState("Chưa bật âm thanh");
+    useState(
+      "Chưa bật âm thanh"
+    );
 
-  /* ----------------------------------------------------------
-     PLAY TTS
-     ---------------------------------------------------------- */
+  /* ==========================================================
+     SPEAK ONE TEXT
+     ========================================================== */
 
-  const speakText = useCallback(
-    (text: string): Promise<void> => {
-      return new Promise((resolve) => {
-        if (typeof window === "undefined") {
-          resolve();
-          return;
+  const speak =
+    useCallback(
+      async (
+        text: string
+      ): Promise<void> => {
+        if (
+          typeof window ===
+          "undefined"
+        ) {
+          throw new Error(
+            "TTS chỉ chạy trên browser"
+          );
         }
 
-        const safeText = text
-          .trim()
-          .slice(0, 290);
+        /*
+         * Dừng audio cũ nếu còn.
+         */
+        if (audioRef.current) {
+          try {
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
+          } catch {
+            // ignore
+          }
 
-        if (!safeText) {
-          resolve();
-          return;
+          audioRef.current = null;
+        }
+
+        /*
+         * Gọi API TTS.
+         *
+         * API hiện tại của bạn là GET:
+         *
+         * /api/tts?text=...
+         */
+        const response =
+          await fetch(
+            `/api/tts?text=${encodeURIComponent(
+              text
+            )}`,
+            {
+              method: "GET",
+              cache: "no-store",
+            }
+          );
+
+        if (!response.ok) {
+          const errorText =
+            await response.text();
+
+          throw new Error(
+            `TTS API ${response.status}: ${errorText}`
+          );
+        }
+
+        const contentType =
+          response.headers.get(
+            "content-type"
+          ) ?? "";
+
+        if (
+          !contentType.includes(
+            "audio"
+          )
+        ) {
+          throw new Error(
+            `TTS không trả về audio: ${contentType}`
+          );
+        }
+
+        const blob =
+          await response.blob();
+
+        if (!blob.size) {
+          throw new Error(
+            "TTS trả về audio rỗng"
+          );
         }
 
         const audioUrl =
-          `${apiEndpoint}?text=${encodeURIComponent(
-            safeText
-          )}`;
+          URL.createObjectURL(
+            blob
+          );
 
-        const audio = new Audio(audioUrl);
+        const audio =
+          new Audio(audioUrl);
 
-        /*
-         * Preload để giảm delay khi gọi.
-         */
-        audio.preload = "auto";
-
-        /*
-         * Volume tối đa.
-         */
         audio.volume = 1;
 
-        let finished = false;
+        audioRef.current =
+          audio;
 
-        let timeoutId: number | undefined;
+        console.log(
+          "[TV AUDIO] PLAY TTS:",
+          {
+            text,
+            contentType,
+            size: blob.size,
+          }
+        );
 
-        const cleanup = () => {
-          audio.onended = null;
-          audio.onerror = null;
-          audio.onabort = null;
-          audio.onstalled = null;
-          audio.oncanplay = null;
+        try {
+          await new Promise<void>(
+            (
+              resolve,
+              reject
+            ) => {
+              let finished =
+                false;
 
-          if (timeoutId !== undefined) {
-            window.clearTimeout(timeoutId);
-          };
-        };
+              const cleanup =
+                () => {
+                  audio.onended =
+                    null;
 
-        const finish = () => {
-          if (finished) return;
+                  audio.onerror =
+                    null;
 
-          finished = true;
+                  audio.onabort =
+                    null;
+                };
 
-          cleanup();
+              const finish =
+                () => {
+                  if (finished) {
+                    return;
+                  }
 
-          try {
-            audio.pause();
-            audio.currentTime = 0;
-          } catch {
-            // Ignore cleanup errors
+                  finished = true;
+
+                  cleanup();
+
+                  resolve();
+                };
+
+              const fail =
+                () => {
+                  if (finished) {
+                    return;
+                  }
+
+                  finished = true;
+
+                  cleanup();
+
+                  reject(
+                    new Error(
+                      "Không phát được audio TTS"
+                    )
+                  );
+                };
+
+              audio.onended =
+                finish;
+
+              audio.onerror =
+                fail;
+
+              audio.onabort =
+                fail;
+
+              void audio
+                .play()
+                .catch(
+                  (error) => {
+                    if (
+                      finished
+                    ) {
+                      return;
+                    }
+
+                    finished =
+                      true;
+
+                    cleanup();
+
+                    reject(
+                      error
+                    );
+                  }
+                );
+            }
+          );
+        } finally {
+          if (
+            audioRef.current ===
+            audio
+          ) {
+            audioRef.current =
+              null;
           }
 
-          resolve();
-        };
+          URL.revokeObjectURL(
+            audioUrl
+          );
+        }
+      },
+      []
+    );
+
+  /* ==========================================================
+     UNLOCK
+     ========================================================== */
+
+  const unlock =
+    useCallback(async () => {
+      console.log(
+        "[TV AUDIO] ===== UNLOCK START ====="
+      );
+
+      try {
+        if (
+          typeof window ===
+          "undefined"
+        ) {
+          throw new Error(
+            "Audio chỉ chạy trên browser"
+          );
+        }
 
         /*
-         * Timeout 15 giây.
-         *
-         * Tăng từ 10s lên 15s vì request TTS/network
-         * đôi khi mất vài giây trên TV.
+         * Tạo audio element ngay trong
+         * user click để kiểm tra browser
+         * có cho phép playback hay không.
          */
-        timeoutId = window.setTimeout(() => {
-          console.warn(
-            "[TTS Client] Audio timeout"
-          );
+        const audio =
+          new Audio();
 
-          finish();
-        }, 15000);
+        audio.volume = 0.01;
 
-        audio.onended = () => {
-          finish();
-        };
+        /*
+         * Một audio WAV cực ngắn / im lặng.
+         *
+         * Không gọi network ở bước unlock.
+         */
+        audio.src =
+          "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
 
-        audio.onerror = (event) => {
+        try {
+          await audio.play();
+
+          audio.pause();
+          audio.currentTime = 0;
+        } catch (error) {
           console.error(
-            "[TTS Client] Lỗi phát âm thanh:",
-            event
+            "[TV AUDIO] Browser blocked audio:",
+            error
           );
 
-          finish();
-        };
-
-        audio.onabort = () => {
-          finish();
-        };
-
-        audio.onstalled = () => {
-          console.warn(
-            "[TTS Client] Audio bị stalled"
+          throw new Error(
+            "Trình duyệt đang chặn phát âm thanh"
           );
-        };
+        }
 
-        /*
-         * Quan trọng:
-         * Chỉ gọi play() sau khi user đã unlock.
-         *
-         * Nếu browser vẫn chặn thì queue không bị treo.
-         */
-        audio
-          .play()
-          .then(() => {
-            setAudioStatus(
-              "Đang phát âm thanh"
-            );
-          })
-          .catch((error) => {
-            console.error(
-              "[TTS Client] Trình duyệt chặn audio:",
-              error
-            );
+        unlockedRef.current =
+          true;
 
-            finish();
-          });
-      });
-    },
-    [apiEndpoint]
-  );
+        setUnlocked(true);
 
-  /* ----------------------------------------------------------
+        setAudioStatus(
+          "Sẵn sàng gọi số"
+        );
+
+        console.log(
+          "[TV AUDIO] ===== UNLOCK SUCCESS ====="
+        );
+
+        return true;
+      } catch (error) {
+        console.error(
+          "[TV AUDIO] ===== UNLOCK FAILED =====",
+          error
+        );
+
+        unlockedRef.current =
+          false;
+
+        setUnlocked(false);
+
+        setAudioStatus(
+          "Không bật được âm thanh"
+        );
+
+        return false;
+      }
+    }, []);
+
+  /* ==========================================================
      PROCESS QUEUE
-     ---------------------------------------------------------- */
+     ========================================================== */
 
-  const processQueue = useCallback(
-    async () => {
+  const processQueue =
+    useCallback(async () => {
       if (
-        speakingRef.current ||
-        !unlockedRef.current ||
-        queueRef.current.length === 0
+        speakingRef.current
       ) {
         return;
       }
 
-      speakingRef.current = true;
+      if (
+        !unlockedRef.current
+      ) {
+        return;
+      }
+
+      if (
+        queueRef.current.length ===
+        0
+      ) {
+        return;
+      }
+
+      speakingRef.current =
+        true;
+
+      console.log(
+        "[TV AUDIO] ===== QUEUE START ====="
+      );
 
       try {
         while (
-          unlockedRef.current &&
-          queueRef.current.length > 0
+          queueRef.current.length >
+          0
         ) {
           const job =
             queueRef.current.shift();
@@ -426,235 +734,230 @@ function useTvSpeech(
             continue;
           }
 
+          console.log(
+            "[TV AUDIO] PROCESS:",
+            job.id,
+            job.text
+          );
+
           /*
-           * Mỗi lượt đọc 2 lần.
+           * ĐỌC 2 LẦN.
            */
           for (
             let repeat = 1;
             repeat <= 2;
             repeat++
           ) {
-            if (!unlockedRef.current) {
+            if (
+              !unlockedRef.current
+            ) {
               break;
             }
 
-            await speakText(job.text);
+            try {
+              console.log(
+                `[TV AUDIO] REPEAT ${repeat}/2:`,
+                job.id
+              );
+
+              await speak(
+                job.text
+              );
+
+              console.log(
+                `[TV AUDIO] REPEAT ${repeat}/2 SUCCESS:`,
+                job.id
+              );
+            } catch (error) {
+              console.error(
+                `[TV AUDIO] REPEAT ${repeat}/2 FAILED:`,
+                job.id,
+                error
+              );
+
+              /*
+               * Nếu browser chặn autoplay
+               * thì đánh dấu chưa unlock.
+               */
+              if (
+                error instanceof
+                  Error &&
+                /play|autoplay|NotAllowed/i.test(
+                  error.message
+                )
+              ) {
+                unlockedRef.current =
+                  false;
+
+                setUnlocked(
+                  false
+                );
+
+                setAudioStatus(
+                  "Bấm để bật lại âm thanh"
+                );
+
+                break;
+              }
+            }
 
             /*
-             * Nghỉ 800ms giữa 2 lần đọc.
+             * Khoảng cách giữa 2 lần đọc.
              */
-            if (repeat === 1) {
+            if (
+              repeat === 1 &&
+              unlockedRef.current
+            ) {
               await new Promise<void>(
-                (resolve) => {
+                (resolve) =>
                   window.setTimeout(
                     resolve,
-                    800
-                  );
-                }
+                    900
+                  )
               );
             }
           }
 
           /*
-           * Nghỉ trước lượt tiếp theo.
+           * Khoảng cách giữa 2 ticket.
            */
           if (
-            unlockedRef.current &&
-            queueRef.current.length > 0
+            unlockedRef.current
           ) {
             await new Promise<void>(
-              (resolve) => {
+              (resolve) =>
                 window.setTimeout(
                   resolve,
-                  600
-                );
-              }
+                  700
+                )
             );
           }
         }
       } finally {
-        speakingRef.current = false;
+        speakingRef.current =
+          false;
 
-        if (
-          unlockedRef.current &&
-          queueRef.current.length > 0
-        ) {
-          window.setTimeout(() => {
-            void processQueueRef.current();
-          }, 100);
-        } else {
-          setAudioStatus(
-            unlockedRef.current
-              ? "Âm thanh sẵn sàng"
-              : "Chưa bật âm thanh"
-          );
-        }
-      }
-    },
-    [speakText]
-  );
-
-  useEffect(() => {
-    processQueueRef.current = () => {
-      void processQueue();
-    };
-  }, [processQueue]);
-
-  /* ----------------------------------------------------------
-     UNLOCK
-     ---------------------------------------------------------- */
-
-  const unlock = useCallback(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-
-    try {
-      /*
-       * Đây là click trực tiếp của user.
-       * Tạo một audio cực ngắn để browser cho phép
-       * audio playback trong session hiện tại.
-       */
-      const silentAudio =
-        new Audio(
-          "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQgAAAAA"
-        );
-
-      silentAudio.volume = 0;
-
-      unlockedRef.current = true;
-      setUnlocked(true);
-      setAudioStatus(
-        "Đang kiểm tra âm thanh"
-      );
-
-      /*
-       * Thử unlock audio.
-       */
-      void silentAudio
-        .play()
-        .then(() => {
-          try {
-            silentAudio.pause();
-            silentAudio.currentTime = 0;
-          } catch {
-            // Ignore
-          }
-        })
-        .catch((error) => {
-          /*
-           * Không coi đây là lỗi chết.
-           *
-           * Audio TTS thật vẫn được thử ngay bên dưới.
-           */
-          console.warn(
-            "[TTS Client] Silent audio unlock failed:",
-            error
-          );
-        });
-
-      /*
-       * Đọc câu test thật từ /api/tts.
-       *
-       * Vì đây là thao tác trực tiếp sau click user,
-       * browser sẽ cho phép audio.
-       */
-      void speakText(
-        "Hệ thống gọi số đã sẵn sàng."
-      ).then(() => {
-        setAudioStatus(
-          "Âm thanh sẵn sàng"
+        console.log(
+          "[TV AUDIO] ===== QUEUE END ====="
         );
 
         /*
-         * Sau câu test, xử lý queue.
+         * Nếu có ticket mới enqueue
+         * trong lúc đang xử lý thì chạy tiếp.
          */
-        window.setTimeout(() => {
-          void processQueueRef.current();
-        }, 100);
-      });
+        if (
+          unlockedRef.current &&
+          queueRef.current.length >
+            0
+        ) {
+          window.setTimeout(
+            () => {
+              void processQueue();
+            },
+            100
+          );
+        }
+      }
+    }, [speak]);
 
-      return true;
-    } catch (error) {
-      console.error(
-        "[TTS Client] Không bật được âm thanh:",
-        error
-      );
-
-      unlockedRef.current = false;
-      setUnlocked(false);
-      setAudioStatus(
-        "Không bật được âm thanh"
-      );
-
-      return false;
-    }
-  }, [speakText]);
-
-  /* ----------------------------------------------------------
+  /* ==========================================================
      ENQUEUE
-     ---------------------------------------------------------- */
+     ========================================================== */
 
-  const enqueue = useCallback(
-    (
-      queueNumber: string,
-      driverName: string,
-      counterName: string
-    ) => {
-      const text =
-        buildAnnouncementText(
-          queueNumber,
-          driverName,
-          counterName
+  const enqueue =
+    useCallback(
+      (
+        queueNumber: string,
+        driverName: string,
+        counterName: string
+      ) => {
+        const text =
+          buildAnnouncementText(
+            queueNumber,
+            driverName,
+            counterName
+          );
+
+        const id =
+          `${counterName}-${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2, 8)}`;
+
+        console.log(
+          "[TV AUDIO] ENQUEUE:",
+          {
+            id,
+            queueNumber,
+            driverName,
+            counterName,
+            text,
+          }
         );
 
-      const job: SpeechJob = {
-        id:
-          `${counterName}-${queueNumber}-` +
-          `${Date.now()}-${Math.random()}`,
-        text,
-      };
+        queueRef.current.push({
+          id,
+          text,
+        });
 
-      /*
-       * Không để queue phình vô hạn.
-       */
-      if (queueRef.current.length >= 100) {
-        queueRef.current.shift();
+        /*
+         * Nếu audio đã bật thì xử lý ngay.
+         *
+         * Nếu chưa bật thì giữ queue.
+         */
+        if (
+          unlockedRef.current
+        ) {
+          void processQueue();
+        }
+      },
+      [processQueue]
+    );
+
+  /* ==========================================================
+     PROCESS AFTER UNLOCK
+     ========================================================== */
+
+  useEffect(() => {
+    if (unlocked) {
+      void processQueue();
+    }
+  }, [
+    unlocked,
+    processQueue,
+  ]);
+
+  /* ==========================================================
+     CLEANUP
+     ========================================================== */
+
+  useEffect(() => {
+    return () => {
+      if (
+        audioRef.current
+      ) {
+        try {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+        } catch {
+          // ignore
+        }
+
+        audioRef.current = null;
       }
 
-      queueRef.current.push(job);
+      queueRef.current = [];
 
-      /*
-       * Nếu audio đã unlock thì xử lý ngay.
-       *
-       * Nếu chưa unlock, job nằm trong queue.
-       * Khi user bấm bật âm thanh, nó sẽ được đọc.
-       */
-      if (unlockedRef.current) {
-        void processQueueRef.current();
-      }
-    },
-    []
-  );
+      speakingRef.current =
+        false;
 
-  /* ----------------------------------------------------------
-     STOP
-     ---------------------------------------------------------- */
-
-  const stop = useCallback(() => {
-    /*
-     * Không reset unlocked.
-     *
-     * Chỉ dùng để dọn queue khi component unmount.
-     */
-    queueRef.current = [];
-    speakingRef.current = false;
+      unlockedRef.current =
+        false;
+    };
   }, []);
 
   return {
     enqueue,
     unlock,
-    stop,
     unlocked,
     audioStatus,
   };
@@ -666,15 +969,20 @@ function useTvSpeech(
 
 function useClock() {
   const [now, setNow] =
-    useState<Date | null>(null);
+    useState<Date | null>(
+      null
+    );
 
   useEffect(() => {
     setNow(new Date());
 
     const id =
-      window.setInterval(() => {
-        setNow(new Date());
-      }, 1000);
+      window.setInterval(
+        () => {
+          setNow(new Date());
+        },
+        1000
+      );
 
     return () => {
       window.clearInterval(id);
@@ -685,114 +993,183 @@ function useClock() {
 }
 
 /* ============================================================
-   MAIN TV COMPONENT
+   TV DISPLAY
    ============================================================ */
 
 export default function TvDisplayPage() {
   const params =
-    useParams<{ branchCode: string }>();
+    useParams<{
+      branchCode: string;
+    }>();
 
   const branchCode =
     params.branchCode;
 
   const [counters, setCounters] =
-    useState<CounterStatusRow[]>([]);
+    useState<
+      CounterStatusRow[]
+    >([]);
 
   const [agentQueue, setAgentQueue] =
-    useState<AgentQueueRow[]>([]);
+    useState<
+      AgentQueueRow[]
+    >([]);
 
-  /*
-   * Lịch sử các lượt đã announcement.
-   *
-   * Key:
-   * counter_code + called_at
-   */
+  const [loading, setLoading] =
+    useState(true);
+
+  const [errorMessage, setErrorMessage] =
+    useState<string | null>(
+      null
+    );
+
+  /* ==========================================================
+     ANNOUNCED CALLS
+     ========================================================== */
+
   const announcedCalls =
-    useRef<Set<string>>(new Set());
+    useRef<Set<string>>(
+      new Set()
+    );
+
+  /* ==========================================================
+     REFRESH TIMER
+     ========================================================== */
+
+  const refreshTimer =
+    useRef<number | null>(
+      null
+    );
+
+  const loadingRef =
+    useRef(false);
+
+  /* ==========================================================
+     AUDIO
+     ========================================================== */
 
   const {
     enqueue: enqueueAudio,
     unlock: unlockAudio,
-    stop: stopAudio,
     unlocked,
     audioStatus,
-  } = useTvSpeech("/api/tts");
-
-  const clock = useClock();
+  } = useTvSpeech();
 
   /* ==========================================================
-     LOAD DATA
+     CLOCK
      ========================================================== */
 
-  const loadData = useCallback(
-    async () => {
-      if (!branchCode) return;
+  const clock =
+    useClock();
 
-      try {
-        const [cRes, qRes] =
-          await Promise.all([
-            supabase.rpc(
-              "tv_counter_status",
-              {
-                p_branch_code:
-                  branchCode,
-              }
-            ),
+  /* ==========================================================
+     LOAD COUNTERS
+     ========================================================== */
 
-            supabase.rpc(
-              "tv_agent_queue_list",
-              {
-                p_branch_code:
-                  branchCode,
-              }
-            ),
-          ]);
+  const loadCounters =
+    useCallback(
+      async () => {
+        const {
+          data,
+          error,
+        } = await supabase.rpc(
+          "tv_counter_status",
+          {
+            p_branch_code:
+              branchCode,
+          }
+        );
 
-        if (cRes.error) {
+        if (error) {
           console.error(
-            "[TV] tv_counter_status error:",
-            cRes.error
+            "[TV] COUNTER RPC ERROR:",
+            error
           );
+
+          setErrorMessage(
+            error.message
+          );
+
+          return [];
         }
 
-        if (qRes.error) {
+        const result =
+          (
+            (data ?? []) as CounterStatusRow[]
+          )
+            .slice()
+            .sort(
+              (a, b) =>
+                a.display_order -
+                b.display_order
+            );
+
+        setCounters(result);
+
+        return result;
+      },
+      [branchCode]
+    );
+
+  /* ==========================================================
+     LOAD QUEUE
+     ========================================================== */
+
+  const loadAgentQueue =
+    useCallback(
+      async () => {
+        const {
+          data,
+          error,
+        } = await supabase.rpc(
+          "tv_agent_queue_list",
+          {
+            p_branch_code:
+              branchCode,
+          }
+        );
+
+        if (error) {
           console.error(
-            "[TV] tv_agent_queue_list error:",
-            qRes.error
+            "[TV] QUEUE RPC ERROR:",
+            error
           );
+
+          return [];
         }
 
-        const counterList =
+        const result =
           (
-            (cRes.data ??
-              []) as CounterStatusRow[]
-          ).sort(
-            (a, b) =>
-              a.display_order -
-              b.display_order
-          );
+            (data ?? []) as AgentQueueRow[]
+          )
+            .slice()
+            .sort(
+              (a, b) =>
+                new Date(
+                  a.created_at
+                ).getTime() -
+                new Date(
+                  b.created_at
+                ).getTime()
+            );
 
-        const queueList =
-          (
-            (qRes.data ??
-              []) as AgentQueueRow[]
-          ).sort(
-            (a, b) =>
-              new Date(
-                a.created_at
-              ).getTime() -
-              new Date(
-                b.created_at
-              ).getTime()
-          );
+        setAgentQueue(result);
 
-        setCounters(counterList);
-        setAgentQueue(queueList);
+        return result;
+      },
+      [branchCode]
+    );
 
-        /* ======================================================
-           DETECT NEW CALLS
-           ====================================================== */
+  /* ==========================================================
+     HANDLE CALLS
+     ========================================================== */
 
+  const handleCalls =
+    useCallback(
+      (
+        counterList: CounterStatusRow[],
+        queueList: AgentQueueRow[]
+      ) => {
         const activeCalls =
           counterList.filter(
             (counter) =>
@@ -804,7 +1181,9 @@ export default function TvDisplayPage() {
               )
           );
 
-        for (const call of activeCalls) {
+        for (
+          const call of activeCalls
+        ) {
           if (
             !call.queue_number ||
             !call.called_at
@@ -813,14 +1192,13 @@ export default function TvDisplayPage() {
           }
 
           /*
-           * Mỗi lần gọi mới sẽ có called_at mới.
+           * Một lần gọi được xác định bằng:
+           *
+           * counter_code + called_at
            */
           const callKey =
             `${call.counter_code}:${call.called_at}`;
 
-          /*
-           * Đã đọc rồi thì không đọc lại.
-           */
           if (
             announcedCalls.current.has(
               callKey
@@ -829,8 +1207,13 @@ export default function TvDisplayPage() {
             continue;
           }
 
+          const targetQueue =
+            normalizeQueue(
+              call.queue_number
+            );
+
           /*
-           * Tìm thông tin tài xế.
+           * Tìm đúng ticket.
            */
           const driver =
             queueList.find(
@@ -838,45 +1221,68 @@ export default function TvDisplayPage() {
                 normalizeQueue(
                   q.queue_number
                 ) ===
-                normalizeQueue(
-                  call.queue_number
-                )
+                targetQueue
             );
 
-          /*
-           * Nếu chưa lấy được driver,
-           * KHÔNG đánh dấu đã đọc.
-           *
-           * Polling sau sẽ thử lại.
-           */
-          if (!driver?.driver_name) {
+          if (!driver) {
+            console.warn(
+              "[TV] DRIVER NOT FOUND:",
+              {
+                queue:
+                  call.queue_number,
+                queueList:
+                  queueList.length,
+                counter:
+                  call.counter_code,
+              }
+            );
+
+            /*
+             * Không mark announced.
+             */
             continue;
           }
 
-          /*
-           * Giới hạn history 200 lượt.
-           */
-          if (
-            announcedCalls.current
-              .size >= 200
-          ) {
-            const firstKey =
-              announcedCalls.current
-                .values()
-                .next().value;
+          const driverName =
+            driver.driver_name?.trim();
 
-            if (firstKey) {
-              announcedCalls.current.delete(
-                firstKey
-              );
-            }
+          if (!driverName) {
+            console.warn(
+              "[TV] DRIVER NAME EMPTY:",
+              call.queue_number
+            );
+
+            continue;
           }
 
+          const counterName =
+            call.counter_name?.trim() ||
+            call.counter_code?.trim() ||
+            "quầy";
+
+          console.log(
+            "[TV] ===== NEW CALL =====",
+            {
+              queueNumber:
+                call.queue_number,
+
+              driverName,
+
+              counterCode:
+                call.counter_code,
+
+              counterName,
+
+              calledAt:
+                call.called_at,
+            }
+          );
+
           /*
-           * Đánh dấu trước khi enqueue.
+           * MARK TRƯỚC ENQUEUE.
            *
-           * Quan trọng để polling 3 giây
-           * không tạo duplicate.
+           * Queue vẫn giữ ticket nếu
+           * audio chưa bật.
            */
           announcedCalls.current.add(
             callKey
@@ -884,78 +1290,235 @@ export default function TvDisplayPage() {
 
           enqueueAudio(
             call.queue_number,
-            driver.driver_name,
-            call.counter_name ||
-              call.counter_code
+            driverName,
+            counterName
           );
         }
-      } catch (error) {
-        console.error(
-          "[TV] Load data error:",
-          error
+
+        /*
+         * Không để Set phình vô hạn.
+         */
+        if (
+          announcedCalls.current
+            .size > 500
+        ) {
+          const values =
+            Array.from(
+              announcedCalls.current
+            );
+
+          announcedCalls.current =
+            new Set(
+              values.slice(-200)
+            );
+        }
+      },
+      [enqueueAudio]
+    );
+
+  /* ==========================================================
+     REFRESH
+     ========================================================== */
+
+  const refresh =
+    useCallback(
+      async () => {
+        if (
+          loadingRef.current
+        ) {
+          return;
+        }
+
+        loadingRef.current =
+          true;
+
+        try {
+          const [
+            counterList,
+            queueList,
+          ] =
+            await Promise.all([
+              loadCounters(),
+              loadAgentQueue(),
+            ]);
+
+          setLoading(false);
+          setErrorMessage(null);
+
+          handleCalls(
+            counterList,
+            queueList
+          );
+        } catch (error) {
+          console.error(
+            "[TV] REFRESH ERROR:",
+            error
+          );
+        } finally {
+          loadingRef.current =
+            false;
+        }
+      },
+      [
+        loadCounters,
+        loadAgentQueue,
+        handleCalls,
+      ]
+    );
+
+  /* ==========================================================
+     SCHEDULE REFRESH
+     ========================================================== */
+
+  const scheduleRefresh =
+    useCallback(() => {
+      if (
+        refreshTimer.current !==
+        null
+      ) {
+        window.clearTimeout(
+          refreshTimer.current
         );
+
+        refreshTimer.current =
+          null;
       }
-    },
-    [
-      branchCode,
-      enqueueAudio,
-    ]
-  );
+
+      refreshTimer.current =
+        window.setTimeout(
+          () => {
+            refreshTimer.current =
+              null;
+
+            void refresh();
+          },
+          80
+        );
+    }, [refresh]);
 
   /* ==========================================================
-     POLLING
+     REALTIME
      ========================================================== */
 
   useEffect(() => {
-    if (!branchCode) return;
+    if (!branchCode) {
+      return;
+    }
 
-    void loadData();
+    /*
+     * Initial load.
+     */
+    void refresh();
 
-    const interval =
-      window.setInterval(() => {
-        void loadData();
-      }, 3000);
+    console.log(
+      "[TV REALTIME] SUBSCRIBE:",
+      branchCode
+    );
+
+    const channel =
+      supabase
+        .channel(
+          `tv-display-${branchCode}`
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "queue_tickets",
+          },
+          () => {
+            console.log(
+              "[TV REALTIME] queue_tickets"
+            );
+
+            scheduleRefresh();
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "service_cases",
+          },
+          () => {
+            console.log(
+              "[TV REALTIME] service_cases"
+            );
+
+            scheduleRefresh();
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "counters",
+          },
+          () => {
+            console.log(
+              "[TV REALTIME] counters"
+            );
+
+            scheduleRefresh();
+          }
+        )
+        .subscribe(
+          (status) => {
+            console.log(
+              "[TV REALTIME] STATUS:",
+              status
+            );
+          }
+        );
+
+    /*
+     * Watchdog 5s.
+     *
+     * Realtime fail vẫn có fallback.
+     */
+    const watchdog =
+      window.setInterval(
+        () => {
+          void refresh();
+        },
+        5000
+      );
 
     return () => {
+      if (
+        refreshTimer.current !==
+        null
+      ) {
+        window.clearTimeout(
+          refreshTimer.current
+        );
+
+        refreshTimer.current =
+          null;
+      }
+
       window.clearInterval(
-        interval
+        watchdog
+      );
+
+      void supabase.removeChannel(
+        channel
       );
     };
-  }, [branchCode, loadData]);
+  }, [
+    branchCode,
+    refresh,
+    scheduleRefresh,
+  ]);
 
   /* ==========================================================
-     CLEANUP
+     WAITING BY AGENT
      ========================================================== */
 
-  useEffect(() => {
-    return () => {
-      stopAudio();
-    };
-  }, [stopAudio]);
-
-  /* ==========================================================
-     WAITING QUEUE
-     ========================================================== */
-
-  const waitingQueue =
-    useMemo(() => {
-      return agentQueue.filter(
-        (q) =>
-          !isCalledQueue(
-            q,
-            counters
-          )
-      );
-    }, [
-      agentQueue,
-      counters,
-    ]);
-
-  /* ==========================================================
-     QUEUE BY COUNTER
-     ========================================================== */
-
-  const queueByCounter =
+  const waitingByAgent =
     useMemo(() => {
       const map =
         new Map<
@@ -963,228 +1526,609 @@ export default function TvDisplayPage() {
           AgentQueueRow[]
         >();
 
-      counters.forEach(
-        (counter) => {
-          if (counter.agent_id) {
-            map.set(
-              counter.agent_id,
-              []
-            );
-          }
+      for (
+        const queue of agentQueue
+      ) {
+        if (
+          !queue.agent_id
+        ) {
+          continue;
         }
-      );
 
-      waitingQueue.forEach(
-        (q) => {
-          if (
-            q.agent_id &&
-            map.has(q.agent_id)
-          ) {
-            map
-              .get(q.agent_id)
-              ?.push(q);
-          }
-        }
-      );
+        const current =
+          map.get(
+            queue.agent_id
+          ) ?? [];
+
+        current.push(queue);
+
+        map.set(
+          queue.agent_id,
+          current
+        );
+      }
 
       return map;
-    }, [
-      counters,
-      waitingQueue,
-    ]);
+    }, [agentQueue]);
 
-  /* ============================================================
-     UI
-     ============================================================ */
+  /* ==========================================================
+     UNASSIGNED
+     ========================================================== */
+
+  const unassigned =
+    useMemo(
+      () =>
+        agentQueue.filter(
+          (q) =>
+            !q.agent_id
+        ),
+      [agentQueue]
+    );
+
+  /* ==========================================================
+     TOTAL WAITING
+     ========================================================== */
+
+  const totalWaiting =
+    useMemo(
+      () =>
+        agentQueue.filter(
+          (q) =>
+            !isCalledQueue(
+              q,
+              counters
+            )
+        ).length,
+      [
+        agentQueue,
+        counters,
+      ]
+    );
+
+  /* ==========================================================
+     RENDER
+     ========================================================== */
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-slate-950 text-white select-none overflow-hidden font-sans">
-      <header className="flex h-20 items-center justify-between border-b border-slate-800 bg-slate-900/80 px-8">
-        <h1 className="text-2xl font-bold text-amber-400">
-          HỆ THỐNG GỌI SỐ - CHI NHÁNH{" "}
-          {branchCode?.toUpperCase()}
-        </h1>
+    <div className="flex min-h-screen w-screen flex-col overflow-hidden bg-paper">
 
-        <div className="flex items-center gap-6">
+      {/* ======================================================
+          AUDIO
+          ====================================================== */}
+
+      {!unlocked && (
+        <button
+          type="button"
+          onClick={() => {
+            /*
+             * unlock được gọi trực tiếp
+             * từ user click.
+             */
+            void unlockAudio();
+          }}
+          className="w-full bg-warn px-4 py-3 text-center font-body font-bold text-white hover:bg-warn/90"
+          style={{
+            fontSize: "1vw",
+          }}
+        >
+          🔊 BẤM ĐỂ BẬT ÂM THANH
+          {" — "}
+          {audioStatus}
+        </button>
+      )}
+
+      {unlocked && (
+        <div
+          className="flex items-center justify-between bg-brand-700 px-4 py-1.5 text-white"
+          style={{
+            fontSize: "0.75vw",
+          }}
+        >
+          <span>
+            🔊 {audioStatus}
+          </span>
+
           <button
+            type="button"
             onClick={() => {
-              if (!unlocked) {
-                void unlockAudio();
-              }
+              /*
+               * Test lại âm thanh bằng TTS.
+               */
+              void unlockAudio();
             }}
-            disabled={unlocked}
-            className={`rounded-lg px-4 py-2 font-medium transition-colors ${
-              unlocked
-                ? "cursor-default border border-emerald-500/30 bg-emerald-600/30 text-emerald-400"
-                : "border border-amber-500/40 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30"
-            }`}
+            className="rounded-md bg-white/15 px-3 py-1 hover:bg-white/25"
           >
-            {audioStatus}
+            Test lại âm thanh
           </button>
+        </div>
+      )}
 
-          <div className="font-mono text-2xl font-semibold text-slate-200">
-            {clock
-              ? clock.toLocaleTimeString(
-                  "vi-VN"
-                )
-              : "--:--:--"}
+      {/* ======================================================
+          HEADER
+          ====================================================== */}
+
+      <div
+        className="flex items-center justify-between border-b border-line bg-white shadow-sm"
+        style={{
+          padding:
+            "1.4vw 2.2vw",
+        }}
+      >
+        <div>
+          <p
+            className="font-body font-semibold uppercase tracking-widest text-brand-500"
+            style={{
+              fontSize: "1vw",
+            }}
+          >
+            Green SM
+          </p>
+
+          <p
+            className="font-display font-bold text-brand-900"
+            style={{
+              fontSize: "2vw",
+            }}
+          >
+            Driver Service Center
+          </p>
+        </div>
+
+        <div
+          className="flex items-center"
+          style={{
+            gap: "2.2vw",
+          }}
+        >
+          {clock && (
+            <div className="text-right">
+              <p
+                className="font-display font-bold tabular-nums text-brand-900"
+                style={{
+                  fontSize: "2.2vw",
+                }}
+              >
+                {clock.toLocaleTimeString(
+                  "vi-VN",
+                  {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  }
+                )}
+              </p>
+
+              <p
+                className="font-body capitalize text-ink/50"
+                style={{
+                  fontSize: "0.9vw",
+                }}
+              >
+                {clock.toLocaleDateString(
+                  "vi-VN",
+                  {
+                    weekday:
+                      "long",
+                    day: "2-digit",
+                    month: "2-digit",
+                    year: "numeric",
+                  }
+                )}
+              </p>
+            </div>
+          )}
+
+          <div
+            className="rounded-xl bg-brand-100 text-center"
+            style={{
+              padding:
+                "0.8vw 1.6vw",
+            }}
+          >
+            <p
+              className="font-body uppercase tracking-wide text-brand-700"
+              style={{
+                fontSize: "0.85vw",
+              }}
+            >
+              Đang chờ
+            </p>
+
+            <p
+              className="font-display font-bold text-brand-900"
+              style={{
+                fontSize: "2.2vw",
+              }}
+            >
+              {totalWaiting}
+            </p>
           </div>
         </div>
-      </header>
+      </div>
 
-      <main className="grid flex-1 grid-cols-12 gap-6 p-6 overflow-hidden">
-        {/* ====================================================
-            TRẠNG THÁI QUẦY
-           ==================================================== */}
+      {/* ======================================================
+          ERROR
+          ====================================================== */}
 
-        <section className="col-span-7 flex flex-col gap-4 overflow-y-auto pr-2">
-          <h2 className="text-xl font-semibold text-slate-400 border-b border-slate-800 pb-2">
-            TRẠNG THÁI QUẦY PHỤC VỤ
-          </h2>
+      {errorMessage && (
+        <div className="mx-[2.2vw] mt-[1vw] rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-body text-sm text-red-700">
+          Không tải được dữ liệu:
+          {" "}
+          {errorMessage}
+        </div>
+      )}
 
-          <div className="grid grid-cols-2 gap-4">
-            {counters.map(
-              (counter) => {
-                const isServing =
-                  Boolean(
-                    counter.queue_number &&
-                      counter.called_at
-                  );
+      {/* ======================================================
+          CONTENT
+          ====================================================== */}
 
-                return (
-                  <div
-                    key={
-                      counter.counter_code
-                    }
-                    className={`flex flex-col justify-between rounded-xl border p-5 ${
-                      isServing
-                        ? "border-amber-500/50 bg-amber-500/10 shadow-lg shadow-amber-500/5 animate-pulse"
-                        : "border-slate-800 bg-slate-900/50"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-2xl font-bold text-slate-200">
-                        {
-                          counter.counter_name
-                        }
-                      </span>
-
-                      <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-300">
-                        {
-                          counter.counter_status
-                        }
-                      </span>
-                    </div>
-
-                    <div className="my-4 text-center">
-                      <div className="text-xs uppercase text-slate-400">
-                        Đang gọi
-                      </div>
-
-                      <div className="text-5xl font-extrabold text-amber-400 mt-1">
-                        {counter.queue_number ??
-                          "---"}
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-            )}
+      <div
+        className="flex-1"
+        style={{
+          padding:
+            "1.6vw 2.2vw",
+        }}
+      >
+        {loading ? (
+          <div
+            className="flex items-center justify-center text-ink/40"
+            style={{
+              minHeight: "20vw",
+              fontSize: "1.2vw",
+            }}
+          >
+            Đang tải thông tin quầy...
           </div>
-        </section>
+        ) : (
+          <>
+            {/* ==================================================
+                COUNTERS
+                ================================================== */}
 
-        {/* ====================================================
-            HÀNG ĐỢI THEO TỪNG QUẦY
-           ==================================================== */}
+            <div
+              className="grid"
+              style={{
+                gridTemplateColumns:
+                  `repeat(${Math.max(
+                    counters.length,
+                    1
+                  )}, minmax(0, 1fr))`,
+                gap: "1.2vw",
+              }}
+            >
+              {counters.map(
+                (counter) => {
+                  const busy =
+                    Boolean(
+                      counter.queue_number &&
+                        counter.called_at
+                    );
 
-        <section className="col-span-5 flex flex-col rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-          <h2 className="text-xl font-semibold text-slate-400 border-b border-slate-800 pb-3 mb-3">
-            HÀNG ĐỢI THEO QUẦY
-          </h2>
+                  const myAgentQueue =
+                    counter.agent_id
+                      ? (
+                          waitingByAgent.get(
+                            counter.agent_id
+                          ) ?? []
+                        )
+                      : [];
 
-          <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-            {counters.map(
-              (counter) => {
-                const list =
-                  (counter.agent_id
-                    ? queueByCounter.get(
-                        counter.agent_id
-                      )
-                    : []) ?? [];
+                  const currentQueue =
+                    normalizeQueue(
+                      counter.queue_number
+                    );
 
-                return (
-                  <div
-                    key={
-                      counter.counter_code
-                    }
-                    className="rounded-lg border border-slate-800 bg-slate-900/90 p-3"
-                  >
-                    <div className="flex justify-between items-center border-b border-slate-800/80 pb-2 mb-2">
-                      <span className="font-bold text-amber-400">
-                        {
-                          counter.counter_name
-                        }
-                      </span>
+                  const waitingForCounter =
+                    myAgentQueue.filter(
+                      (q) =>
+                        normalizeQueue(
+                          q.queue_number
+                        ) !==
+                        currentQueue
+                    );
 
-                      <span className="text-xs text-slate-400">
-                        Đang chờ:{" "}
-                        {list.length}
-                      </span>
-                    </div>
+                  return (
+                    <div
+                      key={
+                        counter.counter_code
+                      }
+                      className="flex flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-sm"
+                    >
+                      {/* COUNTER HEADER */}
 
-                    {list.length ===
-                    0 ? (
-                      <div className="text-xs text-slate-600 italic py-1">
-                        Không có hàng chờ
+                      <div
+                        className="bg-brand-700"
+                        style={{
+                          padding:
+                            "0.7vw 1vw",
+                        }}
+                      >
+                        <p
+                          className="truncate font-body font-semibold uppercase tracking-wide text-white"
+                          style={{
+                            fontSize:
+                              "0.95vw",
+                          }}
+                        >
+                          {
+                            counter.counter_name
+                          }
+                        </p>
+
+                        <p
+                          className="font-body text-white/70"
+                          style={{
+                            fontSize:
+                              "0.7vw",
+                          }}
+                        >
+                          {
+                            counter.counter_code
+                          }
+                        </p>
                       </div>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {list.map(
-                          (item) => (
-                            <div
-                              key={
-                                item.ticket_code
-                              }
-                              className="flex justify-between items-center bg-slate-950/60 p-2 rounded border border-slate-800/50 text-sm"
-                            >
-                              <div>
-                                <span className="font-bold text-slate-200 mr-2">
-                                  {
-                                    item.queue_number
-                                  }
-                                </span>
 
-                                <span className="text-slate-400 text-xs">
-                                  {
-                                    item.driver_name
-                                  }
-                                </span>
-                              </div>
+                      {/* CURRENT CALL */}
 
-                              <span className="text-xs text-slate-500 font-mono">
-                                {new Date(
-                                  item.created_at
-                                ).toLocaleTimeString(
-                                  "vi-VN",
-                                  {
-                                    hour: "2-digit",
-                                    minute:
-                                      "2-digit",
-                                  }
-                                )}
-                              </span>
-                            </div>
-                          )
+                      <div
+                        className={`text-center ${
+                          busy
+                            ? "bg-brand-100"
+                            : "bg-paper"
+                        }`}
+                        style={{
+                          padding:
+                            "1.6vw 1vw",
+                        }}
+                      >
+                        <p
+                          className={`font-display font-extrabold ${
+                            busy
+                              ? "text-brand-900"
+                              : "text-ink/25"
+                          }`}
+                          style={{
+                            fontSize:
+                              "4.2vw",
+                            lineHeight:
+                              1.1,
+                          }}
+                        >
+                          {busy
+                            ? counter.queue_number
+                            : "—"}
+                        </p>
+
+                        {busy ? (
+                          <p
+                            className="mt-2 font-body font-semibold text-brand-700"
+                            style={{
+                              fontSize:
+                                "0.9vw",
+                            }}
+                          >
+                            ĐANG GỌI
+                          </p>
+                        ) : (
+                          <p
+                            className="mt-1 font-body uppercase tracking-wide text-ink/40"
+                            style={{
+                              fontSize:
+                                "0.8vw",
+                            }}
+                          >
+                            {counter.counter_status ===
+                            "AVAILABLE"
+                              ? "Sẵn sàng"
+                              : counter.counter_status ===
+                                "OFFLINE"
+                              ? "Offline"
+                              : counter.counter_status ===
+                                "CLOSED"
+                              ? "Đã đóng"
+                              : "Sẵn sàng"}
+                          </p>
                         )}
                       </div>
-                    )}
+
+                      {/* WAITING */}
+
+                      <div
+                        className="flex-1 border-t border-line"
+                        style={{
+                          padding:
+                            "0.9vw 1vw",
+                        }}
+                      >
+                        <p
+                          className="mb-2 font-body font-semibold uppercase tracking-wide text-ink/40"
+                          style={{
+                            fontSize:
+                              "0.8vw",
+                          }}
+                        >
+                          Đang chờ (
+                          {
+                            waitingForCounter.length
+                          }
+                          )
+                        </p>
+
+                        {waitingForCounter.length >
+                        0 ? (
+                          <div className="space-y-1.5">
+                            {waitingForCounter.map(
+                              (q) => (
+                                <div
+                                  key={
+                                    q.ticket_code
+                                  }
+                                  className="flex items-baseline justify-between border-b border-line/60 pb-1 last:border-0"
+                                >
+                                  <span
+                                    className="font-display font-bold text-brand-900"
+                                    style={{
+                                      fontSize:
+                                        "1.2vw",
+                                    }}
+                                  >
+                                    {
+                                      q.queue_number
+                                    }
+                                  </span>
+
+                                  <span
+                                    className="truncate font-body text-ink/70"
+                                    style={{
+                                      fontSize:
+                                        "0.95vw",
+                                      maxWidth:
+                                        "60%",
+                                    }}
+                                  >
+                                    {
+                                      q.driver_name
+                                    }
+                                  </span>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        ) : (
+                          <p
+                            className="font-body text-ink/30"
+                            style={{
+                              fontSize:
+                                "0.9vw",
+                            }}
+                          >
+                            Không có ai chờ.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+              )}
+
+              {counters.length ===
+                0 && (
+                <div
+                  className="col-span-full flex items-center justify-center rounded-2xl border border-dashed border-line bg-white"
+                  style={{
+                    minHeight:
+                      "15vw",
+                  }}
+                >
+                  <div className="text-center">
+                    <p
+                      className="font-display font-bold text-ink/40"
+                      style={{
+                        fontSize:
+                          "1.6vw",
+                      }}
+                    >
+                      Chưa có quầy
+                    </p>
+
+                    <p
+                      className="mt-1 font-body text-ink/30"
+                      style={{
+                        fontSize:
+                          "0.9vw",
+                      }}
+                    >
+                      Branch:
+                      {" "}
+                      {branchCode}
+                    </p>
                   </div>
-                );
-              }
+                </div>
+              )}
+            </div>
+
+            {/* ==================================================
+                UNASSIGNED
+                ================================================== */}
+
+            {unassigned.length >
+              0 && (
+              <div
+                className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm"
+                style={{
+                  marginTop:
+                    "1.2vw",
+                }}
+              >
+                <div
+                  className="bg-accent-500"
+                  style={{
+                    padding:
+                      "0.7vw 1vw",
+                  }}
+                >
+                  <p
+                    className="font-body font-semibold uppercase tracking-wide text-white"
+                    style={{
+                      fontSize:
+                        "0.95vw",
+                    }}
+                  >
+                    Chưa phân bổ Agent (
+                    {unassigned.length}
+                    )
+                  </p>
+                </div>
+
+                <div
+                  className="flex flex-wrap"
+                  style={{
+                    padding:
+                      "1vw",
+                    gap:
+                      "0.4vw 2vw",
+                  }}
+                >
+                  {unassigned.map(
+                    (q) => (
+                      <div
+                        key={
+                          q.ticket_code
+                        }
+                        className="flex items-baseline gap-2"
+                      >
+                        <span
+                          className="font-display font-bold text-brand-900"
+                          style={{
+                            fontSize:
+                              "1.2vw",
+                          }}
+                        >
+                          {
+                            q.queue_number
+                          }
+                        </span>
+
+                        <span
+                          className="font-body text-ink/70"
+                          style={{
+                            fontSize:
+                              "0.95vw",
+                          }}
+                        >
+                          {
+                            q.driver_name
+                          }
+                        </span>
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
             )}
-          </div>
-        </section>
-      </main>
+          </>
+        )}
+      </div>
     </div>
   );
 }
