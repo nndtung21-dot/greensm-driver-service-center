@@ -1010,7 +1010,7 @@ export default function TvDisplayPage() {
           data,
           error,
         } = await supabase.rpc(
-          "tv_counter_status",
+          "tv_counters_status",
           {
             p_branch_code:
               branchCode,

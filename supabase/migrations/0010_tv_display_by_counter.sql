@@ -12,7 +12,7 @@ language sql security definer set search_path = public stable as $$
   from counters co
   join branches b on b.id = co.branch_id
   left join queue_tickets qt
-    on qt.counter_id = co.id and qt.status in (\'CALLED\',\'PROCESSING\')
+    on qt.counter_id = co.id and qt.status in ('CALLED','PROCESSING')
   where b.branch_code = p_branch_code
   order by co.counter_code;
 $$;
@@ -26,7 +26,7 @@ language sql security definer set search_path = public stable as $$
   from queue_tickets qt
   join branches b on b.id = qt.branch_id
   where b.branch_code = p_branch_code
-    and qt.status in (\'WAITING\',\'PROCESSING\')
+    and qt.status in ('WAITING','PROCESSING')
   order by qt.created_at;
 $$;
 revoke all on function tv_queue_list(text) from public;

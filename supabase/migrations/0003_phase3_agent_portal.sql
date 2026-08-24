@@ -5,6 +5,7 @@
 -- =====================================================================
 
 drop policy if exists service_cases_staff_update on service_cases;
+drop policy if exists service_cases_staff_select on service_cases;
 
 create or replace view v_agent_queue with (security_invoker = true) as
 select
