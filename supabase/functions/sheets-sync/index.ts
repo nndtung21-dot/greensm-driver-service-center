@@ -102,8 +102,20 @@ async function writeSheet(
   }
 }
 
-Deno.serve(async () => {
+Deno.serve(async (req) => {
   try {
+    // Bảo vệ thêm 1 lớp phòng khi function này lỡ được deploy với
+    // --no-verify-jwt (chạy theo lịch/cron thường cần tắt verify_jwt mặc định
+    // của Supabase). Nếu đặt secret CRON_SHARED_SECRET, mọi request phải kèm
+    // header "x-cron-secret" khớp giá trị đó, tránh ai biết URL cũng gọi được.
+    const expectedSecret = Deno.env.get("CRON_SHARED_SECRET");
+    if (expectedSecret && req.headers.get("x-cron-secret") !== expectedSecret) {
+      return new Response(JSON.stringify({ ok: false, error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!

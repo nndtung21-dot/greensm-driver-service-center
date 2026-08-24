@@ -1,5 +1,23 @@
 # Green SM Driver Service Center — Driver Check-in (Phase 2)
 
+## 🚨 Cần chạy ngay: `supabase/migrations/0016_fix_call_routing_and_checkin_guard.sql`
+
+Bản rà soát gần nhất phát hiện `call_next_ticket()` (đã áp dụng ở migration 0015)
+bị lỗi logic khiến nút **"Gọi tiếp theo"** của Agent luôn báo "Không còn tài xế
+nào đang chờ" dù hàng chờ có người thật — nguyên nhân và các fix đi kèm (chặn
+check-in trùng, chống trùng mã ticket) xem chi tiết ở mục #9–11 trong
+`docs/security-fixes-log.md`.
+
+**Áp dụng ngay:** mở [SQL Editor](https://supabase.com/dashboard/project/krcqwzffwpylhjkdqhwn/sql/new),
+dán toàn bộ nội dung file `supabase/migrations/0016_fix_call_routing_and_checkin_guard.sql`, Run.
+Đây là `CREATE OR REPLACE FUNCTION` nên chạy an toàn nhiều lần, không ảnh hưởng
+dữ liệu hiện có.
+
+> Ghi chú: repo có 2 file cùng đánh số `0015_*` (nợ kỹ thuật, không ảnh hưởng vì
+> dự án đang áp dụng migration thủ công qua SQL Editor chứ chưa dùng
+> `supabase db push` để theo dõi lịch sử theo tên file). Từ `0016` trở đi đánh
+> số tiếp bình thường.
+
 Kiosk/tablet check-in flow: Section 5–11 của master prompt.
 `.env.local` đã được điền sẵn với project Supabase bạn cung cấp
 (`krcqwzffwpylhjkdqhwn`), dùng **anon key** (an toàn cho browser, được

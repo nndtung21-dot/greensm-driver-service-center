@@ -17,8 +17,12 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-  if (password.length < 6) {
-    return NextResponse.json({ error: "Mật khẩu phải từ 6 ký tự trở lên." }, { status: 400 });
+  // Regex email đơn giản, đủ chặn lỗi gõ nhầm phổ biến (không cần RFC 5322 đầy đủ).
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return NextResponse.json({ error: "Email không hợp lệ." }, { status: 400 });
+  }
+  if (password.length < 8) {
+    return NextResponse.json({ error: "Mật khẩu phải từ 8 ký tự trở lên." }, { status: 400 });
   }
   if (!["agent", "supervisor", "admin"].includes(role)) {
     return NextResponse.json({ error: "Vai trò không hợp lệ." }, { status: 400 });
