@@ -16,8 +16,19 @@ async function callAdminApi(path: string, body: Record<string, unknown>) {
     },
     body: JSON.stringify(body),
   });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? "Có lỗi xảy ra.");
+
+  let json: Record<string, unknown> | null = null;
+  try {
+    json = await res.json();
+  } catch {
+    json = null;
+  }
+
+  if (!res.ok) {
+    const rawError = json && typeof json.error === "string" ? json.error.trim() : "";
+    const message = rawError || `Lỗi máy chủ (HTTP ${res.status}).`;
+    throw new Error(message);
+  }
   return json;
 }
 
@@ -237,6 +248,7 @@ export default function AdminUsersPage() {
           password,
         });
       } catch (err) {
+        console.error("Bulk create failed for", email, err);
         results.push({
           email,
           full_name,
@@ -244,7 +256,9 @@ export default function AdminUsersPage() {
           branch_code: branchCode || "",
           status: "error",
           message:
-            err instanceof Error ? err.message : "Có lỗi xảy ra.",
+            err instanceof Error && err.message
+              ? err.message
+              : "Có lỗi xảy ra (không rõ chi tiết).",
         });
       }
     }
