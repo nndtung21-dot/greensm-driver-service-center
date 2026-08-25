@@ -2047,17 +2047,6 @@ export default function SupervisorDashboardPage() {
           "PENDING"
     ).length;
 
-  const completed =
-    rows.filter(
-      (r) =>
-        [
-          "RESOLVED",
-          "CLOSED",
-        ].includes(
-          r.status
-        )
-    ).length;
-
   const avgCsat =
     feedback.length > 0
       ? (
@@ -2156,7 +2145,8 @@ export default function SupervisorDashboardPage() {
           <StatCard
             label="Completed"
             value={
-              completed
+              summary?.completed_tickets ??
+              0
             }
           />
 
@@ -2237,7 +2227,7 @@ export default function SupervisorDashboardPage() {
               summary.total_tickets >
                 0
                 ? `${Math.round(
-                    (completed /
+                    (summary.completed_tickets /
                       summary.total_tickets) *
                       100
                   )}%`
