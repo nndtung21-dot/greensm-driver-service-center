@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/auth";
 import {
+  AgentOption,
   CaseDetail,
   CaseHistoryEntry,
   Profile,
@@ -61,6 +62,9 @@ export default function TicketDetailPage() {
   const [pendingReason, setPendingReason] = useState("");
   const [pendingNextStep, setPendingNextStep] = useState("");
   const [pendingExpected, setPendingExpected] = useState("");
+
+  const [colleagues, setColleagues] = useState<AgentOption[]>([]);
+  const [reassignTarget, setReassignTarget] = useState("");
 
   /*
    * ============================================================
@@ -195,6 +199,27 @@ export default function TicketDetailPage() {
 
   /*
    * ============================================================
+   * LOAD COLLEAGUES (cho Reassign — chỉ Supervisor/Admin dùng tới,
+   * nhưng fetch không hại gì vì RLS đã tự giới hạn theo VP)
+   * ============================================================
+   */
+
+  const loadColleagues = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, full_name, email, role")
+      .eq("role", "agent")
+      .order("full_name", { ascending: true });
+
+    if (error) {
+      return;
+    }
+
+    setColleagues((data as AgentOption[]) ?? []);
+  }, []);
+
+  /*
+   * ============================================================
    * INITIAL LOAD
    * ============================================================
    */
@@ -204,9 +229,11 @@ export default function TicketDetailPage() {
 
     load();
     loadCounters();
+    loadColleagues();
   }, [
     load,
     loadCounters,
+    loadColleagues,
   ]);
 
   /*
@@ -322,6 +349,24 @@ export default function TicketDetailPage() {
     runRpc("resume_case", {
       p_case_id: params.id,
     });
+
+  const handleReassign = () => {
+    if (!reassignTarget) {
+      setErrorMessage(
+        "Chọn agent để reassign trước đã."
+      );
+      return;
+    }
+
+    runRpc(
+      "reassign_case",
+      {
+        p_case_id: params.id,
+        p_to_agent_id: reassignTarget,
+      },
+      () => setReassignTarget("")
+    );
+  };
 
   /*
    * ============================================================
@@ -543,6 +588,10 @@ export default function TicketDetailPage() {
     detail.status ===
       "CALLED";
 
+  const isSupervisorOrAdmin =
+    profile?.role === "supervisor" ||
+    profile?.role === "admin";
+
   return (
     <div className="max-w-4xl space-y-6">
       {/* ======================================================
@@ -591,6 +640,51 @@ export default function TicketDetailPage() {
         <p className="rounded-lg bg-red-50 px-4 py-2 font-body text-sm text-danger">
           {errorMessage}
         </p>
+      )}
+
+      {/* ======================================================
+          REASSIGN (Supervisor/Admin) — dời từ bảng "Tất cả ticket"
+          trên Supervisor Dashboard sang đây khi bảng đó bị bỏ.
+          ====================================================== */}
+
+      {isSupervisorOrAdmin && (
+        <Panel title="Reassign cho Agent khác">
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={reassignTarget}
+              onChange={(e) =>
+                setReassignTarget(e.target.value)
+              }
+              className="rounded-lg border-2 border-line px-3 py-2 font-body text-sm focus:border-brand-700"
+            >
+              <option value="">
+                -- Chọn agent --
+              </option>
+
+              {colleagues.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.full_name}
+                </option>
+              ))}
+            </select>
+
+            <SecondaryButton
+              onClick={handleReassign}
+              disabled={busy || !reassignTarget}
+            >
+              Reassign
+            </SecondaryButton>
+
+            {detail.assigned_agent_id && (
+              <span className="font-body text-xs text-ink/40">
+                Đang phụ trách:{" "}
+                {colleagues.find(
+                  (a) => a.id === detail.assigned_agent_id
+                )?.full_name ?? "—"}
+              </span>
+            )}
+          </div>
+        </Panel>
       )}
 
       {/* ======================================================
@@ -674,6 +768,13 @@ export default function TicketDetailPage() {
 
         <Panel title="Thông tin Visit">
           <dl className="space-y-2 font-body text-sm">
+            <Row
+              label="Mã ticket"
+              value={
+                detail.ticket_code
+              }
+            />
+
             <Row
               label="Visit ID"
               value={

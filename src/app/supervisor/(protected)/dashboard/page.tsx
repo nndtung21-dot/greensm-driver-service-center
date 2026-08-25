@@ -1,21 +1,18 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/auth";
 import {
-  AgentOption,
   AgentQueueRow,
   Counter,
   Profile,
 } from "@/lib/types";
 import {
   SecondaryButton,
-  SlaBadge,
   StatCard,
-  StatusBadge,
 } from "@/components/agent/ui";
 
 /* =========================================================
@@ -1138,13 +1135,6 @@ export default function SupervisorDashboardPage() {
   ] = useState<Counter[]>([]);
 
   const [
-    colleagues,
-    setColleagues,
-  ] = useState<AgentOption[]>(
-    []
-  );
-
-  const [
     trendMetrics,
     setTrendMetrics,
   ] = useState<{
@@ -1196,28 +1186,6 @@ export default function SupervisorDashboardPage() {
     loading,
     setLoading,
   ] = useState(true);
-
-  const [
-    categoryFilter,
-    setCategoryFilter,
-  ] = useState("");
-
-  const [
-    statusFilter,
-    setStatusFilter,
-  ] = useState("");
-
-  const [
-    agentFilter,
-    setAgentFilter,
-  ] = useState("");
-
-  const [
-    reassignOpenFor,
-    setReassignOpenFor,
-  ] = useState<string | null>(
-    null
-  );
 
   /* =======================================================
      LOAD DATA
@@ -1296,9 +1264,6 @@ export default function SupervisorDashboardPage() {
             data: counterData,
           },
           {
-            data: colleagueData,
-          },
-          {
             data: trendData,
           },
           {
@@ -1346,17 +1311,6 @@ export default function SupervisorDashboardPage() {
             .from("counters")
             .select(
               "id, counter_code, counter_name, status, branch_id"
-            ),
-
-          /* AGENTS */
-          supabase
-            .from("profiles")
-            .select(
-              "id, full_name, email, role"
-            )
-            .eq(
-              "role",
-              "agent"
             ),
 
           /* TREND */
@@ -1456,11 +1410,6 @@ export default function SupervisorDashboardPage() {
 
         setCounters(
           (counterData as Counter[]) ??
-            []
-        );
-
-        setColleagues(
-          (colleagueData as AgentOption[]) ??
             []
         );
 
@@ -1958,100 +1907,6 @@ export default function SupervisorDashboardPage() {
   }
 
   /* =======================================================
-     REASSIGN
-  ======================================================= */
-
-  async function handleReassign(
-    caseId: string,
-    toAgentId: string
-  ) {
-    await supabase.rpc(
-      "reassign_case",
-      {
-        p_case_id: caseId,
-        p_to_agent_id:
-          toAgentId,
-      }
-    );
-
-    setReassignOpenFor(
-      null
-    );
-
-    load();
-  }
-
-  /* =======================================================
-     FILTER
-  ======================================================= */
-
-  const filtered = useMemo(
-    () => {
-      return rows.filter(
-        (r) => {
-          return (
-            (!categoryFilter ||
-              r.category_name ===
-                categoryFilter) &&
-            (!statusFilter ||
-              r.status ===
-                statusFilter) &&
-            (!agentFilter ||
-              r.agent_name ===
-                agentFilter)
-          );
-        }
-      );
-    },
-    [
-      rows,
-      categoryFilter,
-      statusFilter,
-      agentFilter,
-    ]
-  );
-
-  const categories =
-    Array.from(
-      new Set(
-        rows
-          .map(
-            (r) =>
-              r.category_name
-          )
-          .filter(
-            (
-              category
-            ): category is string =>
-              typeof category ===
-                "string" &&
-              category.length >
-                0
-          )
-      )
-    );
-
-  const agents =
-    Array.from(
-      new Set(
-        rows
-          .map(
-            (r) =>
-              r.agent_name
-          )
-          .filter(
-            (
-              agent
-            ): agent is string =>
-              typeof agent ===
-                "string" &&
-              agent.length >
-                0
-          )
-      )
-    );
-
-  /* =======================================================
      LIVE QUEUE KPI
   ======================================================= */
 
@@ -2475,316 +2330,6 @@ export default function SupervisorDashboardPage() {
         </div>
       </section>
 
-      {/* ===================================================
-          TICKET LIST
-      =================================================== */}
-
-      <section>
-        <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="font-body text-sm font-bold uppercase tracking-wide text-ink/50">
-              Tất cả ticket
-            </p>
-
-            <p className="mt-1 font-body text-xs text-ink/40">
-              {filtered.length}{" "}
-              ticket
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            {/* AGENT FILTER */}
-            <select
-              value={
-                agentFilter
-              }
-              onChange={(e) =>
-                setAgentFilter(
-                  e.target.value
-                )
-              }
-              className="rounded-lg border-2 border-line px-3 py-1.5 font-body text-sm"
-            >
-              <option value="">
-                Tất cả agent
-              </option>
-
-              {agents.map(
-                (agent) => (
-                  <option
-                    key={
-                      agent
-                    }
-                    value={
-                      agent
-                    }
-                  >
-                    {agent}
-                  </option>
-                )
-              )}
-            </select>
-
-            {/* CATEGORY FILTER */}
-            <select
-              value={
-                categoryFilter
-              }
-              onChange={(e) =>
-                setCategoryFilter(
-                  e.target.value
-                )
-              }
-              className="rounded-lg border-2 border-line px-3 py-1.5 font-body text-sm"
-            >
-              <option value="">
-                Tất cả category
-              </option>
-
-              {categories.map(
-                (category) => (
-                  <option
-                    key={
-                      category
-                    }
-                    value={
-                      category
-                    }
-                  >
-                    {category}
-                  </option>
-                )
-              )}
-            </select>
-
-            {/* STATUS FILTER */}
-            <select
-              value={
-                statusFilter
-              }
-              onChange={(e) =>
-                setStatusFilter(
-                  e.target.value
-                )
-              }
-              className="rounded-lg border-2 border-line px-3 py-1.5 font-body text-sm"
-            >
-              <option value="">
-                Tất cả trạng thái
-              </option>
-
-              <option value="WAITING">
-                Đang chờ
-              </option>
-
-              <option value="CALLED">
-                Đã gọi
-              </option>
-
-              <option value="PROCESSING">
-                Đang xử lý
-              </option>
-
-              <option value="PENDING">
-                Tạm hoãn
-              </option>
-
-              <option value="TRANSFERRED">
-                Đã chuyển
-              </option>
-
-              <option value="RESOLVED">
-                Đã giải quyết
-              </option>
-
-              <option value="CLOSED">
-                Đã đóng
-              </option>
-            </select>
-          </div>
-        </div>
-
-        <div className="overflow-hidden rounded-card border border-line bg-white">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left font-body text-sm">
-              <thead className="border-b border-line bg-paper/60 text-xs uppercase tracking-wide text-ink/50">
-                <tr>
-                  <th className="px-4 py-3">
-                    Số
-                  </th>
-
-                  <th className="px-4 py-3">
-                    Tài xế
-                  </th>
-
-                  <th className="px-4 py-3">
-                    Agent
-                  </th>
-
-                  <th className="px-4 py-3">
-                    Nhu cầu
-                  </th>
-
-                  <th className="px-4 py-3">
-                    SLA
-                  </th>
-
-                  <th className="px-4 py-3">
-                    Trạng thái
-                  </th>
-
-                  <th className="px-4 py-3">
-                    Reassign
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {loading && (
-                  <tr>
-                    <td
-                      colSpan={7}
-                      className="px-4 py-6 text-center text-ink/40"
-                    >
-                      Đang tải...
-                    </td>
-                  </tr>
-                )}
-
-                {!loading &&
-                  filtered.length ===
-                    0 && (
-                    <tr>
-                      <td
-                        colSpan={7}
-                        className="px-4 py-8 text-center text-ink/40"
-                      >
-                        Không có
-                        ticket
-                        phù hợp.
-                      </td>
-                    </tr>
-                  )}
-
-                {!loading &&
-                  filtered.map(
-                    (r) => (
-                      <tr
-                        key={
-                          r.ticket_id
-                        }
-                        className="border-b border-line last:border-0"
-                      >
-                        <td className="px-4 py-3 font-display font-bold text-brand-900">
-                          {
-                            r.queue_number
-                          }
-                        </td>
-
-                        <td className="px-4 py-3">
-                          {
-                            r.driver_name
-                          }
-                        </td>
-
-                        <td className="px-4 py-3">
-                          {r.agent_name ||
-                            "—"}
-                        </td>
-
-                        <td className="px-4 py-3">
-                          {
-                            r.category_name
-                          }
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <SlaBadge
-                            slaDueAt={
-                              r.sla_due_at
-                            }
-                          />
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <StatusBadge
-                            status={
-                              r.status
-                            }
-                          />
-                        </td>
-
-                        <td className="px-4 py-3">
-                          {reassignOpenFor ===
-                          r.case_id ? (
-                            <select
-                              autoFocus
-                              onChange={(
-                                e
-                              ) =>
-                                e
-                                  .target
-                                  .value &&
-                                handleReassign(
-                                  r.case_id,
-                                  e
-                                    .target
-                                    .value
-                                )
-                              }
-                              onBlur={() =>
-                                setReassignOpenFor(
-                                  null
-                                )
-                              }
-                              className="rounded-lg border-2 border-line px-2 py-1 font-body text-xs"
-                            >
-                              <option value="">
-                                -- Chọn
-                                agent
-                                --
-                              </option>
-
-                              {colleagues.map(
-                                (
-                                  agent
-                                ) => (
-                                  <option
-                                    key={
-                                      agent.id
-                                    }
-                                    value={
-                                      agent.id
-                                    }
-                                  >
-                                    {
-                                      agent.full_name
-                                    }
-                                  </option>
-                                )
-                              )}
-                            </select>
-                          ) : (
-                            <SecondaryButton
-                              onClick={() =>
-                                setReassignOpenFor(
-                                  r.case_id
-                                )
-                              }
-                              className="px-3 py-1 text-xs"
-                            >
-                              Reassign
-                            </SecondaryButton>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

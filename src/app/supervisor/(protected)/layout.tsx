@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getCurrentProfile, signOut } from "@/lib/auth";
 import { Profile } from "@/lib/types";
+import { TicketSearchBox } from "@/components/agent/TicketSearchBox";
 
 export default function SupervisorProtectedLayout({
   children,
@@ -47,15 +48,18 @@ export default function SupervisorProtectedLayout({
           </p>
           <p className="font-display text-lg font-bold text-brand-900">{profile.full_name}</p>
         </div>
-        <button
-          onClick={async () => {
-            await signOut();
-            router.replace("/agent/login");
-          }}
-          className="font-body text-sm text-brand-700 underline underline-offset-2"
-        >
-          Đăng xuất
-        </button>
+        <div className="flex items-center gap-6">
+          <TicketSearchBox />
+          <button
+            onClick={async () => {
+              await signOut();
+              router.replace("/agent/login");
+            }}
+            className="font-body text-sm text-brand-700 underline underline-offset-2"
+          >
+            Đăng xuất
+          </button>
+        </div>
       </header>
       <main className="px-8 py-8">{children}</main>
     </div>

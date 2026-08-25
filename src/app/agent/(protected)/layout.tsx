@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { getCurrentProfile, signOut } from "@/lib/auth";
 import { Profile } from "@/lib/types";
+import { TicketSearchBox } from "@/components/agent/TicketSearchBox";
 
 const NAV_ITEMS = [
   { href: "/agent/queue", label: "Queue của tôi" },
@@ -84,7 +85,12 @@ export default function AgentProtectedLayout({
           </button>
         </div>
       </aside>
-      <main className="flex-1 overflow-y-auto px-8 py-8">{children}</main>
+      <main className="flex-1 overflow-y-auto px-8 py-8">
+        <div className="mb-6 flex justify-end">
+          <TicketSearchBox />
+        </div>
+        {children}
+      </main>
     </div>
   );
 }

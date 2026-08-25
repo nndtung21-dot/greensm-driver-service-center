@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { getCurrentProfile, signOut } from "@/lib/auth";
 import { Profile } from "@/lib/types";
+import { TicketSearchBox } from "@/components/agent/TicketSearchBox";
 
 const NAV_ITEMS = [
   { href: "/admin/drivers", label: "Danh sách tài xế" },
@@ -88,7 +89,12 @@ export default function AdminProtectedLayout({
           </button>
         </div>
       </aside>
-      <main className="flex-1 overflow-y-auto px-8 py-8">{children}</main>
+      <main className="flex-1 overflow-y-auto px-8 py-8">
+        <div className="mb-6 flex justify-end">
+          <TicketSearchBox />
+        </div>
+        {children}
+      </main>
     </div>
   );
 }
