@@ -28,6 +28,8 @@ Ghi lại minh bạch để bạn biết chính xác đã có những gì sai v�
 
 **Bài học rút ra thêm sau đợt rà soát #18-20:** nguyên tắc "mọi policy Supervisor phải kiểm tra branch" (đã ghi ở trên) cần áp dụng cho **tất cả** bảng Supervisor có quyền đọc, không chỉ các bảng "chính" (ticket/case) — các bảng phụ trợ như `counters`, `feedback` dễ bị bỏ sót vì trông có vẻ ít nhạy cảm hơn nhưng thực chất vẫn lộ thông tin vận hành/khách hàng của VP khác.
 
+| 21 | **Thay đổi theo yêu cầu nghiệp vụ (không phải bug)**: SLA trước đây tính từ lúc tài xế CHECK-IN (`create_checkin`), nghĩa là thời gian ngồi CHỜ trong hàng đợi cũng bị trừ vào hạn xử lý của Agent | Yêu cầu trực tiếp từ người dùng | 0018: dời việc set `sla_due_at` sang `start_processing()` (chỉ set nếu chưa có, theo đúng pattern `coalesce(started_at, now())` đã dùng cho `started_at` — Transfer sang Agent khác không làm SLA chạy lại từ đầu). Sửa luôn ngưỡng WARNING trong `v_report_case_log` (trước tính sai theo `created_at`, giờ đúng theo `started_at`). Đã test: `sla_due_at` = NULL trong lúc WAITING/CALLED, chỉ xuất hiện = `started_at + sla_minutes` sau khi bấm "Bắt đầu xử lý" |
+
 **Bài học rút ra cho các Phase sau (đã áp dụng nhất quán):**
 - Mọi RPC không dành cho public phải `revoke execute ... from anon` tường minh, không chỉ dựa vào việc "không grant".
 - Mọi policy/RPC liên quan Supervisor phải luôn kiểm tra branch, không chỉ kiểm tra role.
