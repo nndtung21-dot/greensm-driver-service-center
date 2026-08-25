@@ -2,6 +2,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/auth";
 import {
@@ -1046,6 +1047,34 @@ function CategoryTrendChart({
 }
 
 /* =========================================================
+   TAB BUTTON — dùng chung cho Check-in Trend và Benchmark
+========================================================= */
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg border-2 px-3 py-1.5 font-body text-xs font-semibold transition-colors ${
+        active
+          ? "border-brand-700 bg-brand-700 text-white"
+          : "border-line bg-white text-ink/60 hover:border-brand-500"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* =========================================================
    COUNTER STATUS
 ========================================================= */
 
@@ -1148,6 +1177,20 @@ export default function SupervisorDashboardPage() {
   ] = useState<CategoryTrendPoint[]>(
     []
   );
+
+  const [
+    trendTab,
+    setTrendTab,
+  ] = useState<
+    "hour" | "day" | "category"
+  >("hour");
+
+  const [
+    benchmarkTab,
+    setBenchmarkTab,
+  ] = useState<
+    "dod" | "wow" | "mom"
+  >("dod");
 
   const [
     loading,
@@ -2103,13 +2146,13 @@ export default function SupervisorDashboardPage() {
       </div>
 
       {/* ===================================================
-          TODAY
+          TỔNG QUAN HÔM NAY
       =================================================== */}
 
       <section>
         <div className="mb-3 flex items-center justify-between">
           <p className="font-body text-sm font-bold uppercase tracking-wide text-ink/50">
-            Hôm nay
+            Tổng quan hôm nay
           </p>
 
           <span className="font-body text-xs text-ink/40">
@@ -2117,7 +2160,7 @@ export default function SupervisorDashboardPage() {
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <StatCard
             label="Total Visits"
             value={
@@ -2179,19 +2222,7 @@ export default function SupervisorDashboardPage() {
             }
             tone="danger"
           />
-        </div>
-      </section>
 
-      {/* ===================================================
-          OPERATION KPI
-      =================================================== */}
-
-      <section>
-        <p className="mb-3 font-body text-sm font-bold uppercase tracking-wide text-ink/50">
-          Operation KPI
-        </p>
-
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatCard
             label="Avg Waiting Time"
             value={
@@ -2249,86 +2280,63 @@ export default function SupervisorDashboardPage() {
       =================================================== */}
 
       <section>
-        <div className="mb-4">
-          <p className="font-body text-sm font-bold uppercase tracking-wide text-ink/50">
-            Check-in Trend
-          </p>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-body text-sm font-bold uppercase tracking-wide text-ink/50">
+              Check-in Trend
+            </p>
 
-          <p className="mt-1 font-body text-xs text-ink/40">
-            Theo dõi lượng
-            check-in theo
-            khung giờ và
-            biến động qua
-            từng ngày.
-          </p>
+            <p className="mt-1 font-body text-xs text-ink/40">
+              {trendTab === "hour"
+                ? "Hôm nay · 08:30 – 17:30"
+                : trendTab === "day"
+                ? "Biến động số lượng check-in trong 30 ngày gần nhất."
+                : "Visit theo category · 7 ngày gần nhất."}
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <TabButton
+              active={trendTab === "hour"}
+              onClick={() => setTrendTab("hour")}
+            >
+              Theo giờ
+            </TabButton>
+
+            <TabButton
+              active={trendTab === "day"}
+              onClick={() => setTrendTab("day")}
+            >
+              Theo ngày
+            </TabButton>
+
+            <TabButton
+              active={trendTab === "category"}
+              onClick={() => setTrendTab("category")}
+            >
+              Category
+            </TabButton>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-          {/* =================================================
-              HOURLY
-          ================================================= */}
-
-          <div className="min-w-0 rounded-card border border-line bg-white p-6">
-            <div className="mb-5">
-              <p className="font-body text-base font-bold text-brand-900">
-                Check-in theo
-                khung giờ
-              </p>
-
-              <p className="mt-1 font-body text-xs text-ink/45">
-                Hôm nay ·
-                08:30 – 17:30
-              </p>
-            </div>
-
+        <div className="min-w-0 rounded-card border border-line bg-white p-6">
+          {trendTab === "hour" && (
             <CheckinHourlyChart
-              data={
-                checkinHourly
-              }
+              data={checkinHourly}
             />
-          </div>
+          )}
 
-          {/* =================================================
-              DAILY
-          ================================================= */}
-
-          <div className="min-w-0 rounded-card border border-line bg-white p-6">
-            <div className="mb-5">
-              <p className="font-body text-base font-bold text-brand-900">
-                Check-in theo
-                ngày
-              </p>
-
-              <p className="mt-1 font-body text-xs text-ink/45">
-                Biến động số
-                lượng check-in
-                trong 30 ngày
-                gần nhất.
-              </p>
-            </div>
-
+          {trendTab === "day" && (
             <CheckinDailyChart
-              data={
-                checkinDaily
-              }
+              data={checkinDaily}
             />
-          </div>
-        </div>
+          )}
 
-        <div className="mt-5 min-w-0 rounded-card border border-line bg-white p-6">
-          <div className="mb-5">
-            <p className="font-body text-base font-bold text-brand-900">
-              Visit theo category
-            </p>
-
-            <p className="mt-1 font-body text-xs text-ink/45">
-              7 ngày gần nhất · số trên đầu mỗi cột là tổng ngày đó.
-            </p>
-          </div>
-
-          <CategoryTrendChart
-            data={categoryTrend}
-          />
+          {trendTab === "category" && (
+            <CategoryTrendChart
+              data={categoryTrend}
+            />
+          )}
         </div>
       </section>
 
@@ -2337,40 +2345,78 @@ export default function SupervisorDashboardPage() {
       =================================================== */}
 
       <section className="rounded-card border border-line bg-white p-5">
-        <div className="mb-5">
-          <p className="font-body text-sm font-bold uppercase tracking-wide text-ink/50">
-            Benchmark
-          </p>
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-body text-sm font-bold uppercase tracking-wide text-ink/50">
+              Benchmark
+            </p>
 
-          <p className="mt-1 font-body text-xs text-ink/40">
-            So sánh hiệu suất
-            hôm nay với các
-            mốc tham chiếu
-          </p>
+            <p className="mt-1 font-body text-xs text-ink/40">
+              So sánh hiệu suất
+              hôm nay với các
+              mốc tham chiếu
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <TabButton
+              active={benchmarkTab === "dod"}
+              onClick={() => setBenchmarkTab("dod")}
+            >
+              Hôm qua
+            </TabButton>
+
+            <TabButton
+              active={benchmarkTab === "wow"}
+              onClick={() => setBenchmarkTab("wow")}
+            >
+              Tuần trước
+            </TabButton>
+
+            <TabButton
+              active={benchmarkTab === "mom"}
+              onClick={() => setBenchmarkTab("mom")}
+            >
+              Tháng trước
+            </TabButton>
+          </div>
         </div>
 
-        <div className="space-y-5">
-          {dod && (
+        {benchmarkTab === "dod" &&
+          (dod ? (
             <BenchmarkGroup
               title="DoD · So với hôm qua"
               metrics={dod}
             />
-          )}
+          ) : (
+            <p className="font-body text-sm text-ink/40">
+              Chưa có dữ liệu để so sánh.
+            </p>
+          ))}
 
-          {wow && (
+        {benchmarkTab === "wow" &&
+          (wow ? (
             <BenchmarkGroup
               title="WoW · So với cùng ngày tuần trước"
               metrics={wow}
             />
-          )}
+          ) : (
+            <p className="font-body text-sm text-ink/40">
+              Chưa có dữ liệu để so sánh.
+            </p>
+          ))}
 
-          {mom && (
+        {benchmarkTab === "mom" &&
+          (mom ? (
             <BenchmarkGroup
               title="MoM · So với cùng kỳ tháng trước"
               metrics={mom}
             />
-          )}
-        </div>
+          ) : (
+            <p className="font-body text-sm text-ink/40">
+              Chưa có dữ liệu để so sánh.
+            </p>
+          ))}
       </section>
 
       {/* ===================================================
