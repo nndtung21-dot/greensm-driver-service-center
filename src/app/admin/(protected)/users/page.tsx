@@ -42,6 +42,21 @@ export default function AdminUsersPage() {
   const [newRole, setNewRole] = useState<UserRole>("agent");
   const [newBranch, setNewBranch] = useState("");
 
+  // bulk create
+  const [bulkText, setBulkText] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkResults, setBulkResults] = useState<
+    {
+      email: string;
+      full_name: string;
+      role: string;
+      branch_code: string;
+      status: "ok" | "error";
+      password?: string;
+      message?: string;
+    }[]
+  >([]);
+
   const load = useCallback(async () => {
     const [{ data: p }, { data: pu }, { data: b }, { data: sessionData }] = await Promise.all([
       supabase.from("profiles").select("id, full_name, email, role, branch_id, department_id, status"),
@@ -127,6 +142,134 @@ export default function AdminUsersPage() {
     }
   }
 
+  function generateTempPassword() {
+    const chars =
+      "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    const bytes = new Uint32Array(12);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => chars[b % chars.length]).join("");
+  }
+
+  const VALID_ROLES: UserRole[] = ["agent", "supervisor", "admin"];
+
+  async function handleBulkCreate() {
+    const lines = bulkText
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    if (lines.length === 0) {
+      setErrorMessage(
+        "Dán ít nhất 1 dòng: email,họ tên,vai trò,mã VP"
+      );
+      return;
+    }
+
+    setBulkBusy(true);
+    setErrorMessage(null);
+    const results: typeof bulkResults = [];
+
+    for (const line of lines) {
+      const parts = line.split(",").map((p) => p.trim());
+      const [email, full_name, roleRaw, branchCode] = parts;
+      const role = (roleRaw || "agent").toLowerCase() as UserRole;
+
+      if (!email || !full_name) {
+        results.push({
+          email: email || "(thiếu email)",
+          full_name: full_name || "",
+          role: roleRaw || "",
+          branch_code: branchCode || "",
+          status: "error",
+          message: "Thiếu email hoặc họ tên.",
+        });
+        continue;
+      }
+
+      if (!VALID_ROLES.includes(role)) {
+        results.push({
+          email,
+          full_name,
+          role: roleRaw,
+          branch_code: branchCode || "",
+          status: "error",
+          message: `Vai trò "${roleRaw}" không hợp lệ (agent/supervisor/admin).`,
+        });
+        continue;
+      }
+
+      const branch = branchCode
+        ? branches.find(
+            (b) =>
+              b.branch_code.toLowerCase() ===
+              branchCode.toLowerCase()
+          )
+        : undefined;
+
+      if (branchCode && !branch) {
+        results.push({
+          email,
+          full_name,
+          role,
+          branch_code: branchCode,
+          status: "error",
+          message: `Không tìm thấy VP có mã "${branchCode}".`,
+        });
+        continue;
+      }
+
+      const password = generateTempPassword();
+
+      try {
+        await callAdminApi("/api/admin/create-user", {
+          email,
+          password,
+          full_name,
+          role,
+          branch_id: branch?.id ?? null,
+        });
+        results.push({
+          email,
+          full_name,
+          role,
+          branch_code: branch?.branch_code ?? "",
+          status: "ok",
+          password,
+        });
+      } catch (err) {
+        results.push({
+          email,
+          full_name,
+          role,
+          branch_code: branchCode || "",
+          status: "error",
+          message:
+            err instanceof Error ? err.message : "Có lỗi xảy ra.",
+        });
+      }
+    }
+
+    setBulkResults(results);
+    setBulkBusy(false);
+    load();
+  }
+
+  function copyBulkResults() {
+    const header = "email\thọ tên\tvai trò\tVP\tmật khẩu tạm\n";
+    const rows = bulkResults
+      .map((r) =>
+        [
+          r.email,
+          r.full_name,
+          r.role,
+          r.branch_code,
+          r.status === "ok" ? r.password : `LỖI: ${r.message}`,
+        ].join("\t")
+      )
+      .join("\n");
+    navigator.clipboard.writeText(header + rows);
+  }
+
   if (loading) return <p className="font-body text-ink/50">Đang tải...</p>;
 
   return (
@@ -196,6 +339,94 @@ export default function AdminUsersPage() {
             {busy ? "Đang tạo..." : "+ Tạo tài khoản"}
           </PrimaryButton>
         </form>
+      </Panel>
+
+      <Panel title="Tạo hàng loạt">
+        <p className="mb-3 font-body text-xs text-ink/50">
+          Mỗi dòng 1 người, cách nhau bằng dấu phẩy:{" "}
+          <code className="rounded bg-paper px-1">
+            email,họ tên,vai trò,mã VP
+          </code>
+          . Vai trò: agent/supervisor/admin. Mã VP để trống nếu chưa gán.
+          Mật khẩu tạm được tự sinh, hiện ở bảng kết quả bên dưới sau khi
+          tạo xong — copy gửi lại cho từng người.
+        </p>
+
+        <textarea
+          value={bulkText}
+          onChange={(e) => setBulkText(e.target.value)}
+          placeholder={
+            "agent1@greensm.vn,Nguyễn Văn A,agent,HCM01\nsup1@greensm.vn,Trần Thị B,supervisor,HCM01"
+          }
+          rows={5}
+          className="w-full rounded-lg border-2 border-line px-3 py-2 font-body text-sm focus:border-brand-700"
+        />
+
+        <div className="mt-3">
+          <PrimaryButton
+            onClick={handleBulkCreate}
+            disabled={bulkBusy}
+            className="px-4 py-2 text-sm"
+          >
+            {bulkBusy ? "Đang tạo..." : "+ Tạo hàng loạt"}
+          </PrimaryButton>
+        </div>
+
+        {bulkResults.length > 0 && (
+          <div className="mt-5">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="font-body text-sm font-semibold text-ink">
+                Kết quả (
+                {bulkResults.filter((r) => r.status === "ok").length}/
+                {bulkResults.length} thành công)
+              </p>
+              <SecondaryButton
+                onClick={copyBulkResults}
+                className="px-3 py-1 text-xs"
+              >
+                Copy toàn bộ
+              </SecondaryButton>
+            </div>
+
+            <div className="overflow-x-auto rounded-lg border border-line">
+              <table className="w-full text-left font-body text-sm">
+                <thead className="border-b border-line bg-paper/60 text-xs uppercase tracking-wide text-ink/50">
+                  <tr>
+                    <th className="px-3 py-2">Email</th>
+                    <th className="px-3 py-2">Họ tên</th>
+                    <th className="px-3 py-2">Vai trò</th>
+                    <th className="px-3 py-2">VP</th>
+                    <th className="px-3 py-2">Mật khẩu tạm / Lỗi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bulkResults.map((r, i) => (
+                    <tr
+                      key={i}
+                      className="border-b border-line last:border-0"
+                    >
+                      <td className="px-3 py-2">{r.email}</td>
+                      <td className="px-3 py-2">{r.full_name}</td>
+                      <td className="px-3 py-2">{r.role}</td>
+                      <td className="px-3 py-2">{r.branch_code || "—"}</td>
+                      <td className="px-3 py-2">
+                        {r.status === "ok" ? (
+                          <code className="rounded bg-brand-100 px-1.5 py-0.5 text-brand-900">
+                            {r.password}
+                          </code>
+                        ) : (
+                          <span className="text-danger">
+                            {r.message}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </Panel>
 
       {pending.length > 0 && (
