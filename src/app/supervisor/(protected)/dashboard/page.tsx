@@ -52,6 +52,12 @@ type CheckinByDay = {
   count: number;
 };
 
+type CategoryTrendPoint = {
+  business_date: string;
+  category: string;
+  visit_count: number;
+};
+
 type TrendValue = {
   current: number;
   previous: number;
@@ -886,6 +892,160 @@ function CheckinDailyChart({
 }
 
 /* =========================================================
+   CATEGORY TREND (7 NGÀY) — cột chồng, mỗi màu 1 category.
+   Số trên đầu mỗi cột là tổng ngày đó (đã có Total Visits/DoD
+   ở nơi khác, nên ở đây không lặp lại thẻ tổng riêng).
+========================================================= */
+
+const CATEGORY_TREND_COLORS = [
+  "bg-brand-700",
+  "bg-accent-500",
+  "bg-brand-500",
+  "bg-warn",
+  "bg-ink",
+];
+
+function CategoryTrendChart({
+  data,
+}: {
+  data: CategoryTrendPoint[];
+}) {
+  if (!data.length) {
+    return (
+      <div className="flex h-[220px] items-center justify-center text-sm text-ink/40">
+        Chưa có dữ liệu
+      </div>
+    );
+  }
+
+  const dates = Array.from(
+    new Set(
+      data.map((d) => d.business_date)
+    )
+  ).sort();
+
+  const totalsByCategory = new Map<
+    string,
+    number
+  >();
+
+  data.forEach((d) => {
+    totalsByCategory.set(
+      d.category,
+      (totalsByCategory.get(d.category) ?? 0) +
+        d.visit_count
+    );
+  });
+
+  // Top 5 category theo tổng lượt 7 ngày. Hiện tại hệ thống có đúng 5
+  // category nên chưa cần gộp "Khác" — nếu sau này thêm category thứ 6
+  // trở lên, phần vượt quá sẽ không hiện trên chart (cần bổ sung logic
+  // gộp "Khác" khi đó).
+  const categories = Array.from(
+    totalsByCategory.entries()
+  )
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name]) => name);
+
+  const dailyTotals = dates.map((date) =>
+    data
+      .filter((d) => d.business_date === date)
+      .reduce((sum, d) => sum + d.visit_count, 0)
+  );
+
+  const maxTotal = Math.max(
+    ...dailyTotals,
+    1
+  );
+
+  const barMaxHeight = 140;
+
+  return (
+    <div className="w-full">
+      <div className="mb-4 flex flex-wrap gap-3">
+        {categories.map((cat, i) => (
+          <span
+            key={cat}
+            className="flex items-center gap-1.5 font-body text-xs text-ink/60"
+          >
+            <span
+              className={`h-2.5 w-2.5 rounded-sm ${CATEGORY_TREND_COLORS[i % CATEGORY_TREND_COLORS.length]}`}
+            />
+            {cat}
+          </span>
+        ))}
+      </div>
+
+      <div
+        className="flex items-end justify-between gap-2"
+        style={{
+          height: barMaxHeight + 40,
+        }}
+      >
+        {dates.map((date, dateIndex) => {
+          const dayRows = data.filter(
+            (d) => d.business_date === date
+          );
+
+          const [year, month, day] =
+            date.split("-");
+
+          return (
+            <div
+              key={date}
+              className="flex flex-1 flex-col items-center gap-1.5"
+            >
+              <span className="font-body text-[11px] font-semibold text-ink/60">
+                {dailyTotals[dateIndex]}
+              </span>
+
+              <div
+                className="flex w-full max-w-[36px] flex-col-reverse overflow-hidden rounded-t"
+                style={{
+                  height: barMaxHeight,
+                }}
+              >
+                {categories.map((cat, i) => {
+                  const value =
+                    dayRows.find(
+                      (d) => d.category === cat
+                    )?.visit_count ?? 0;
+
+                  const segHeight =
+                    (value / maxTotal) *
+                    barMaxHeight;
+
+                  return value > 0 ? (
+                    <div
+                      key={cat}
+                      className={
+                        CATEGORY_TREND_COLORS[
+                          i %
+                            CATEGORY_TREND_COLORS.length
+                        ]
+                      }
+                      style={{
+                        height: segHeight,
+                      }}
+                      title={`${cat}: ${value}`}
+                    />
+                  ) : null;
+                })}
+              </div>
+
+              <span className="font-body text-[11px] text-ink/40">
+                {day}/{month}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
    COUNTER STATUS
 ========================================================= */
 
@@ -983,6 +1143,13 @@ export default function SupervisorDashboardPage() {
   );
 
   const [
+    categoryTrend,
+    setCategoryTrend,
+  ] = useState<CategoryTrendPoint[]>(
+    []
+  );
+
+  const [
     loading,
     setLoading,
   ] = useState(true);
@@ -1032,6 +1199,11 @@ export default function SupervisorDashboardPage() {
         const weekAgoStr =
           dateToString(
             addDays(today, -7)
+          );
+
+        const sevenDaysAgoStr =
+          dateToString(
+            addDays(today, -6)
           );
 
         const monthAgoStr =
@@ -1085,6 +1257,9 @@ export default function SupervisorDashboardPage() {
           },
           {
             data: trendData,
+          },
+          {
+            data: categoryTrendData,
           },
           {
             data: checkinData,
@@ -1150,6 +1325,29 @@ export default function SupervisorDashboardPage() {
             .gte(
               "business_date",
               monthAgoStr
+            )
+            .lte(
+              "business_date",
+              todayStr
+            )
+            .order(
+              "business_date",
+              {
+                ascending: true,
+              }
+            ),
+
+          /* CATEGORY TREND — 7 ngày gần nhất */
+          supabase
+            .from(
+              "v_report_category_trend"
+            )
+            .select(
+              "business_date, category, visit_count"
+            )
+            .gte(
+              "business_date",
+              sevenDaysAgoStr
             )
             .lte(
               "business_date",
@@ -1602,6 +1800,11 @@ export default function SupervisorDashboardPage() {
 
         setCheckinDaily(
           dailyChart
+        );
+
+        setCategoryTrend(
+          (categoryTrendData as CategoryTrendPoint[]) ??
+            []
         );
       } finally {
         setLoading(false);
@@ -2120,6 +2323,22 @@ export default function SupervisorDashboardPage() {
               }
             />
           </div>
+        </div>
+
+        <div className="mt-5 min-w-0 rounded-card border border-line bg-white p-6">
+          <div className="mb-5">
+            <p className="font-body text-base font-bold text-brand-900">
+              Visit theo category
+            </p>
+
+            <p className="mt-1 font-body text-xs text-ink/45">
+              7 ngày gần nhất · số trên đầu mỗi cột là tổng ngày đó.
+            </p>
+          </div>
+
+          <CategoryTrendChart
+            data={categoryTrend}
+          />
         </div>
       </section>
 
