@@ -78,15 +78,23 @@ export default function AdminProtectedLayout({
         <div className="border-t border-line pt-4">
           <p className="font-body text-sm font-semibold text-ink">{profile.full_name}</p>
           <p className="mb-3 font-body text-xs text-ink/50">{profile.email}</p>
-          <button
-            onClick={async () => {
-              await signOut();
-              router.replace("/agent/login");
-            }}
-            className="font-body text-sm text-brand-700 underline underline-offset-2"
-          >
-            Đăng xuất
-          </button>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/agent/change-password"
+              className="font-body text-sm text-brand-700 underline underline-offset-2"
+            >
+              Đổi mật khẩu
+            </Link>
+            <button
+              onClick={async () => {
+                await signOut();
+                router.replace("/agent/login");
+              }}
+              className="font-body text-sm text-brand-700 underline underline-offset-2"
+            >
+              Đăng xuất
+            </button>
+          </div>
         </div>
       </aside>
       <main className="flex-1 overflow-y-auto px-8 py-8">

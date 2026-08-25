@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { getCurrentProfile, signOut } from "@/lib/auth";
 import { Profile } from "@/lib/types";
 import { TicketSearchBox } from "@/components/agent/TicketSearchBox";
@@ -50,6 +51,12 @@ export default function SupervisorProtectedLayout({
         </div>
         <div className="flex items-center gap-6">
           <TicketSearchBox />
+          <Link
+            href="/agent/change-password"
+            className="font-body text-sm text-brand-700 underline underline-offset-2"
+          >
+            Đổi mật khẩu
+          </Link>
           <button
             onClick={async () => {
               await signOut();
