@@ -2,6 +2,36 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/supabase/adminAuth";
 
+function describeError(err: unknown): string {
+  if (err && typeof err === "object") {
+    const anyErr = err as Record<string, unknown>;
+    const parts: string[] = [];
+    if (typeof anyErr.message === "string" && anyErr.message) {
+      parts.push(`message="${anyErr.message}"`);
+    }
+    if (typeof anyErr.name === "string" && anyErr.name) {
+      parts.push(`name="${anyErr.name}"`);
+    }
+    if (typeof anyErr.status !== "undefined") {
+      parts.push(`status=${JSON.stringify(anyErr.status)}`);
+    }
+    if (typeof anyErr.code !== "undefined") {
+      parts.push(`code=${JSON.stringify(anyErr.code)}`);
+    }
+    if (parts.length > 0) {
+      return parts.join(", ");
+    }
+    // Không có field nào quen thuộc -> in toàn bộ own properties (kể cả
+    // non-enumerable) để không bỏ sót gì.
+    try {
+      return JSON.stringify(err, Object.getOwnPropertyNames(err));
+    } catch {
+      return String(err);
+    }
+  }
+  return String(err);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const auth = await requireAdmin(req);
@@ -37,8 +67,13 @@ export async function POST(req: NextRequest) {
       email_confirm: true,
     });
     if (createError || !created?.user) {
+      console.error("createUser failed:", createError);
       return NextResponse.json(
-        { error: createError?.message ?? "Không tạo được tài khoản." },
+        {
+          error: createError
+            ? `Không tạo được tài khoản (${describeError(createError)}).`
+            : "Không tạo được tài khoản (không rõ lý do — createUser trả về rỗng).",
+        },
         { status: 400 }
       );
     }
@@ -53,9 +88,13 @@ export async function POST(req: NextRequest) {
     });
 
     if (profileError) {
+      console.error("profiles insert failed:", profileError);
       // dọn lại nếu tạo profile thất bại, tránh mồ côi tài khoản Auth
       await admin.auth.admin.deleteUser(created.user.id);
-      return NextResponse.json({ error: profileError.message }, { status: 400 });
+      return NextResponse.json(
+        { error: `Tạo profile thất bại (${describeError(profileError)}).` },
+        { status: 400 }
+      );
     }
 
     return NextResponse.json({ ok: true, id: created.user.id });
@@ -64,8 +103,9 @@ export async function POST(req: NextRequest) {
     // Environment Variables trên Vercel -> getSupabaseAdmin() throw). Không có
     // try/catch này, Next.js trả về response rỗng "{}" khiến client không biết
     // lỗi thật là gì.
+    console.error("create-user route crashed:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Lỗi máy chủ không xác định." },
+      { error: err instanceof Error ? err.message : describeError(err) },
       { status: 500 }
     );
   }
