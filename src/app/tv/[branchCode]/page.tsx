@@ -223,10 +223,6 @@ function numberToVietnameseWords(
     );
   }
 
-  /*
-   * Counter thực tế thường < 1000.
-   * Nếu lớn hơn thì đọc từng ký tự.
-   */
   return String(n)
     .split("")
     .map(
@@ -246,11 +242,6 @@ function extractCounterNumber(
   const value =
     counterName.trim();
 
-  /*
-   * Quầy 04
-   * Quầy số 04
-   * QUẦY 04
-   */
   const match =
     value.match(
       /(?:quầy\s*(?:số\s*)?)(\d+)/i
@@ -260,17 +251,10 @@ function extractCounterNumber(
     return match[1];
   }
 
-  /*
-   * Chỉ là số
-   */
   if (/^\d+$/.test(value)) {
     return value;
   }
 
-  /*
-   * Fallback:
-   * lấy cụm số cuối.
-   */
   const fallback =
     value.match(/(\d+)\s*$/);
 
@@ -302,9 +286,6 @@ function counterNumberToWords(
     );
   }
 
-  /*
-   * Fallback nếu counter không phải số.
-   */
   return [...number]
     .map(
       (ch) =>
@@ -318,20 +299,6 @@ function counterNumberToWords(
 /* ============================================================
    QUEUE NUMBER
    ============================================================ */
-
-/*
- * Queue là MÃ.
- *
- * A012
- * =>
- * "a không một hai"
- *
- * 012
- * =>
- * "không một hai"
- *
- * Không đọc 012 thành "mười hai".
- */
 
 function queueNumberToWords(
   queueNumber: string
@@ -414,10 +381,6 @@ function useTvSpeech() {
       "Chưa bật âm thanh"
     );
 
-  /* ==========================================================
-     GET AUDIO ELEMENT
-     ========================================================== */
-
   const getAudio =
     useCallback(() => {
       if (
@@ -441,10 +404,6 @@ function useTvSpeech() {
       return audioRef.current;
     }, []);
 
-  /* ==========================================================
-     SPEAK ONE TEXT
-     ========================================================== */
-
   const speak =
     useCallback(
       async (
@@ -459,16 +418,9 @@ function useTvSpeech() {
           );
         }
 
-        /*
-         * Dừng audio cũ.
-         */
         audio.pause();
-
         audio.currentTime = 0;
 
-        /*
-         * Google TTS API nội bộ.
-         */
         const url =
           `/api/tts?text=${encodeURIComponent(
             text
@@ -482,11 +434,7 @@ function useTvSpeech() {
           }
         );
 
-        /*
-         * Gán source trực tiếp.
-         */
         audio.src = url;
-
         audio.load();
 
         await new Promise<void>(
@@ -592,10 +540,6 @@ function useTvSpeech() {
       [getAudio]
     );
 
-  /* ==========================================================
-     UNLOCK / TEST AUDIO
-     ========================================================== */
-
   const unlock =
     useCallback(
       async () => {
@@ -604,20 +548,9 @@ function useTvSpeech() {
         );
 
         try {
-          /*
-           * Test bằng chính Google TTS.
-           */
           const text =
             "Âm thanh thông báo đã được bật";
 
-          /*
-           * Quan trọng:
-           *
-           * unlock được gọi trực tiếp
-           * từ onClick.
-           *
-           * speak -> audio.play()
-           */
           await speak(text);
 
           unlockedRef.current =
@@ -654,10 +587,6 @@ function useTvSpeech() {
       },
       [speak]
     );
-
-  /* ==========================================================
-     PROCESS QUEUE
-     ========================================================== */
 
   const processQueue =
     useCallback(
@@ -706,9 +635,6 @@ function useTvSpeech() {
               job.text
             );
 
-            /*
-             * ĐỌC 2 LẦN.
-             */
             for (
               let repeat = 1;
               repeat <= 2;
@@ -742,9 +668,6 @@ function useTvSpeech() {
                 );
               }
 
-              /*
-               * Khoảng cách giữa 2 lần đọc.
-               */
               if (
                 repeat === 1
               ) {
@@ -758,9 +681,6 @@ function useTvSpeech() {
               }
             }
 
-            /*
-             * Khoảng cách giữa 2 ticket.
-             */
             await new Promise<void>(
               (resolve) =>
                 window.setTimeout(
@@ -777,10 +697,6 @@ function useTvSpeech() {
             "[TV TTS] ===== QUEUE END ====="
           );
 
-          /*
-           * Nếu có ticket mới được enqueue
-           * trong lúc đang đọc thì chạy tiếp.
-           */
           if (
             unlockedRef.current &&
             queueRef.current.length >
@@ -797,10 +713,6 @@ function useTvSpeech() {
       },
       [speak]
     );
-
-  /* ==========================================================
-     ENQUEUE
-     ========================================================== */
 
   const enqueue =
     useCallback(
@@ -837,12 +749,6 @@ function useTvSpeech() {
           text,
         });
 
-        /*
-         * Nếu audio đã bật thì chạy ngay.
-         *
-         * Nếu chưa bật:
-         * giữ queue lại.
-         */
         if (
           unlockedRef.current
         ) {
@@ -852,10 +758,6 @@ function useTvSpeech() {
       [processQueue]
     );
 
-  /* ==========================================================
-     PROCESS AFTER UNLOCK
-     ========================================================== */
-
   useEffect(() => {
     if (unlocked) {
       void processQueue();
@@ -864,10 +766,6 @@ function useTvSpeech() {
     unlocked,
     processQueue,
   ]);
-
-  /* ==========================================================
-     CLEANUP
-     ========================================================== */
 
   useEffect(() => {
     return () => {
@@ -960,18 +858,10 @@ export default function TvDisplayPage() {
       null
     );
 
-  /* ==========================================================
-     ANNOUNCED CALLS
-     ========================================================== */
-
   const announcedCalls =
     useRef<Set<string>>(
       new Set()
     );
-
-  /* ==========================================================
-     REFRESH TIMER
-     ========================================================== */
 
   const refreshTimer =
     useRef<number | null>(
@@ -981,20 +871,12 @@ export default function TvDisplayPage() {
   const loadingRef =
     useRef(false);
 
-  /* ==========================================================
-     AUDIO
-     ========================================================== */
-
   const {
     enqueue: enqueueAudio,
     unlock: unlockAudio,
     unlocked,
     audioStatus,
   } = useTvSpeech();
-
-  /* ==========================================================
-     CLOCK
-     ========================================================== */
 
   const clock =
     useClock();
@@ -1128,11 +1010,6 @@ export default function TvDisplayPage() {
             continue;
           }
 
-          /*
-           * Một lần gọi được xác định bằng:
-           *
-           * counter_code + called_at
-           */
           const callKey =
             `${call.counter_code}:${call.called_at}`;
 
@@ -1149,9 +1026,6 @@ export default function TvDisplayPage() {
               call.queue_number
             );
 
-          /*
-           * Tìm đúng ticket.
-           */
           const driver =
             queueList.find(
               (q) =>
@@ -1174,11 +1048,6 @@ export default function TvDisplayPage() {
               }
             );
 
-            /*
-             * Không mark announced.
-             *
-             * Refresh sau vẫn tìm lại.
-             */
             continue;
           }
 
@@ -1191,15 +1060,9 @@ export default function TvDisplayPage() {
               call.queue_number
             );
 
-            /*
-             * Không mark.
-             */
             continue;
           }
 
-          /*
-           * Ưu tiên counter_name.
-           */
           const counterName =
             call.counter_name?.trim() ||
             call.counter_code?.trim() ||
@@ -1223,12 +1086,6 @@ export default function TvDisplayPage() {
             }
           );
 
-          /*
-           * MARK TRƯỚC ENQUEUE.
-           *
-           * Tránh duplicate do watchdog
-           * hoặc realtime.
-           */
           announcedCalls.current.add(
             callKey
           );
@@ -1240,9 +1097,6 @@ export default function TvDisplayPage() {
           );
         }
 
-        /*
-         * Không để Set phình vô hạn.
-         */
         if (
           announcedCalls.current
             .size > 500
@@ -1350,9 +1204,6 @@ export default function TvDisplayPage() {
       return;
     }
 
-    /*
-     * Initial load.
-     */
     void refresh();
 
     console.log(
@@ -1419,11 +1270,6 @@ export default function TvDisplayPage() {
           }
         );
 
-    /*
-     * Watchdog 5s.
-     *
-     * Realtime fail vẫn có fallback.
-     */
     const watchdog =
       window.setInterval(
         () => {
@@ -1545,12 +1391,6 @@ export default function TvDisplayPage() {
         <button
           type="button"
           onClick={() => {
-            /*
-             * Gọi trực tiếp từ click.
-             *
-             * Google TTS được phát qua
-             * HTMLAudioElement.
-             */
             void unlockAudio();
           }}
           className="w-full bg-warn px-4 py-3 text-center font-body font-bold text-white hover:bg-warn/90"
@@ -1578,9 +1418,6 @@ export default function TvDisplayPage() {
           <button
             type="button"
             onClick={() => {
-              /*
-               * Test lại Google TTS.
-               */
               void unlockAudio();
             }}
             className="rounded-md bg-white/15 px-3 py-1 hover:bg-white/25"
@@ -1774,6 +1611,16 @@ export default function TvDisplayPage() {
                         currentQueue
                     );
 
+                  /*
+                   * QUẦY THỨ 6:
+                   * Header màu cam đậm.
+                   *
+                   * Chỉ đổi background.
+                   * Chữ vẫn text-white.
+                   */
+                  const isOrangeCounter =
+                    counter.display_order === 6;
+
                   return (
                     <div
                       key={
@@ -1784,7 +1631,11 @@ export default function TvDisplayPage() {
                       {/* COUNTER HEADER */}
 
                       <div
-                        className="bg-brand-700"
+                        className={
+                          isOrangeCounter
+                            ? "bg-orange-600"
+                            : "bg-brand-700"
+                        }
                         style={{
                           padding:
                             "0.7vw 1vw",
