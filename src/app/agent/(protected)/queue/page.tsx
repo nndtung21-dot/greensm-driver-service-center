@@ -26,6 +26,7 @@ type MyCounter = {
   counter_name: string;
   status: "AVAILABLE" | "BUSY" | "CLOSED";
   current_agent_id: string | null;
+  default_agent_id: string | null;
 };
 
 function minutesSince(iso: string) {
@@ -91,11 +92,17 @@ export default function AgentQueuePage() {
    * ============================================================
    * LOAD MY COUNTER
    *
-   * Quầy của Agent được xác định bằng:
+   * Agent được xem là thuộc quầy nếu:
    *
-   * counters.current_agent_id = profile.id
+   * 1. current_agent_id = Agent
+   *    hoặc
+   * 2. default_agent_id = Agent
    *
-   * và cùng branch với Agent.
+   * Điều này giúp Agent vẫn nhận diện được quầy khi quầy
+   * đang AVAILABLE và chưa có current_agent_id.
+   *
+   * Nếu đang BUSY:
+   * current_agent_id sẽ là Agent đang xử lý ticket.
    * ============================================================
    */
 
@@ -114,18 +121,20 @@ export default function AgentQueuePage() {
             counter_code,
             counter_name,
             status,
-            current_agent_id
+            current_agent_id,
+            default_agent_id
           `
         )
         .eq(
           "branch_id",
           currentProfile.branch_id
         )
-        .eq(
-          "current_agent_id",
-          currentProfile.id
+        .or(
+          `current_agent_id.eq.${currentProfile.id},default_agent_id.eq.${currentProfile.id}`
         )
-        .maybeSingle();
+        .order("counter_code", {
+          ascending: true,
+        });
 
       if (error) {
         setErrorMessage(error.message);
@@ -133,9 +142,31 @@ export default function AgentQueuePage() {
         return;
       }
 
-      setMyCounter(
-        (data as MyCounter) ?? null
-      );
+      const counters =
+        (data as MyCounter[]) ?? [];
+
+      /*
+       * Nếu Agent đang trực tiếp xử lý tại một quầy,
+       * ưu tiên quầy có current_agent_id.
+       *
+       * Nếu chưa có current_agent_id,
+       * lấy quầy có default_agent_id.
+       */
+
+      const activeCounter =
+        counters.find(
+          (counter) =>
+            counter.current_agent_id ===
+            currentProfile.id
+        ) ??
+        counters.find(
+          (counter) =>
+            counter.default_agent_id ===
+            currentProfile.id
+        ) ??
+        null;
+
+      setMyCounter(activeCounter);
     },
     []
   );
@@ -187,6 +218,7 @@ export default function AgentQueuePage() {
   useEffect(() => {
     const channel = supabase
       .channel("agent-queue-changes")
+
       .on(
         "postgres_changes",
         {
@@ -194,8 +226,11 @@ export default function AgentQueuePage() {
           schema: "public",
           table: "queue_tickets",
         },
-        loadQueue
+        () => {
+          loadQueue();
+        }
       )
+
       .on(
         "postgres_changes",
         {
@@ -203,8 +238,11 @@ export default function AgentQueuePage() {
           schema: "public",
           table: "service_cases",
         },
-        loadQueue
+        () => {
+          loadQueue();
+        }
       )
+
       .on(
         "postgres_changes",
         {
@@ -222,10 +260,13 @@ export default function AgentQueuePage() {
           await loadQueue();
         }
       )
+
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(
+        channel
+      );
     };
   }, [
     loadQueue,
@@ -237,64 +278,73 @@ export default function AgentQueuePage() {
    * ============================================================
    * FILTER
    *
-   * ALL:
-   *   Hiển thị toàn bộ ticket mà v_agent_queue trả về.
+   * ALL
+   *   → toàn bộ ticket
    *
-   * MINE:
-   *   Chỉ ticket thuộc counter của Agent hiện tại.
+   * MINE
+   *   → ticket thuộc counter của Agent
+   *
+   * Ticket cũ chưa có counter_id nhưng assigned_agent_id
+   * chính là Agent hiện tại vẫn được hiển thị.
    * ============================================================
    */
 
-  const filteredRows = rows.filter(
-    (row) => {
+  const filteredRows =
+    rows.filter((row) => {
       if (queueFilter === "ALL") {
         return true;
       }
 
       if (!myCounter) {
-        return false;
+        return (
+          row.assigned_agent_id ===
+          profile?.id
+        );
       }
 
       return (
         row.counter_id ===
-        myCounter.id
+          myCounter.id ||
+        row.assigned_agent_id ===
+          profile?.id
       );
-    }
-  );
+    });
 
   /*
    * ============================================================
    * STATS
-   *
-   * Stats chạy theo filter đang chọn.
    * ============================================================
    */
 
-  const waiting = filteredRows.filter(
-    (row) =>
-      row.status === "WAITING"
-  );
+  const waiting =
+    filteredRows.filter(
+      (row) =>
+        row.status === "WAITING"
+    );
 
-  const processing = filteredRows.filter(
-    (row) =>
-      row.status === "PROCESSING"
-  );
+  const processing =
+    filteredRows.filter(
+      (row) =>
+        row.status === "PROCESSING"
+    );
 
-  const pending = filteredRows.filter(
-    (row) =>
-      row.status === "PENDING"
-  );
+  const pending =
+    filteredRows.filter(
+      (row) =>
+        row.status === "PENDING"
+    );
 
-  const overSla = filteredRows.filter(
-    (row) =>
-      row.sla_due_at &&
-      new Date(
-        row.sla_due_at
-      ).getTime() < Date.now() &&
-      !row.resolved_at &&
-      !row.closed_at &&
-      row.status !== "PENDING"
-  );
+  const overSla =
+    filteredRows.filter(
+      (row) =>
+        row.sla_due_at &&
+        new Date(
+          row.sla_due_at
+        ).getTime() < Date.now() &&
+        !row.resolved_at &&
+        !row.closed_at &&
+        row.status !== "PENDING"
+    );
 
   const completedToday =
     filteredRows.filter(
@@ -316,26 +366,34 @@ export default function AgentQueuePage() {
    *
    * QUAN TRỌNG:
    *
-   * Không phụ thuộc filter ALL / MINE.
+   * Không lấy ticket theo filter ALL / MINE.
    *
-   * Luôn gọi ticket WAITING của
-   * counter mà Agent hiện tại đang phụ trách.
+   * Luôn gọi ticket WAITING của myCounter.
    *
-   * Backend RPC:
+   * RPC:
    *
    * call_next_ticket(
    *   p_counter_id = myCounter.id
    * )
    *
-   * và backend phải lấy:
+   * Backend xử lý FIFO:
    *
    * WAITING
-   * ORDER BY created_at ASC
-   * LIMIT 1
+   * → counter_id đúng quầy
+   * → ORDER BY created_at ASC
+   * → LIMIT 1
+   * → CALLED
    * ============================================================
    */
 
   async function handleCallNext() {
+    if (!profile) {
+      setErrorMessage(
+        "Không xác định được Agent hiện tại."
+      );
+      return;
+    }
+
     if (!myCounter) {
       setErrorMessage(
         "Bạn hiện chưa được gán vào quầy nào."
@@ -343,8 +401,32 @@ export default function AgentQueuePage() {
       return;
     }
 
+    if (
+      myCounter.status ===
+      "CLOSED"
+    ) {
+      setErrorMessage(
+        "Quầy hiện đang đóng."
+      );
+      return;
+    }
+
+    if (
+      myCounter.status ===
+      "BUSY"
+    ) {
+      setErrorMessage(
+        "Quầy đang có ticket được xử lý."
+      );
+      return;
+    }
+
     setCalling(true);
     setErrorMessage(null);
+
+    /*
+     * RPC mới nhận p_counter_id.
+     */
 
     const { data, error } =
       await supabase.rpc(
@@ -357,22 +439,29 @@ export default function AgentQueuePage() {
 
     setCalling(false);
 
-    if (error || !data) {
+    if (error) {
       setErrorMessage(
-        error?.message ??
-          "Không thể gọi số tiếp theo."
+        error.message
+      );
+      return;
+    }
+
+    if (!data) {
+      setErrorMessage(
+        "Không có ticket WAITING để gọi."
       );
       return;
     }
 
     /*
-     * RPC có thể trả về object hoặc array
+     * RPC có thể trả object hoặc array
      * tùy function definition.
      */
 
-    const result = Array.isArray(data)
-      ? data[0]
-      : data;
+    const result =
+      Array.isArray(data)
+        ? data[0]
+        : data;
 
     if (!result?.case_id) {
       setErrorMessage(
@@ -389,6 +478,11 @@ export default function AgentQueuePage() {
   /*
    * ============================================================
    * CALL SPECIFIC
+   *
+   * Nút "Gọi" manual.
+   *
+   * RPC backend phải tự kiểm tra ticket thuộc counter
+   * mà Agent đang phụ trách.
    * ============================================================
    */
 
@@ -396,6 +490,13 @@ export default function AgentQueuePage() {
     ticketId: string,
     caseId: string
   ) {
+    if (!profile) {
+      setErrorMessage(
+        "Không xác định được Agent hiện tại."
+      );
+      return;
+    }
+
     setErrorMessage(null);
 
     const { error } =
@@ -433,6 +534,7 @@ export default function AgentQueuePage() {
           ====================================================== */}
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
         <div>
           <h1 className="font-display text-2xl font-bold text-brand-900">
             Queue của tôi
@@ -451,13 +553,18 @@ export default function AgentQueuePage() {
           }
           disabled={
             calling ||
-            !myCounter
+            !myCounter ||
+            myCounter.status ===
+              "BUSY" ||
+            myCounter.status ===
+              "CLOSED"
           }
         >
           {calling
             ? "Đang gọi..."
             : "GỌI TIẾP THEO"}
         </PrimaryButton>
+
       </div>
 
       {/* ======================================================
@@ -510,13 +617,42 @@ export default function AgentQueuePage() {
           MY COUNTER INFO
           ====================================================== */}
 
-      {queueFilter === "MINE" &&
-        !myCounter && (
-          <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 font-body text-sm text-orange-800">
-            Bạn hiện chưa được gán vào
-            quầy nào.
+      {!myCounter && (
+        <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 font-body text-sm text-orange-800">
+          Bạn hiện chưa được gán vào
+          quầy nào.
+        </div>
+      )}
+
+      {myCounter && (
+        <div className="rounded-lg border border-line bg-white px-4 py-3">
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+
+            <div>
+              <p className="font-body text-sm font-semibold text-ink">
+                {myCounter.counter_code}
+                {" - "}
+                {myCounter.counter_name}
+              </p>
+
+              <p className="mt-1 font-body text-xs text-ink/50">
+                {myCounter.current_agent_id
+                  ? "Agent đang trực tiếp phụ trách quầy"
+                  : "Đang dùng Agent mặc định của quầy"}
+              </p>
+            </div>
+
+            <StatusBadge
+              status={
+                myCounter.status
+              }
+            />
+
           </div>
-        )}
+
+        </div>
+      )}
 
       {/* ======================================================
           STATS
@@ -526,7 +662,9 @@ export default function AgentQueuePage() {
 
         <StatCard
           label="Waiting"
-          value={waiting.length}
+          value={
+            waiting.length
+          }
         />
 
         <StatCard
@@ -570,6 +708,7 @@ export default function AgentQueuePage() {
         <table className="w-full text-left font-body text-sm">
 
           <thead className="border-b border-line bg-paper/60 text-xs uppercase tracking-wide text-ink/50">
+
             <tr>
 
               <th className="px-4 py-3">
@@ -600,9 +739,14 @@ export default function AgentQueuePage() {
                 Trạng thái
               </th>
 
+              <th className="px-4 py-3">
+                Quầy
+              </th>
+
               <th className="px-4 py-3"></th>
 
             </tr>
+
           </thead>
 
           <tbody>
@@ -610,7 +754,7 @@ export default function AgentQueuePage() {
             {loading && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="px-4 py-6 text-center text-ink/40"
                 >
                   Đang tải...
@@ -623,7 +767,7 @@ export default function AgentQueuePage() {
                 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-4 py-6 text-center text-ink/40"
                   >
                     {queueFilter ===
@@ -698,6 +842,13 @@ export default function AgentQueuePage() {
                     />
                   </td>
 
+                  <td className="px-4 py-3 text-ink/60">
+                    {
+                      row.counter_name ??
+                      "—"
+                    }
+                  </td>
+
                   <td className="px-4 py-3 text-right">
 
                     {row.status ===
@@ -725,8 +876,11 @@ export default function AgentQueuePage() {
             )}
 
           </tbody>
+
         </table>
+
       </div>
+
     </div>
   );
 }
