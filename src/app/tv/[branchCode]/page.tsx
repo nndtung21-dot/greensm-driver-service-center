@@ -858,10 +858,18 @@ export default function TvDisplayPage() {
       null
     );
 
+  /* ==========================================================
+     ANNOUNCED CALLS
+     ========================================================== */
+
   const announcedCalls =
     useRef<Set<string>>(
       new Set()
     );
+
+  /* ==========================================================
+     REFRESH TIMER
+     ========================================================== */
 
   const refreshTimer =
     useRef<number | null>(
@@ -871,12 +879,20 @@ export default function TvDisplayPage() {
   const loadingRef =
     useRef(false);
 
+  /* ==========================================================
+     AUDIO
+     ========================================================== */
+
   const {
     enqueue: enqueueAudio,
     unlock: unlockAudio,
     unlocked,
     audioStatus,
   } = useTvSpeech();
+
+  /* ==========================================================
+     CLOCK
+     ========================================================== */
 
   const clock =
     useClock();
@@ -993,10 +1009,8 @@ export default function TvDisplayPage() {
           counterList.filter(
             (counter) =>
               Boolean(
-                counter.queue_number
-              ) &&
-              Boolean(
-                counter.called_at
+                counter.queue_number &&
+                  counter.called_at
               )
           );
 
@@ -1612,14 +1626,19 @@ export default function TvDisplayPage() {
                     );
 
                   /*
-                   * QUẦY THỨ 6:
+                   * QUẦY 06:
                    * Header màu cam đậm.
                    *
                    * Chỉ đổi background.
-                   * Chữ vẫn text-white.
+                   * Chữ vẫn giữ nguyên:
+                   * - tên quầy: text-white
+                   * - mã quầy: text-white/70
                    */
-                  const isOrangeCounter =
-                    counter.display_order === 6;
+                  const isCounter06 =
+                    counter.counter_code
+                      ?.trim()
+                      .toUpperCase() ===
+                    "06";
 
                   return (
                     <div
@@ -1632,8 +1651,8 @@ export default function TvDisplayPage() {
 
                       <div
                         className={
-                          isOrangeCounter
-                            ? "bg-orange-600"
+                          isCounter06
+                            ? "bg-orange-800"
                             : "bg-brand-700"
                         }
                         style={{
