@@ -584,9 +584,9 @@ export default function TicketDetailPage() {
    */
 
   const canTransfer =
-    canAct &&
-    detail.status ===
-      "CALLED";
+  canAct &&
+  (detail.status === "WAITING" ||
+    detail.status === "CALLED");
 
   const isSupervisorOrAdmin =
     profile?.role === "supervisor" ||
