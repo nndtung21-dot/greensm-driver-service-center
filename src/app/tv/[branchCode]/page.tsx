@@ -416,7 +416,6 @@ function useTvSpeech() {
         }
 
         audio.pause();
-
         audio.currentTime = 0;
 
         const url =
@@ -433,7 +432,6 @@ function useTvSpeech() {
         );
 
         audio.src = url;
-
         audio.load();
 
         await new Promise<void>(
@@ -496,13 +494,10 @@ function useTvSpeech() {
                   {
                     src:
                       audio.src,
-
                     networkState:
                       audio.networkState,
-
                     readyState:
                       audio.readyState,
-
                     error:
                       audio.error,
                   }
@@ -857,18 +852,10 @@ export default function TvDisplayPage() {
       null
     );
 
-  /* ==========================================================
-     ANNOUNCED CALLS
-     ========================================================== */
-
   const announcedCalls =
     useRef<Set<string>>(
       new Set()
     );
-
-  /* ==========================================================
-     REFRESH TIMER
-     ========================================================== */
 
   const refreshTimer =
     useRef<number | null>(
@@ -878,20 +865,12 @@ export default function TvDisplayPage() {
   const loadingRef =
     useRef(false);
 
-  /* ==========================================================
-     AUDIO
-     ========================================================== */
-
   const {
     enqueue: enqueueAudio,
     unlock: unlockAudio,
     unlocked,
     audioStatus,
   } = useTvSpeech();
-
-  /* ==========================================================
-     CLOCK
-     ========================================================== */
 
   const clock =
     useClock();
@@ -1088,14 +1067,10 @@ export default function TvDisplayPage() {
             {
               queueNumber:
                 call.queue_number,
-
               driverName,
-
               counterCode:
                 call.counter_code,
-
               counterName,
-
               calledAt:
                 call.called_at,
             }
@@ -1603,6 +1578,16 @@ export default function TvDisplayPage() {
                         counter.called_at
                     );
 
+                  /*
+                   * QUẦY 06
+                   * counter_code = HCM016
+                   *
+                   * Chỉ card này màu cam đậm.
+                   */
+                  const isOrangeCounter =
+                    counter.counter_code ===
+                    "HCM016";
+
                   const myAgentQueue =
                     counter.agent_id
                       ? (
@@ -1626,48 +1611,36 @@ export default function TvDisplayPage() {
                         currentQueue
                     );
 
-                  /*
-                   * ==================================================
-                   * QUẦY 06 = CAM ĐẬM
-                   *
-                   * Chỉ đổi background/border.
-                   * KHÔNG đổi màu chữ.
-                   * ==================================================
-                   */
-                  const isCounter06 =
-                    counter.counter_code
-                      .trim()
-                      .toUpperCase() ===
-                      "06" ||
-                    counter.counter_name
-                      .trim()
-                      .toUpperCase()
-                      .includes(
-                        "QUẦY 06"
-                      );
-
                   return (
                     <div
                       key={
                         counter.counter_code
                       }
-                      className={`flex flex-col overflow-hidden rounded-2xl shadow-sm ${
-                        isCounter06
-                          ? "border border-orange-700 bg-orange-600"
-                          : "border border-line bg-white"
-                      }`}
+                      className="flex flex-col overflow-hidden rounded-2xl border shadow-sm"
+                      style={{
+                        backgroundColor:
+                          isOrangeCounter
+                            ? "#c2410c"
+                            : "#ffffff",
+
+                        borderColor:
+                          isOrangeCounter
+                            ? "#9a3412"
+                            : undefined,
+                      }}
                     >
-                      {/* ==================================================
+                      {/* ========================================
                           COUNTER HEADER
-                          ================================================== */}
+                          ======================================== */}
 
                       <div
-                        className={
-                          isCounter06
-                            ? "bg-orange-700"
-                            : "bg-brand-700"
-                        }
+                        className="text-white"
                         style={{
+                          backgroundColor:
+                            isOrangeCounter
+                              ? "#c2410c"
+                              : undefined,
+
                           padding:
                             "0.7vw 1vw",
                         }}
@@ -1697,21 +1670,26 @@ export default function TvDisplayPage() {
                         </p>
                       </div>
 
-                      {/* ==================================================
+                      {/* ========================================
                           CURRENT CALL
-                          ================================================== */}
+                          ======================================== */}
 
                       <div
                         className={
-                          isCounter06
-                            ? busy
-                              ? "bg-orange-500"
-                              : "bg-orange-600"
-                            : busy
-                            ? "bg-brand-100"
-                            : "bg-paper"
+                          isOrangeCounter
+                            ? "text-center"
+                            : `text-center ${
+                                busy
+                                  ? "bg-brand-100"
+                                  : "bg-paper"
+                              }`
                         }
                         style={{
+                          backgroundColor:
+                            isOrangeCounter
+                              ? "#c2410c"
+                              : undefined,
+
                           padding:
                             "1.6vw 1vw",
                         }}
@@ -1766,17 +1744,18 @@ export default function TvDisplayPage() {
                         )}
                       </div>
 
-                      {/* ==================================================
+                      {/* ========================================
                           WAITING
-                          ================================================== */}
+                          ======================================== */}
 
                       <div
-                        className={
-                          isCounter06
-                            ? "flex-1 border-t border-orange-500 bg-orange-600"
-                            : "flex-1 border-t border-line bg-white"
-                        }
+                        className="flex-1 border-t"
                         style={{
+                          borderColor:
+                            isOrangeCounter
+                              ? "#9a3412"
+                              : undefined,
+
                           padding:
                             "0.9vw 1vw",
                         }}
