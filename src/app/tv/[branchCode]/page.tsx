@@ -79,10 +79,7 @@ function isCalledQueue(
    VIETNAMESE NUMBER / CHARACTER WORDS
    ============================================================ */
 
-const DIGIT_WORD: Record<
-  string,
-  string
-> = {
+const DIGIT_WORD: Record<string, string> = {
   "0": "không",
   "1": "một",
   "2": "hai",
@@ -419,6 +416,7 @@ function useTvSpeech() {
         }
 
         audio.pause();
+
         audio.currentTime = 0;
 
         const url =
@@ -435,6 +433,7 @@ function useTvSpeech() {
         );
 
         audio.src = url;
+
         audio.load();
 
         await new Promise<void>(
@@ -1009,8 +1008,10 @@ export default function TvDisplayPage() {
           counterList.filter(
             (counter) =>
               Boolean(
-                counter.queue_number &&
-                  counter.called_at
+                counter.queue_number
+              ) &&
+              Boolean(
+                counter.called_at
               )
           );
 
@@ -1626,33 +1627,44 @@ export default function TvDisplayPage() {
                     );
 
                   /*
-                   * QUẦY 06:
-                   * Header màu cam đậm.
+                   * ==================================================
+                   * QUẦY 06 = CAM ĐẬM
                    *
-                   * Chỉ đổi background.
-                   * Chữ vẫn giữ nguyên:
-                   * - tên quầy: text-white
-                   * - mã quầy: text-white/70
+                   * Chỉ đổi background/border.
+                   * KHÔNG đổi màu chữ.
+                   * ==================================================
                    */
                   const isCounter06 =
                     counter.counter_code
-                      ?.trim()
+                      .trim()
                       .toUpperCase() ===
-                    "06";
+                      "06" ||
+                    counter.counter_name
+                      .trim()
+                      .toUpperCase()
+                      .includes(
+                        "QUẦY 06"
+                      );
 
                   return (
                     <div
                       key={
                         counter.counter_code
                       }
-                      className="flex flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-sm"
+                      className={`flex flex-col overflow-hidden rounded-2xl shadow-sm ${
+                        isCounter06
+                          ? "border border-orange-700 bg-orange-600"
+                          : "border border-line bg-white"
+                      }`}
                     >
-                      {/* COUNTER HEADER */}
+                      {/* ==================================================
+                          COUNTER HEADER
+                          ================================================== */}
 
                       <div
                         className={
                           isCounter06
-                            ? "bg-orange-800"
+                            ? "bg-orange-700"
                             : "bg-brand-700"
                         }
                         style={{
@@ -1685,14 +1697,20 @@ export default function TvDisplayPage() {
                         </p>
                       </div>
 
-                      {/* CURRENT CALL */}
+                      {/* ==================================================
+                          CURRENT CALL
+                          ================================================== */}
 
                       <div
-                        className={`text-center ${
-                          busy
+                        className={
+                          isCounter06
+                            ? busy
+                              ? "bg-orange-500"
+                              : "bg-orange-600"
+                            : busy
                             ? "bg-brand-100"
                             : "bg-paper"
-                        }`}
+                        }
                         style={{
                           padding:
                             "1.6vw 1vw",
@@ -1748,10 +1766,16 @@ export default function TvDisplayPage() {
                         )}
                       </div>
 
-                      {/* WAITING */}
+                      {/* ==================================================
+                          WAITING
+                          ================================================== */}
 
                       <div
-                        className="flex-1 border-t border-line"
+                        className={
+                          isCounter06
+                            ? "flex-1 border-t border-orange-500 bg-orange-600"
+                            : "flex-1 border-t border-line bg-white"
+                        }
                         style={{
                           padding:
                             "0.9vw 1vw",
