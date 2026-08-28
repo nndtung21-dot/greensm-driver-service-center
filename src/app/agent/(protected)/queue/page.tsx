@@ -1,7 +1,12 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/auth";
@@ -43,42 +48,131 @@ type MyCounter = {
   default_agent_id: string | null;
 };
 
+/*
+ * ============================================================
+ * HELPERS
+ * ============================================================
+ */
+
 function minutesSince(iso: string) {
   return Math.max(
     0,
     Math.round(
-      (Date.now() - new Date(iso).getTime()) / 60000
+      (Date.now() - new Date(iso).getTime()) /
+        60000
     )
   );
 }
 
 /*
  * ============================================================
- * GET TODAY RANGE
+ * TODAY RANGE - VIETNAM TIME
  *
- * Dùng timezone local của browser.
+ * DB timezone là UTC.
+ * Queue cần lấy ticket của ngày hiện tại tại Việt Nam.
  *
- * Ví dụ:
- * start = 00:00 hôm nay
- * end   = 00:00 ngày mai
- *
- * Supabase/Postgres sẽ nhận ISO có timezone offset.
+ * Không đụng tới logic check-in.
  * ============================================================
  */
 
 function getTodayRange() {
   const now = new Date();
 
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
+  const vietnamFormatter =
+    new Intl.DateTimeFormat(
+      "en-CA",
+      {
+        timeZone:
+          "Asia/Ho_Chi_Minh",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }
+    );
 
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
+  const parts =
+    vietnamFormatter.formatToParts(
+      now
+    );
+
+  const year = Number(
+    parts.find(
+      (part) =>
+        part.type === "year"
+    )?.value
+  );
+
+  const month = Number(
+    parts.find(
+      (part) =>
+        part.type === "month"
+    )?.value
+  );
+
+  const day = Number(
+    parts.find(
+      (part) =>
+        part.type === "day"
+    )?.value
+  );
+
+  /*
+   * Việt Nam = UTC+7.
+   *
+   * 00:00 VN = 17:00 UTC ngày hôm trước.
+   * 00:00 VN ngày kế tiếp = 17:00 UTC.
+   */
+
+  const startUtc = new Date(
+    Date.UTC(
+      year,
+      month - 1,
+      day,
+      -7,
+      0,
+      0
+    )
+  );
+
+  const endUtc = new Date(
+    startUtc.getTime() +
+      24 * 60 * 60 * 1000
+  );
 
   return {
-    start: start.toISOString(),
-    end: end.toISOString(),
+    start: startUtc.toISOString(),
+    end: endUtc.toISOString(),
   };
+}
+
+/*
+ * ============================================================
+ * FILTER BUTTON
+ * ============================================================
+ */
+
+function FilterButton({
+  active,
+  children,
+  onClick,
+}: {
+  active: boolean;
+  children: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg px-4 py-2 font-body text-sm font-medium transition ${
+        active
+          ? "bg-brand-900 text-white"
+          : "border border-line bg-white text-ink/70 hover:bg-paper"
+      }`}
+    >
+      {children}
+    </button>
+  );
 }
 
 /*
@@ -110,7 +204,8 @@ function CounterStatusBadge({
     },
   };
 
-  const current = config[status];
+  const current =
+    config[status];
 
   return (
     <span
@@ -118,36 +213,6 @@ function CounterStatusBadge({
     >
       {current.label}
     </span>
-  );
-}
-
-/*
- * ============================================================
- * STATUS FILTER BUTTON
- * ============================================================
- */
-
-function FilterButton({
-  active,
-  children,
-  onClick,
-}: {
-  active: boolean;
-  children: React.ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-lg px-4 py-2 font-body text-sm font-medium transition ${
-        active
-          ? "bg-brand-900 text-white"
-          : "border border-line bg-white text-ink/70 hover:bg-paper"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -164,23 +229,22 @@ export default function AgentQueuePage() {
     useState<MyCounter | null>(null);
 
   /*
-   * Filter phạm vi:
-   * ALL / MINE
+   * Filter phạm vi.
+   *
+   * ALL  = toàn bộ queue của branch
+   * MINE = queue thuộc quầy của Agent
    */
   const [queueFilter, setQueueFilter] =
     useState<QueueFilter>("ALL");
 
   /*
-   * Filter trạng thái:
-   * ALL / WAITING / PROCESSING / PENDING / RESOLVED / CLOSED
+   * Filter trạng thái.
    */
   const [statusFilter, setStatusFilter] =
     useState<StatusFilter>("ALL");
 
   /*
    * Filter chủ đề.
-   *
-   * null = tất cả chủ đề
    */
   const [categoryFilter, setCategoryFilter] =
     useState<string | null>(null);
@@ -198,10 +262,7 @@ export default function AgentQueuePage() {
    * ============================================================
    * LOAD QUEUE
    *
-   * CHỈ LOAD TICKET CỦA HÔM NAY
-   *
-   * created_at >= đầu ngày
-   * created_at <  đầu ngày hôm sau
+   * CHỈ LOAD TICKET CỦA HÔM NAY.
    * ============================================================
    */
 
@@ -216,14 +277,25 @@ export default function AgentQueuePage() {
     const { data, error } = await supabase
       .from("v_agent_queue")
       .select("*")
-      .gte("created_at", start)
-      .lt("created_at", end)
-      .order("created_at", {
-        ascending: true,
-      });
+      .gte(
+        "created_at",
+        start
+      )
+      .lt(
+        "created_at",
+        end
+      )
+      .order(
+        "created_at",
+        {
+          ascending: true,
+        }
+      );
 
     if (error) {
-      setErrorMessage(error.message);
+      setErrorMessage(
+        error.message
+      );
       setRows([]);
     } else {
       setRows(
@@ -279,7 +351,9 @@ export default function AgentQueuePage() {
           );
 
       if (error) {
-        setErrorMessage(error.message);
+        setErrorMessage(
+          error.message
+        );
         setMyCounter(null);
         return;
       }
@@ -288,7 +362,7 @@ export default function AgentQueuePage() {
         (data as MyCounter[]) ?? [];
 
       /*
-       * Ưu tiên quầy Agent đang trực tiếp phụ trách.
+       * Ưu tiên quầy mà Agent đang current.
        */
 
       const activeCounter =
@@ -354,8 +428,6 @@ export default function AgentQueuePage() {
   /*
    * ============================================================
    * REALTIME
-   *
-   * Khi ticket thay đổi -> reload queue hôm nay.
    * ============================================================
    */
 
@@ -422,51 +494,55 @@ export default function AgentQueuePage() {
 
   /*
    * ============================================================
-   * FILTER 1
+   * SCOPE FILTER
    *
    * ALL:
-   *   Tất cả ticket hôm nay.
+   *   Toàn bộ ticket hôm nay.
    *
    * MINE:
-   *   Ticket thuộc counter của Agent.
+   *   Ticket thuộc quầy của Agent hoặc được assign trực tiếp
+   *   cho Agent.
    * ============================================================
    */
 
-  const scopedRows = useMemo(() => {
-    return rows.filter((row) => {
-      if (
-        queueFilter === "ALL"
-      ) {
-        return true;
-      }
+  const scopedRows =
+    useMemo(() => {
+      return rows.filter(
+        (row) => {
+          if (
+            queueFilter ===
+            "ALL"
+          ) {
+            return true;
+          }
 
-      if (!myCounter) {
-        return (
-          row.assigned_agent_id ===
-          profile?.id
-        );
-      }
+          if (!myCounter) {
+            return (
+              row.assigned_agent_id ===
+              profile?.id
+            );
+          }
 
-      return (
-        row.counter_id ===
-          myCounter.id ||
-        row.assigned_agent_id ===
-          profile?.id
+          return (
+            row.counter_id ===
+              myCounter.id ||
+            row.assigned_agent_id ===
+              profile?.id
+          );
+        }
       );
-    });
-  }, [
-    rows,
-    queueFilter,
-    myCounter,
-    profile?.id,
-  ]);
+    }, [
+      rows,
+      queueFilter,
+      myCounter,
+      profile?.id,
+    ]);
 
   /*
    * ============================================================
    * CATEGORY OPTIONS
    *
-   * Lấy chủ đề từ queue hôm nay sau khi áp dụng
-   * filter ALL / MINE.
+   * Chủ đề được lấy động từ queue hôm nay.
    * ============================================================
    */
 
@@ -498,11 +574,9 @@ export default function AgentQueuePage() {
 
   /*
    * ============================================================
-   * FILTER 2
+   * TABLE FILTER
    *
    * Trạng thái + Chủ đề
-   *
-   * Hai filter hoạt động đồng thời.
    * ============================================================
    */
 
@@ -537,8 +611,8 @@ export default function AgentQueuePage() {
    * ============================================================
    * STATS
    *
-   * Stats dựa trên phạm vi ALL / MINE,
-   * không bị ảnh hưởng bởi filter bên dưới bảng.
+   * Stats KHÔNG bị ảnh hưởng bởi filter trạng thái/chủ đề.
+   * Chỉ phụ thuộc ALL / MINE.
    * ============================================================
    */
 
@@ -595,8 +669,7 @@ export default function AgentQueuePage() {
    * ============================================================
    * CALL NEXT
    *
-   * KHÔNG phụ thuộc filter.
-   *
+   * Không phụ thuộc filter UI.
    * Luôn gọi theo counter của Agent.
    * ============================================================
    */
@@ -911,6 +984,168 @@ export default function AgentQueuePage() {
       </div>
 
       {/* ======================================================
+          FILTER - NGAY TRÊN BẢNG
+          ====================================================== */}
+
+      <div className="rounded-card border border-line bg-white p-4 space-y-5">
+
+        {/* STATUS */}
+
+        <div>
+
+          <p className="mb-3 font-body text-xs font-semibold uppercase tracking-wide text-ink/50">
+            Trạng thái
+          </p>
+
+          <div className="flex flex-wrap gap-2">
+
+            <FilterButton
+              active={
+                statusFilter ===
+                "ALL"
+              }
+              onClick={() =>
+                setStatusFilter(
+                  "ALL"
+                )
+              }
+            >
+              Tất cả
+            </FilterButton>
+
+            <FilterButton
+              active={
+                statusFilter ===
+                "WAITING"
+              }
+              onClick={() =>
+                setStatusFilter(
+                  "WAITING"
+                )
+              }
+            >
+              Waiting
+            </FilterButton>
+
+            <FilterButton
+              active={
+                statusFilter ===
+                "PROCESSING"
+              }
+              onClick={() =>
+                setStatusFilter(
+                  "PROCESSING"
+                )
+              }
+            >
+              Processing
+            </FilterButton>
+
+            <FilterButton
+              active={
+                statusFilter ===
+                "PENDING"
+              }
+              onClick={() =>
+                setStatusFilter(
+                  "PENDING"
+                )
+              }
+            >
+              Pending
+            </FilterButton>
+
+            <FilterButton
+              active={
+                statusFilter ===
+                "RESOLVED"
+              }
+              onClick={() =>
+                setStatusFilter(
+                  "RESOLVED"
+                )
+              }
+            >
+              Resolved
+            </FilterButton>
+
+            <FilterButton
+              active={
+                statusFilter ===
+                "CLOSED"
+              }
+              onClick={() =>
+                setStatusFilter(
+                  "CLOSED"
+                )
+              }
+            >
+              Closed
+            </FilterButton>
+
+          </div>
+
+        </div>
+
+        {/* CATEGORY */}
+
+        <div>
+
+          <p className="mb-3 font-body text-xs font-semibold uppercase tracking-wide text-ink/50">
+            Chủ đề
+          </p>
+
+          <div className="flex flex-wrap gap-2">
+
+            <FilterButton
+              active={
+                categoryFilter ===
+                null
+              }
+              onClick={() =>
+                setCategoryFilter(
+                  null
+                )
+              }
+            >
+              Tất cả chủ đề
+            </FilterButton>
+
+            {categoryOptions.map(
+              (category) => (
+                <FilterButton
+                  key={
+                    category
+                  }
+                  active={
+                    categoryFilter ===
+                    category
+                  }
+                  onClick={() =>
+                    setCategoryFilter(
+                      category
+                    )
+                  }
+                >
+                  {category}
+                </FilterButton>
+              )
+            )}
+
+          </div>
+
+          {categoryOptions.length ===
+            0 && (
+            <p className="mt-2 font-body text-xs text-ink/40">
+              Chưa có chủ đề nào trong queue hôm nay.
+            </p>
+          )}
+
+        </div>
+
+      </div>
+
+      {/* ======================================================
           QUEUE TABLE
           ====================================================== */}
 
@@ -1095,168 +1330,6 @@ export default function AgentQueuePage() {
             </tbody>
 
           </table>
-
-        </div>
-
-      </div>
-
-      {/* ======================================================
-          FILTERS - BELOW TABLE
-          ====================================================== */}
-
-      <div className="space-y-4 rounded-card border border-line bg-white p-4">
-
-        {/* STATUS */}
-
-        <div>
-
-          <p className="mb-2 font-body text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Trạng thái
-          </p>
-
-          <div className="flex flex-wrap gap-2">
-
-            <FilterButton
-              active={
-                statusFilter ===
-                "ALL"
-              }
-              onClick={() =>
-                setStatusFilter(
-                  "ALL"
-                )
-              }
-            >
-              Tất cả
-            </FilterButton>
-
-            <FilterButton
-              active={
-                statusFilter ===
-                "WAITING"
-              }
-              onClick={() =>
-                setStatusFilter(
-                  "WAITING"
-                )
-              }
-            >
-              Waiting
-            </FilterButton>
-
-            <FilterButton
-              active={
-                statusFilter ===
-                "PROCESSING"
-              }
-              onClick={() =>
-                setStatusFilter(
-                  "PROCESSING"
-                )
-              }
-            >
-              Processing
-            </FilterButton>
-
-            <FilterButton
-              active={
-                statusFilter ===
-                "PENDING"
-              }
-              onClick={() =>
-                setStatusFilter(
-                  "PENDING"
-                )
-              }
-            >
-              Pending
-            </FilterButton>
-
-            <FilterButton
-              active={
-                statusFilter ===
-                "RESOLVED"
-              }
-              onClick={() =>
-                setStatusFilter(
-                  "RESOLVED"
-                )
-              }
-            >
-              Resolved
-            </FilterButton>
-
-            <FilterButton
-              active={
-                statusFilter ===
-                "CLOSED"
-              }
-              onClick={() =>
-                setStatusFilter(
-                  "CLOSED"
-                )
-              }
-            >
-              Closed
-            </FilterButton>
-
-          </div>
-
-        </div>
-
-        {/* CATEGORY */}
-
-        <div>
-
-          <p className="mb-2 font-body text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Chủ đề
-          </p>
-
-          <div className="flex flex-wrap gap-2">
-
-            <FilterButton
-              active={
-                categoryFilter ===
-                null
-              }
-              onClick={() =>
-                setCategoryFilter(
-                  null
-                )
-              }
-            >
-              Tất cả chủ đề
-            </FilterButton>
-
-            {categoryOptions.map(
-              (category) => (
-                <FilterButton
-                  key={
-                    category
-                  }
-                  active={
-                    categoryFilter ===
-                    category
-                  }
-                  onClick={() =>
-                    setCategoryFilter(
-                      category
-                    )
-                  }
-                >
-                  {category}
-                </FilterButton>
-              )
-            )}
-
-          </div>
-
-          {categoryOptions.length ===
-            0 && (
-            <p className="mt-2 font-body text-xs text-ink/40">
-              Chưa có chủ đề nào trong queue hôm nay.
-            </p>
-          )}
 
         </div>
 
