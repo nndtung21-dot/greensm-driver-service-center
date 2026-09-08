@@ -48,6 +48,60 @@ export default function CheckinFlow() {
   const [result, setResult] =
     useState<CheckinResult | null>(null);
 
+  // Trạng thái khung giờ nhận check-in (null = chưa biết → không chặn)
+  const [windowOpen, setWindowOpen] =
+    useState<boolean | null>(null);
+  const [windowInfo, setWindowInfo] = useState<{
+    open: string;
+    close: string;
+    now: string;
+  } | null>(null);
+
+  // ==========================================================
+  // KIỂM TRA KHUNG GIỜ NHẬN CHECK-IN (giờ máy chủ, giờ VN)
+  // ==========================================================
+
+  useEffect(() => {
+    let active = true;
+
+    async function checkWindow() {
+      const { data, error } = await supabase
+        .rpc("checkin_window_open")
+        .maybeSingle();
+
+      if (!active) return;
+
+      // Nếu hàm chưa tồn tại / lỗi mạng: không chặn (fail-open),
+      // backend vẫn là lớp chốt cuối cùng.
+      if (error || !data) {
+        setWindowOpen(null);
+        return;
+      }
+
+      const row = data as {
+        is_open: boolean;
+        open_time: string;
+        close_time: string;
+        server_time: string;
+      };
+
+      setWindowOpen(row.is_open);
+      setWindowInfo({
+        open: row.open_time,
+        close: row.close_time,
+        now: row.server_time,
+      });
+    }
+
+    checkWindow();
+    const timer = setInterval(checkWindow, 30000);
+
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
+
   // ==========================================================
   // RESOLVE BRANCH
   // ==========================================================
@@ -339,6 +393,57 @@ export default function CheckinFlow() {
   }
 
   // ==========================================================
+  // RENDER — NGOÀI GIỜ NHẬN CHECK-IN
+  // Chỉ chặn ở các bước TRƯỚC khi tạo ticket, không che màn thành công.
+  // ==========================================================
+
+  const preSubmitStep =
+    step === "welcome" ||
+    step === "identify" ||
+    step === "not_found" ||
+    step === "needs" ||
+    step === "description";
+
+  if (windowOpen === false && preSubmitStep) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-6">
+        <div className="w-full max-w-md rounded-card bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-accent-100">
+            <span className="font-display text-3xl">🕒</span>
+          </div>
+
+          <p className="font-display text-2xl font-semibold text-brand-900">
+            Ngoài giờ nhận check-in
+          </p>
+
+          <p className="mt-3 font-body text-base text-ink/70">
+            Hệ thống chỉ nhận check-in từ{" "}
+            <b className="text-brand-700">
+              {windowInfo?.open ?? "08:25"}
+            </b>{" "}
+            đến{" "}
+            <b className="text-brand-700">
+              {windowInfo?.close ?? "17:45"}
+            </b>{" "}
+            (giờ Việt Nam).
+          </p>
+
+          {windowInfo?.now && (
+            <p className="mt-2 font-body text-sm text-ink/50">
+              Hiện tại: {windowInfo.now}
+            </p>
+          )}
+
+          <p className="mt-5 font-body text-sm text-ink/50">
+            Vui lòng quay lại trong khung giờ làm việc.
+            Cảm ơn quý tài xế!
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================================
   // RENDER FLOW
   // ==========================================================
 
@@ -493,6 +598,19 @@ function getCheckinErrorMessage(
 ): string {
   if (!message) {
     return "Không thể tạo check-in lúc này. Vui lòng thử lại.";
+  }
+
+  // ----------------------------------------------------------
+  // Ngoài giờ nhận check-in (08:25–17:45, giờ VN)
+  // ----------------------------------------------------------
+
+  if (message.includes("CHECKIN_CLOSED")) {
+    return (
+      message
+        .replace(/^[\s\S]*CHECKIN_CLOSED:\s*/, "")
+        .trim() ||
+      "Ngoài giờ nhận check-in. Hệ thống chỉ nhận từ 08:25 đến 17:45 (giờ Việt Nam)."
+    );
   }
 
   // ----------------------------------------------------------
