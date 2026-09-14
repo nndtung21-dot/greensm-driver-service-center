@@ -9,13 +9,29 @@ const RAW_VIEW = "v_report_raw";
 const RAW_DATE_COLUMN = "_filter_date";
 const RAW_FILE = "raw";
 
+// Số dòng lấy mỗi lần.
+// Pagination giúp export được > 10.000 dòng.
+const PAGE_SIZE = 1000;
+
+function getLocalDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return getLocalDateString();
 }
 
 function firstOfMonthStr() {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-01`;
 }
 
 /**
@@ -81,7 +97,9 @@ export default function AdminExportPage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  function applyPreset(preset: "today" | "month" | "year" | "all") {
+  function applyPreset(
+    preset: "today" | "month" | "year" | "all"
+  ) {
     const now = new Date();
 
     if (preset === "today") {
@@ -104,41 +122,75 @@ export default function AdminExportPage() {
     setErrorMessage(null);
 
     try {
-      let query = supabase
-        .from(RAW_VIEW)
-        .select("*")
-        .order("_filter_date", { ascending: true })
-        .limit(10000);
-
-      if (fromDate) {
-        query = query.gte(RAW_DATE_COLUMN, fromDate);
-      }
-
-      if (toDate) {
-        const toExclusive = new Date(`${toDate}T00:00:00`);
-
-        toExclusive.setDate(toExclusive.getDate() + 1);
-
-        query = query.lt(
-          RAW_DATE_COLUMN,
-          toExclusive.toISOString()
+      // Kiểm tra khoảng ngày
+      if (fromDate && toDate && fromDate > toDate) {
+        throw new Error(
+          "Ngày bắt đầu không được lớn hơn ngày kết thúc."
         );
       }
 
-      const { data, error } = await query;
+      const allRows: Record<string, unknown>[] = [];
 
-      if (error) {
-        throw new Error(error.message);
+      let page = 0;
+
+      while (true) {
+        const from = page * PAGE_SIZE;
+        const to = from + PAGE_SIZE - 1;
+
+        let query = supabase
+          .from(RAW_VIEW)
+          .select("*")
+          .order(RAW_DATE_COLUMN, { ascending: true })
+          .range(from, to);
+
+        /*
+         * IMPORTANT:
+         * _filter_date được dùng trực tiếp với YYYY-MM-DD.
+         *
+         * Không dùng:
+         * new Date(`${toDate}T00:00:00`)
+         * rồi toISOString()
+         *
+         * vì có thể làm lệch ngày do timezone.
+         */
+
+        if (fromDate) {
+          query = query.gte(RAW_DATE_COLUMN, fromDate);
+        }
+
+        if (toDate) {
+          query = query.lte(RAW_DATE_COLUMN, toDate);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+          throw new Error(error.message);
+        }
+
+        const rows = (data ?? []) as Record<string, unknown>[];
+
+        allRows.push(...rows);
+
+        /*
+         * Nếu số dòng trả về < PAGE_SIZE
+         * nghĩa là đã lấy tới cuối dataset.
+         */
+        if (rows.length < PAGE_SIZE) {
+          break;
+        }
+
+        page++;
       }
 
-      const rows = (data ?? []) as Record<string, unknown>[];
-
-      if (rows.length === 0) {
-        setErrorMessage("Không có dữ liệu trong khoảng thời gian đã chọn.");
+      if (allRows.length === 0) {
+        setErrorMessage(
+          "Không có dữ liệu trong khoảng thời gian đã chọn."
+        );
         return;
       }
 
-      const formattedRows = formatRawRows(rows);
+      const formattedRows = formatRawRows(allRows);
 
       const suffix =
         fromDate || toDate
