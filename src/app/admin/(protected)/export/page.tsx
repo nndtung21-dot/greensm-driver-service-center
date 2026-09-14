@@ -9,10 +9,13 @@ const RAW_VIEW = "v_report_raw";
 const RAW_DATE_COLUMN = "_filter_date";
 const RAW_FILE = "raw";
 
-// Số dòng lấy mỗi lần.
-// Pagination giúp export được > 10.000 dòng.
+// Lấy dữ liệu theo từng batch để không bị giới hạn số dòng
 const PAGE_SIZE = 1000;
 
+/**
+ * Lấy ngày hiện tại theo timezone của máy người dùng.
+ * Không dùng toISOString() vì có thể bị lệch ngày do UTC.
+ */
 function getLocalDateString(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -91,11 +94,49 @@ function formatRawRows(rows: Record<string, unknown>[]) {
   });
 }
 
+/**
+ * Convert ngày Việt Nam GMT+7 sang ISO UTC.
+ *
+ * Ví dụ:
+ *
+ * 2026-09-14 00:00 GMT+7
+ * =>
+ * 2026-09-13 17:00 UTC
+ */
+function vietnamDateToUTC(dateStr: string) {
+  return new Date(
+    `${dateStr}T00:00:00+07:00`
+  ).toISOString();
+}
+
+/**
+ * Lấy timestamp đầu ngày tiếp theo theo timezone GMT+7.
+ *
+ * Ví dụ:
+ *
+ * Đến ngày 14/09
+ * =>
+ * < 15/09 00:00 GMT+7
+ *
+ * Như vậy toàn bộ ngày 14/09 được lấy.
+ */
+function vietnamNextDateToUTC(dateStr: string) {
+  const date = new Date(
+    `${dateStr}T00:00:00+07:00`
+  );
+
+  date.setUTCDate(date.getUTCDate() + 1);
+
+  return date.toISOString();
+}
+
 export default function AdminExportPage() {
   const [fromDate, setFromDate] = useState(firstOfMonthStr());
   const [toDate, setToDate] = useState(todayStr());
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(
+    null
+  );
 
   function applyPreset(
     preset: "today" | "month" | "year" | "all"
@@ -115,6 +156,8 @@ export default function AdminExportPage() {
       setFromDate("");
       setToDate("");
     }
+
+    setErrorMessage(null);
   }
 
   async function handleExport() {
@@ -122,17 +165,61 @@ export default function AdminExportPage() {
     setErrorMessage(null);
 
     try {
-      // Kiểm tra khoảng ngày
+      /**
+       * Validate khoảng ngày
+       */
       if (fromDate && toDate && fromDate > toDate) {
         throw new Error(
           "Ngày bắt đầu không được lớn hơn ngày kết thúc."
         );
       }
 
+      /**
+       * Convert khoảng ngày Việt Nam sang UTC.
+       *
+       * Ví dụ:
+       *
+       * Từ 01/09:
+       * >= 2026-08-31 17:00:00 UTC
+       *
+       * Đến 14/09:
+       * < 2026-09-14 17:00:00 UTC
+       *
+       * => lấy đầy đủ từ 01/09 đến hết 14/09 theo giờ Việt Nam.
+       */
+      let fromISO: string | null = null;
+      let toExclusiveISO: string | null = null;
+
+      if (fromDate) {
+        fromISO = vietnamDateToUTC(fromDate);
+      }
+
+      if (toDate) {
+        toExclusiveISO = vietnamNextDateToUTC(toDate);
+      }
+
+      /**
+       * Lưu toàn bộ dữ liệu của tất cả các page.
+       */
       const allRows: Record<string, unknown>[] = [];
 
       let page = 0;
 
+      /**
+       * Pagination.
+       *
+       * Supabase/PostgREST có giới hạn số record trả về.
+       * Vì vậy không dùng .limit(10000).
+       *
+       * Mỗi lần lấy 1.000 dòng:
+       *
+       * page 0 => 0 - 999
+       * page 1 => 1000 - 1999
+       * page 2 => 2000 - 2999
+       * ...
+       *
+       * Cho tới khi không còn dữ liệu.
+       */
       while (true) {
         const from = page * PAGE_SIZE;
         const to = from + PAGE_SIZE - 1;
@@ -140,26 +227,39 @@ export default function AdminExportPage() {
         let query = supabase
           .from(RAW_VIEW)
           .select("*")
-          .order(RAW_DATE_COLUMN, { ascending: true })
+          .order(RAW_DATE_COLUMN, {
+            ascending: true,
+          })
           .range(from, to);
 
-        /*
-         * IMPORTANT:
-         * _filter_date được dùng trực tiếp với YYYY-MM-DD.
-         *
-         * Không dùng:
-         * new Date(`${toDate}T00:00:00`)
-         * rồi toISOString()
-         *
-         * vì có thể làm lệch ngày do timezone.
+        /**
+         * Filter từ đầu ngày.
          */
-
-        if (fromDate) {
-          query = query.gte(RAW_DATE_COLUMN, fromDate);
+        if (fromISO) {
+          query = query.gte(
+            RAW_DATE_COLUMN,
+            fromISO
+          );
         }
 
-        if (toDate) {
-          query = query.lte(RAW_DATE_COLUMN, toDate);
+        /**
+         * Filter đến đầu ngày kế tiếp.
+         *
+         * Dùng < thay vì <=.
+         *
+         * Ví dụ:
+         *
+         * chọn đến 14/09
+         *
+         * < 15/09 00:00 GMT+7
+         *
+         * => bao gồm toàn bộ record ngày 14.
+         */
+        if (toExclusiveISO) {
+          query = query.lt(
+            RAW_DATE_COLUMN,
+            toExclusiveISO
+          );
         }
 
         const { data, error } = await query;
@@ -168,13 +268,19 @@ export default function AdminExportPage() {
           throw new Error(error.message);
         }
 
-        const rows = (data ?? []) as Record<string, unknown>[];
+        const rows = (data ?? []) as Record<
+          string,
+          unknown
+        >[];
 
+        /**
+         * Append page hiện tại vào tổng dữ liệu.
+         */
         allRows.push(...rows);
 
-        /*
-         * Nếu số dòng trả về < PAGE_SIZE
-         * nghĩa là đã lấy tới cuối dataset.
+        /**
+         * Nếu page không đủ PAGE_SIZE
+         * thì đã tới cuối dữ liệu.
          */
         if (rows.length < PAGE_SIZE) {
           break;
@@ -183,6 +289,9 @@ export default function AdminExportPage() {
         page++;
       }
 
+      /**
+       * Không có dữ liệu.
+       */
       if (allRows.length === 0) {
         setErrorMessage(
           "Không có dữ liệu trong khoảng thời gian đã chọn."
@@ -190,11 +299,22 @@ export default function AdminExportPage() {
         return;
       }
 
+      /**
+       * Format dữ liệu trước khi export.
+       */
       const formattedRows = formatRawRows(allRows);
 
+      /**
+       * Tên file.
+       *
+       * Ví dụ:
+       * raw_2026-09-01_2026-09-14.csv
+       */
       const suffix =
         fromDate || toDate
-          ? `_${fromDate || "start"}_${toDate || "end"}`
+          ? `_${fromDate || "start"}_${
+              toDate || "end"
+            }`
           : "";
 
       downloadCsv(
@@ -244,7 +364,10 @@ export default function AdminExportPage() {
             <input
               type="date"
               value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
+              onChange={(e) => {
+                setFromDate(e.target.value);
+                setErrorMessage(null);
+              }}
               className="rounded-lg border-2 border-line px-3 py-2 font-body text-sm"
             />
           </div>
@@ -257,7 +380,10 @@ export default function AdminExportPage() {
             <input
               type="date"
               value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
+              onChange={(e) => {
+                setToDate(e.target.value);
+                setErrorMessage(null);
+              }}
               className="rounded-lg border-2 border-line px-3 py-2 font-body text-sm"
             />
           </div>
@@ -265,6 +391,7 @@ export default function AdminExportPage() {
 
         <div className="flex flex-wrap gap-2">
           <button
+            type="button"
             onClick={() => applyPreset("today")}
             className="rounded-lg border-2 border-line px-3 py-1.5 font-body text-xs hover:border-brand-500"
           >
@@ -272,6 +399,7 @@ export default function AdminExportPage() {
           </button>
 
           <button
+            type="button"
             onClick={() => applyPreset("month")}
             className="rounded-lg border-2 border-line px-3 py-1.5 font-body text-xs hover:border-brand-500"
           >
@@ -279,6 +407,7 @@ export default function AdminExportPage() {
           </button>
 
           <button
+            type="button"
             onClick={() => applyPreset("year")}
             className="rounded-lg border-2 border-line px-3 py-1.5 font-body text-xs hover:border-brand-500"
           >
@@ -286,6 +415,7 @@ export default function AdminExportPage() {
           </button>
 
           <button
+            type="button"
             onClick={() => applyPreset("all")}
             className="rounded-lg border-2 border-line px-3 py-1.5 font-body text-xs hover:border-brand-500"
           >
