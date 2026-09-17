@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Manrope } from "next/font/google";
 import "./globals.css";
+import { LanguageProvider } from "@/lib/i18n/LanguageContext";
 
 const inter = Inter({
   subsets: ["latin", "vietnamese"],
@@ -27,7 +28,7 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <body className={`${inter.variable} ${manrope.variable} font-body text-ink bg-paper`}>
-        {children}
+        <LanguageProvider>{children}</LanguageProvider>
       </body>
     </html>
   );

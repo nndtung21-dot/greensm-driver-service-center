@@ -6,12 +6,8 @@ import Link from "next/link";
 import { getCurrentProfile, signOut } from "@/lib/auth";
 import { Profile } from "@/lib/types";
 import { TicketSearchBox } from "@/components/agent/TicketSearchBox";
-
-const NAV_ITEMS = [
-  { href: "/agent/queue", label: "Queue của tôi" },
-  { href: "/agent/history", label: "Lịch sử" },
-  { href: "/agent/performance", label: "Hiệu suất" },
-];
+import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { LanguageSwitcher } from "@/components/common/LanguageSwitcher";
 
 export default function AgentProtectedLayout({
   children,
@@ -20,8 +16,15 @@ export default function AgentProtectedLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { t } = useLanguage();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [checking, setChecking] = useState(true);
+
+  const NAV_ITEMS = [
+    { href: "/agent/queue", label: t("layout.nav.queue") },
+    { href: "/agent/history", label: t("layout.nav.history") },
+    { href: "/agent/performance", label: t("layout.nav.performance") },
+  ];
 
   useEffect(() => {
     let active = true;
@@ -42,7 +45,7 @@ export default function AgentProtectedLayout({
   if (checking || !profile) {
     return (
       <div className="flex min-h-screen items-center justify-center font-body text-ink/50">
-        Đang kiểm tra đăng nhập...
+        {t("layout.checkingLogin")}
       </div>
     );
   }
@@ -50,12 +53,19 @@ export default function AgentProtectedLayout({
   return (
     <div className="flex min-h-screen bg-paper">
       <aside className="flex w-64 flex-col border-r border-line bg-white px-5 py-6">
-        <p className="mb-1 font-body text-xs font-semibold uppercase tracking-wide text-brand-500">
-          Green SM
-        </p>
-        <p className="mb-8 font-display text-lg font-bold text-brand-900">
-          Agent Portal
-        </p>
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <p className="font-body text-xs font-semibold uppercase tracking-wide text-brand-500">
+              {t("layout.brand")}
+            </p>
+            <p className="font-display text-lg font-bold text-brand-900">
+              {t("layout.portalTitle")}
+            </p>
+          </div>
+        </div>
+        <div className="mb-6">
+          <LanguageSwitcher />
+        </div>
         <nav className="flex-1 space-y-1">
           {NAV_ITEMS.map((item) => (
             <Link
@@ -79,7 +89,7 @@ export default function AgentProtectedLayout({
               href="/agent/change-password"
               className="font-body text-sm text-brand-700 underline underline-offset-2"
             >
-              Đổi mật khẩu
+              {t("layout.changePassword")}
             </Link>
             <button
               onClick={async () => {
@@ -88,7 +98,7 @@ export default function AgentProtectedLayout({
               }}
               className="font-body text-sm text-brand-700 underline underline-offset-2"
             >
-              Đăng xuất
+              {t("layout.logout")}
             </button>
           </div>
         </div>

@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/auth";
 import { AgentQueueRow, Profile } from "@/lib/types";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 import {
   PrimaryButton,
   SecondaryButton,
@@ -186,19 +187,20 @@ function CounterStatusBadge({
 }: {
   status: CounterStatus;
 }) {
+  const { t } = useLanguage();
   const config = {
     AVAILABLE: {
-      label: "SẴN SÀNG",
+      label: t("queue.counterStatus.AVAILABLE"),
       className:
         "bg-green-100 text-green-700",
     },
     BUSY: {
-      label: "ĐANG BẬN",
+      label: t("queue.counterStatus.BUSY"),
       className:
         "bg-orange-100 text-orange-700",
     },
     CLOSED: {
-      label: "ĐÃ ĐÓNG",
+      label: t("queue.counterStatus.CLOSED"),
       className:
         "bg-gray-100 text-gray-600",
     },
@@ -218,6 +220,7 @@ function CounterStatusBadge({
 
 export default function AgentQueuePage() {
   const router = useRouter();
+  const { t } = useLanguage();
 
   const [profile, setProfile] =
     useState<Profile | null>(null);
@@ -677,14 +680,14 @@ export default function AgentQueuePage() {
   async function handleCallNext() {
     if (!profile) {
       setErrorMessage(
-        "Không xác định được Agent hiện tại."
+        t("queue.errors.noAgent")
       );
       return;
     }
 
     if (!myCounter) {
       setErrorMessage(
-        "Bạn hiện chưa được gán vào quầy nào."
+        t("queue.noCounterAssigned")
       );
       return;
     }
@@ -694,7 +697,7 @@ export default function AgentQueuePage() {
       "CLOSED"
     ) {
       setErrorMessage(
-        "Quầy hiện đang đóng."
+        t("queue.errors.counterClosed")
       );
       return;
     }
@@ -704,7 +707,7 @@ export default function AgentQueuePage() {
       "BUSY"
     ) {
       setErrorMessage(
-        "Quầy đang có ticket được xử lý."
+        t("queue.errors.counterBusy")
       );
       return;
     }
@@ -734,7 +737,7 @@ export default function AgentQueuePage() {
 
     if (!data) {
       setErrorMessage(
-        "Không có ticket WAITING để gọi."
+        t("queue.errors.noWaitingTicket")
       );
       return;
     }
@@ -748,7 +751,7 @@ export default function AgentQueuePage() {
       !result?.case_id
     ) {
       setErrorMessage(
-        "Không tìm thấy ticket để gọi."
+        t("queue.errors.ticketNotFound")
       );
       return;
     }
@@ -770,7 +773,7 @@ export default function AgentQueuePage() {
   ) {
     if (!profile) {
       setErrorMessage(
-        "Không xác định được Agent hiện tại."
+        t("queue.errors.noAgent")
       );
       return;
     }
@@ -815,7 +818,7 @@ export default function AgentQueuePage() {
 
         <div>
           <h1 className="font-display text-2xl font-bold text-brand-900">
-            Queue của tôi
+            {t("queue.title")}
           </h1>
 
           {myCounter && (
@@ -839,8 +842,8 @@ export default function AgentQueuePage() {
           }
         >
           {calling
-            ? "Đang gọi..."
-            : "GỌI TIẾP THEO"}
+            ? t("queue.callNext.calling")
+            : t("queue.callNext.button")}
         </PrimaryButton>
 
       </div>
@@ -875,7 +878,7 @@ export default function AgentQueuePage() {
             );
           }}
         >
-          Tất cả
+          {t("queue.filter.all")}
         </FilterButton>
 
         <FilterButton
@@ -892,7 +895,7 @@ export default function AgentQueuePage() {
             );
           }}
         >
-          Của tôi
+          {t("queue.filter.mine")}
         </FilterButton>
 
       </div>
@@ -903,8 +906,7 @@ export default function AgentQueuePage() {
 
       {!myCounter && (
         <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 font-body text-sm text-orange-800">
-          Bạn hiện chưa được gán vào
-          quầy nào.
+          {t("queue.noCounterAssigned")}
         </div>
       )}
 
@@ -922,8 +924,8 @@ export default function AgentQueuePage() {
 
               <p className="mt-1 font-body text-xs text-ink/50">
                 {myCounter.current_agent_id
-                  ? "Agent đang trực tiếp phụ trách quầy"
-                  : "Đang dùng Agent mặc định của quầy"}
+                  ? t("queue.counterInfo.dedicated")
+                  : t("queue.counterInfo.default")}
               </p>
             </div>
 
@@ -945,21 +947,21 @@ export default function AgentQueuePage() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
 
         <StatCard
-          label="Waiting"
+          label={t("queue.stats.waiting")}
           value={
             waiting.length
           }
         />
 
         <StatCard
-          label="Processing"
+          label={t("queue.stats.processing")}
           value={
             processing.length
           }
         />
 
         <StatCard
-          label="Pending"
+          label={t("queue.stats.pending")}
           value={
             pending.length
           }
@@ -967,7 +969,7 @@ export default function AgentQueuePage() {
         />
 
         <StatCard
-          label="Over SLA"
+          label={t("queue.stats.overSla")}
           value={
             overSla.length
           }
@@ -975,7 +977,7 @@ export default function AgentQueuePage() {
         />
 
         <StatCard
-          label="Completed Today"
+          label={t("queue.stats.completedToday")}
           value={
             completedToday.length
           }
@@ -994,7 +996,7 @@ export default function AgentQueuePage() {
         <div>
 
           <p className="mb-3 font-body text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Trạng thái
+            {t("queue.statusFilter.label")}
           </p>
 
           <div className="flex flex-wrap gap-2">
@@ -1010,7 +1012,7 @@ export default function AgentQueuePage() {
                 )
               }
             >
-              Tất cả
+              {t("queue.filter.all")}
             </FilterButton>
 
             <FilterButton
@@ -1024,7 +1026,7 @@ export default function AgentQueuePage() {
                 )
               }
             >
-              Waiting
+              {t("agentStatus.WAITING")}
             </FilterButton>
 
             <FilterButton
@@ -1038,7 +1040,7 @@ export default function AgentQueuePage() {
                 )
               }
             >
-              Processing
+              {t("agentStatus.PROCESSING")}
             </FilterButton>
 
             <FilterButton
@@ -1052,7 +1054,7 @@ export default function AgentQueuePage() {
                 )
               }
             >
-              Pending
+              {t("agentStatus.PENDING")}
             </FilterButton>
 
             <FilterButton
@@ -1066,7 +1068,7 @@ export default function AgentQueuePage() {
                 )
               }
             >
-              Resolved
+              {t("agentStatus.RESOLVED")}
             </FilterButton>
 
             <FilterButton
@@ -1080,7 +1082,7 @@ export default function AgentQueuePage() {
                 )
               }
             >
-              Closed
+              {t("agentStatus.CLOSED")}
             </FilterButton>
 
           </div>
@@ -1092,7 +1094,7 @@ export default function AgentQueuePage() {
         <div>
 
           <p className="mb-3 font-body text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Chủ đề
+            {t("queue.categoryFilter.label")}
           </p>
 
           <div className="flex flex-wrap gap-2">
@@ -1108,7 +1110,7 @@ export default function AgentQueuePage() {
                 )
               }
             >
-              Tất cả chủ đề
+              {t("queue.categoryFilter.all")}
             </FilterButton>
 
             {categoryOptions.map(
@@ -1137,7 +1139,7 @@ export default function AgentQueuePage() {
           {categoryOptions.length ===
             0 && (
             <p className="mt-2 font-body text-xs text-ink/40">
-              Chưa có chủ đề nào trong queue hôm nay.
+              {t("queue.categoryFilter.empty")}
             </p>
           )}
 
@@ -1160,11 +1162,11 @@ export default function AgentQueuePage() {
               <tr>
 
                 <th className="px-4 py-3">
-                  Số
+                  {t("queue.table.number")}
                 </th>
 
                 <th className="px-4 py-3">
-                  Tài xế
+                  {t("queue.table.driver")}
                 </th>
 
                 <th className="px-4 py-3">
@@ -1172,11 +1174,11 @@ export default function AgentQueuePage() {
                 </th>
 
                 <th className="px-4 py-3">
-                  Nhu cầu
+                  {t("queue.table.need")}
                 </th>
 
                 <th className="px-4 py-3">
-                  Thời gian chờ
+                  {t("queue.table.waitTime")}
                 </th>
 
                 <th className="px-4 py-3">
@@ -1184,11 +1186,11 @@ export default function AgentQueuePage() {
                 </th>
 
                 <th className="px-4 py-3">
-                  Trạng thái
+                  {t("queue.table.status")}
                 </th>
 
                 <th className="px-4 py-3">
-                  Quầy
+                  {t("queue.table.counter")}
                 </th>
 
                 <th className="px-4 py-3"></th>
@@ -1205,7 +1207,7 @@ export default function AgentQueuePage() {
                     colSpan={9}
                     className="px-4 py-6 text-center text-ink/40"
                   >
-                    Đang tải...
+                    {t("queue.table.loading")}
                   </td>
                 </tr>
               )}
@@ -1221,11 +1223,11 @@ export default function AgentQueuePage() {
                       {statusFilter !==
                           "ALL" ||
                         categoryFilter
-                        ? "Không có ticket phù hợp với bộ lọc."
+                        ? t("queue.table.emptyFiltered")
                         : queueFilter ===
                             "MINE"
-                        ? "Quầy của bạn hiện không có ticket nào hôm nay."
-                        : "Không có ticket nào hôm nay."}
+                        ? t("queue.table.emptyMine")
+                        : t("queue.table.emptyAll")}
                     </td>
                   </tr>
                 )}
@@ -1275,7 +1277,7 @@ export default function AgentQueuePage() {
                           row.created_at
                         )
                       }{" "}
-                      phút
+                      {t("common.minutes")}
                     </td>
 
                     <td className="px-4 py-3">
@@ -1317,7 +1319,7 @@ export default function AgentQueuePage() {
                             );
                           }}
                         >
-                          Gọi
+                          {t("queue.table.call")}
                         </SecondaryButton>
                       )}
 

@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/auth";
 import { StatusBadge } from "@/components/agent/ui";
 import { TicketStatus } from "@/lib/types";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 type HistoryRow = {
   case_id: string;
@@ -20,8 +21,17 @@ type HistoryRow = {
   resolution: string | null;
 };
 
+const FILTER_STATUSES: TicketStatus[] = [
+  "RESOLVED",
+  "CLOSED",
+  "PENDING",
+  "NO_SHOW",
+  "PROCESSING",
+];
+
 export default function AgentHistoryPage() {
   const router = useRouter();
+  const { t, lang } = useLanguage();
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
@@ -43,22 +53,23 @@ export default function AgentHistoryPage() {
   }, []);
 
   const filtered = statusFilter ? rows.filter((r) => r.status === statusFilter) : rows;
+  const locale = lang === "en" ? "en-US" : "vi-VN";
 
   return (
     <div className="max-w-4xl space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-bold text-brand-900">Lịch sử xử lý</h1>
+        <h1 className="font-display text-2xl font-bold text-brand-900">{t("history.title")}</h1>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
           className="rounded-lg border-2 border-line px-3 py-1.5 font-body text-sm"
         >
-          <option value="">Tất cả trạng thái</option>
-          <option value="RESOLVED">Đã giải quyết</option>
-          <option value="CLOSED">Đã đóng</option>
-          <option value="PENDING">Tạm hoãn</option>
-          <option value="NO_SHOW">Vắng mặt</option>
-          <option value="PROCESSING">Đang xử lý</option>
+          <option value="">{t("history.filterAll")}</option>
+          {FILTER_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {t(`agentStatus.${s}`)}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -66,25 +77,25 @@ export default function AgentHistoryPage() {
         <table className="w-full text-left font-body text-sm">
           <thead className="border-b border-line bg-paper/60 text-xs uppercase tracking-wide text-ink/50">
             <tr>
-              <th className="px-4 py-3">Số</th>
-              <th className="px-4 py-3">Tài xế</th>
-              <th className="px-4 py-3">Nhu cầu</th>
-              <th className="px-4 py-3">Thời gian</th>
-              <th className="px-4 py-3">Trạng thái</th>
+              <th className="px-4 py-3">{t("history.columns.number")}</th>
+              <th className="px-4 py-3">{t("history.columns.driver")}</th>
+              <th className="px-4 py-3">{t("history.columns.need")}</th>
+              <th className="px-4 py-3">{t("history.columns.time")}</th>
+              <th className="px-4 py-3">{t("history.columns.status")}</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
                 <td colSpan={5} className="px-4 py-6 text-center text-ink/40">
-                  Đang tải...
+                  {t("history.loading")}
                 </td>
               </tr>
             )}
             {!loading && filtered.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-6 text-center text-ink/40">
-                  Chưa có ticket nào.
+                  {t("history.empty")}
                 </td>
               </tr>
             )}
@@ -100,7 +111,7 @@ export default function AgentHistoryPage() {
                 <td className="px-4 py-3">{r.driver_name}</td>
                 <td className="px-4 py-3">{r.category_name}</td>
                 <td className="px-4 py-3 text-ink/60">
-                  {new Date(r.resolved_at ?? r.closed_at ?? r.created_at).toLocaleString("vi-VN")}
+                  {new Date(r.resolved_at ?? r.closed_at ?? r.created_at).toLocaleString(locale)}
                 </td>
                 <td className="px-4 py-3">
                   <StatusBadge status={r.status} />

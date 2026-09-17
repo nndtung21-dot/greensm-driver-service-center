@@ -3,8 +3,10 @@
 import { FormEvent, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { Panel, PrimaryButton } from "@/components/agent/ui";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 export default function ChangePasswordPage() {
+  const { t } = useLanguage();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -18,15 +20,15 @@ export default function ChangePasswordPage() {
     setSuccessMessage(null);
 
     if (!currentPassword) {
-      setErrorMessage("Nhập mật khẩu hiện tại trước đã.");
+      setErrorMessage(t("changePassword.errors.emptyCurrent"));
       return;
     }
     if (newPassword.length < 8) {
-      setErrorMessage("Mật khẩu mới phải từ 8 ký tự trở lên.");
+      setErrorMessage(t("changePassword.errors.tooShort"));
       return;
     }
     if (newPassword !== confirmPassword) {
-      setErrorMessage("Mật khẩu mới nhập lại không khớp.");
+      setErrorMessage(t("changePassword.errors.mismatch"));
       return;
     }
 
@@ -37,7 +39,7 @@ export default function ChangePasswordPage() {
     const { data: userData } = await supabase.auth.getUser();
     const email = userData.user?.email;
     if (!email) {
-      setErrorMessage("Không xác định được tài khoản đang đăng nhập.");
+      setErrorMessage(t("changePassword.errors.noSession"));
       setBusy(false);
       return;
     }
@@ -47,7 +49,7 @@ export default function ChangePasswordPage() {
       password: currentPassword,
     });
     if (signInError) {
-      setErrorMessage("Mật khẩu hiện tại không đúng.");
+      setErrorMessage(t("changePassword.errors.wrongCurrent"));
       setBusy(false);
       return;
     }
@@ -66,13 +68,13 @@ export default function ChangePasswordPage() {
     setCurrentPassword("");
     setNewPassword("");
     setConfirmPassword("");
-    setSuccessMessage("Đổi mật khẩu thành công.");
+    setSuccessMessage(t("changePassword.success"));
   }
 
   return (
     <div className="max-w-md">
       <h1 className="mb-6 font-display text-2xl font-bold text-brand-900">
-        Đổi mật khẩu
+        {t("changePassword.title")}
       </h1>
 
       <Panel>
@@ -90,7 +92,7 @@ export default function ChangePasswordPage() {
 
           <div>
             <label className="mb-1 block font-body text-sm text-ink/70">
-              Mật khẩu hiện tại
+              {t("changePassword.currentPassword")}
             </label>
             <input
               type="password"
@@ -102,20 +104,20 @@ export default function ChangePasswordPage() {
 
           <div>
             <label className="mb-1 block font-body text-sm text-ink/70">
-              Mật khẩu mới
+              {t("changePassword.newPassword")}
             </label>
             <input
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Tối thiểu 8 ký tự"
+              placeholder={t("changePassword.newPasswordPlaceholder")}
               className="w-full rounded-lg border-2 border-line px-4 py-2.5 font-body text-sm focus:border-brand-700"
             />
           </div>
 
           <div>
             <label className="mb-1 block font-body text-sm text-ink/70">
-              Nhập lại mật khẩu mới
+              {t("changePassword.confirmPassword")}
             </label>
             <input
               type="password"
@@ -126,7 +128,7 @@ export default function ChangePasswordPage() {
           </div>
 
           <PrimaryButton type="submit" disabled={busy} className="w-full">
-            {busy ? "Đang lưu..." : "Đổi mật khẩu"}
+            {busy ? t("changePassword.saving") : t("changePassword.submit")}
           </PrimaryButton>
         </form>
       </Panel>

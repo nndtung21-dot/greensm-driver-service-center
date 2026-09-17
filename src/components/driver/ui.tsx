@@ -1,4 +1,5 @@
 import { ButtonHTMLAttributes, ReactNode } from "react";
+import { LanguageSwitcher } from "@/components/common/LanguageSwitcher";
 
 /**
  * KioskButton — the one interactive control of the whole flow.
@@ -41,6 +42,9 @@ export function StepCard({
 }) {
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center px-6 py-10">
+      <div className="mb-4 flex justify-end">
+        <LanguageSwitcher variant="kiosk" />
+      </div>
       <div className="rounded-card border border-line bg-white p-8 shadow-sm sm:p-12">
         {eyebrow && (
           <p className="mb-2 font-body text-sm font-semibold uppercase tracking-wide text-brand-500">

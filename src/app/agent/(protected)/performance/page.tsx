@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/auth";
 import { Profile } from "@/lib/types";
 import { Panel, StatCard } from "@/components/agent/ui";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 type CaseRow = {
   status: string;
@@ -19,6 +20,7 @@ type PerfRow = {
 };
 
 export default function AgentPerformancePage() {
+  const { t } = useLanguage();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [cases, setCases] = useState<CaseRow[]>([]);
   const [perf, setPerf] = useState<PerfRow | null>(null);
@@ -67,33 +69,31 @@ export default function AgentPerformancePage() {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <h1 className="font-display text-2xl font-bold text-brand-900">Hiệu suất cá nhân</h1>
+      <h1 className="font-display text-2xl font-bold text-brand-900">{t("performance.title")}</h1>
       {loading ? (
-        <p className="font-body text-ink/50">Đang tải...</p>
+        <p className="font-body text-ink/50">{t("performance.loading")}</p>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <StatCard label="Ticket đã xử lý" value={processed} />
-            <StatCard label="Ticket hoàn thành" value={completed} />
+            <StatCard label={t("performance.cards.processed")} value={processed} />
+            <StatCard label={t("performance.cards.completed")} value={completed} />
             <StatCard
-              label="Avg. Handling Time"
+              label={t("performance.cards.avgHandling")}
               value={avgHandlingMin !== null ? `${avgHandlingMin}p` : "—"}
             />
             <StatCard
-              label="SLA Compliance"
+              label={t("performance.cards.slaCompliance")}
               value={perf?.sla_compliance_pct != null ? `${perf.sla_compliance_pct}%` : "—"}
             />
             <StatCard
-              label="FCR"
+              label={t("performance.cards.fcr")}
               value={perf?.fcr_pct != null ? `${perf.fcr_pct}%` : "—"}
             />
-            <StatCard label="CSAT" value={avgCsat} />
+            <StatCard label={t("performance.cards.csat")} value={avgCsat} />
           </div>
-          <Panel title="Ghi chú">
+          <Panel title={t("performance.notesTitle")}>
             <p className="font-body text-sm text-ink/60">
-              FCR (First Contact Resolution) = tỉ lệ ticket hoàn thành mà KHÔNG
-              từng bị Transfer sang bộ phận/agent khác. SLA Compliance chỉ tính
-              trên ticket đã hoàn thành và có cấu hình SLA áp dụng.
+              {t("performance.notesBody")}
             </p>
           </Panel>
         </>
