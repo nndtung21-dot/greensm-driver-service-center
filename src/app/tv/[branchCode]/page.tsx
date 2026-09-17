@@ -1651,11 +1651,7 @@ export default function TvDisplayPage() {
                       key={
                         counter.counter_code
                       }
-                      className={`flex flex-col overflow-hidden rounded-2xl shadow-sm ${
-                        isCounter06
-                          ? "border border-orange-700 bg-orange-600"
-                          : "border border-line bg-white"
-                      }`}
+                      className="flex flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-sm"
                     >
                       {/* ==================================================
                           COUNTER HEADER
@@ -1664,7 +1660,7 @@ export default function TvDisplayPage() {
                       <div
                         className={
                           isCounter06
-                            ? "bg-orange-700"
+                            ? "bg-orange-600"
                             : "bg-brand-700"
                         }
                         style={{
@@ -1703,11 +1699,7 @@ export default function TvDisplayPage() {
 
                       <div
                         className={
-                          isCounter06
-                            ? busy
-                              ? "bg-orange-500"
-                              : "bg-orange-600"
-                            : busy
+                          busy
                             ? "bg-brand-100"
                             : "bg-paper"
                         }
@@ -1771,11 +1763,7 @@ export default function TvDisplayPage() {
                           ================================================== */}
 
                       <div
-                        className={
-                          isCounter06
-                            ? "flex-1 border-t border-orange-500 bg-orange-600"
-                            : "flex-1 border-t border-line bg-white"
-                        }
+                        className="flex-1 border-t border-line bg-white"
                         style={{
                           padding:
                             "0.9vw 1vw",
