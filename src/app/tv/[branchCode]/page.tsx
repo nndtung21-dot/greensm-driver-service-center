@@ -1774,7 +1774,7 @@ export default function TvDisplayPage() {
                         className="flex-1 border-t border-line bg-white"
                         style={{
                           padding:
-                            "0.9vw 1vw",
+                            "0.9vw 0.7vw",
                         }}
                       >
                         <p
@@ -1800,15 +1800,15 @@ export default function TvDisplayPage() {
                                   key={
                                     q.ticket_code
                                   }
-                                  className="flex items-baseline gap-2 border-b border-line/60 pb-1 last:border-0"
+                                  className="flex items-baseline gap-1 border-b border-line/60 pb-1 last:border-0"
                                 >
                                   <span
                                     className="flex-shrink-0 font-display font-bold text-brand-900"
                                     style={{
                                       fontSize:
-                                        "1.2vw",
+                                        "1.1vw",
                                       width:
-                                        "3vw",
+                                        "2.6vw",
                                     }}
                                   >
                                     {
@@ -1820,7 +1820,7 @@ export default function TvDisplayPage() {
                                     className="min-w-0 flex-1 truncate font-body text-ink/70"
                                     style={{
                                       fontSize:
-                                        "0.95vw",
+                                        "0.78vw",
                                     }}
                                   >
                                     {
