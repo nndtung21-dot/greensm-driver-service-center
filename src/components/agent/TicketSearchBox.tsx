@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 /*
  * TÌM VÉ — dán mã ticket (VD: T01202608251A001) để nhảy thẳng tới
@@ -13,6 +14,7 @@ import { supabase } from "@/lib/supabase/client";
  */
 export function TicketSearchBox() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -21,7 +23,7 @@ export function TicketSearchBox() {
     const trimmed = code.trim();
 
     if (!trimmed) {
-      setError("Nhập mã ticket trước đã.");
+      setError(t("layout.search.emptyError"));
       return;
     }
 
@@ -37,7 +39,7 @@ export function TicketSearchBox() {
     setBusy(false);
 
     if (queryError || !data) {
-      setError("Không tìm thấy ticket với mã này.");
+      setError(t("layout.search.notFound"));
       return;
     }
 
@@ -57,7 +59,7 @@ export function TicketSearchBox() {
             handleSearch();
           }
         }}
-        placeholder="Tìm vé theo mã ticket..."
+        placeholder={t("layout.search.placeholder")}
         className="w-56 rounded-lg border-2 border-line px-3 py-1.5 font-body text-sm focus:border-brand-700"
       />
 
@@ -67,7 +69,7 @@ export function TicketSearchBox() {
         disabled={busy}
         className="rounded-lg border-2 border-line bg-white px-3 py-1.5 font-body text-sm font-semibold text-brand-900 transition-colors hover:border-brand-500 disabled:opacity-40"
       >
-        Tìm
+        {t("layout.search.button")}
       </button>
 
       {error && (

@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { KioskButton, StepCard } from "./ui";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 import {
   Branch,
   DriverLookupResult,
@@ -14,13 +15,14 @@ import {
 // 1. Welcome (Section 5)
 // ---------------------------------------------------------------------
 export function WelcomeStep({ onStart }: { onStart: () => void }) {
+  const { t } = useLanguage();
   return (
     <StepCard
-      eyebrow="Green SM Driver Service Center"
-      title="Xin chào Quý Tài xế"
-      subtitle="Vui lòng check-in để được hỗ trợ nhanh nhất."
+      eyebrow={t("common.brand")}
+      title={t("checkin.welcome.title")}
+      subtitle={t("checkin.welcome.subtitle")}
     >
-      <KioskButton onClick={onStart}>BẮT ĐẦU CHECK-IN</KioskButton>
+      <KioskButton onClick={onStart}>{t("checkin.welcome.cta")}</KioskButton>
     </StepCard>
   );
 }
@@ -35,6 +37,7 @@ export function IdentifyStep({
   loading: boolean;
   onSubmit: (identifier: string) => void;
 }) {
+  const { t } = useLanguage();
   const [value, setValue] = useState("");
 
   function handleSubmit(e: FormEvent) {
@@ -44,9 +47,9 @@ export function IdentifyStep({
 
   return (
     <StepCard
-      eyebrow="Bước 1"
-      title="Xác thực tài xế"
-      subtitle="Nhập SAP ID hoặc Biển số xe đã đăng ký."
+      eyebrow={t("checkin.identify.step")}
+      title={t("checkin.identify.title")}
+      subtitle={t("checkin.identify.subtitle")}
     >
       <form onSubmit={handleSubmit} className="space-y-6">
         <input
@@ -55,11 +58,11 @@ export function IdentifyStep({
           autoCapitalize="characters"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="SAP ID hoặc Biển số xe"
+          placeholder={t("checkin.identify.placeholder")}
           className="w-full rounded-card border-2 border-line px-6 py-6 text-2xl font-body focus:border-brand-700"
         />
         <KioskButton type="submit" disabled={loading}>
-          {loading ? "Đang tìm..." : "TIẾP TỤC"}
+          {loading ? t("checkin.identify.searching") : t("checkin.identify.continue")}
         </KioskButton>
       </form>
     </StepCard>
@@ -75,16 +78,19 @@ export function DriverFoundStep({
   onConfirm: () => void;
   onRetry: () => void;
 }) {
+  const { t } = useLanguage();
   return (
-    <StepCard eyebrow="Xác nhận thông tin" title={driver.name}>
+    <StepCard eyebrow={t("checkin.driverFound.eyebrow")} title={driver.name}>
       <div className="mb-8 space-y-2 font-body text-lg text-ink/80">
-        {driver.sap_id && <p>SAP ID: {driver.sap_id}</p>}
-        {driver.driver_type && <p>Loại tài xế: {driver.driver_type}</p>}
+        {driver.sap_id && <p>{t("checkin.driverFound.sapId", { value: driver.sap_id })}</p>}
+        {driver.driver_type && (
+          <p>{t("checkin.driverFound.driverType", { value: driver.driver_type })}</p>
+        )}
       </div>
       <div className="space-y-4">
-        <KioskButton onClick={onConfirm}>ĐÚNG, TIẾP TỤC</KioskButton>
+        <KioskButton onClick={onConfirm}>{t("checkin.driverFound.confirm")}</KioskButton>
         <KioskButton variant="secondary" onClick={onRetry}>
-          Không phải tôi — nhập lại
+          {t("checkin.driverFound.retry")}
         </KioskButton>
       </div>
     </StepCard>
@@ -95,12 +101,11 @@ export function DriverFoundStep({
 // Not found (Section 6)
 // ---------------------------------------------------------------------
 export function NotFoundStep({ onRetry }: { onRetry: () => void }) {
+  const { t } = useLanguage();
   return (
-    <StepCard title="Không tìm thấy thông tin tài xế">
-      <p className="mb-8 font-body text-lg text-ink/80">
-        Vui lòng liên hệ nhân viên Green SM để được hỗ trợ.
-      </p>
-      <KioskButton onClick={onRetry}>THỬ LẠI</KioskButton>
+    <StepCard title={t("checkin.notFound.title")}>
+      <p className="mb-8 font-body text-lg text-ink/80">{t("checkin.notFound.message")}</p>
+      <KioskButton onClick={onRetry}>{t("checkin.notFound.retry")}</KioskButton>
     </StepCard>
   );
 }
@@ -115,8 +120,9 @@ export function BranchStep({
   branches: Branch[];
   onSelect: (b: Branch) => void;
 }) {
+  const { t } = useLanguage();
   return (
-    <StepCard eyebrow="Bước 2" title="Chọn văn phòng">
+    <StepCard eyebrow={t("checkin.branch.step")} title={t("checkin.branch.title")}>
       <div className="space-y-4">
         {branches.map((b) => (
           <KioskButton
@@ -144,6 +150,7 @@ export function NeedsStep({
   fetchSubcategories: (categoryId: string) => Promise<ServiceSubcategory[]>;
   onContinue: (category: ServiceCategory, subcategory: ServiceSubcategory | null) => void;
 }) {
+  const { t } = useLanguage();
   const [categoryId, setCategoryId] = useState("");
   const [subcategories, setSubcategories] = useState<ServiceSubcategory[]>([]);
   const [subcategoryId, setSubcategoryId] = useState("");
@@ -173,16 +180,18 @@ export function NeedsStep({
   const canContinue = !!selectedCategory && (subcategories.length === 0 || !!selectedSubcategory);
 
   return (
-    <StepCard eyebrow="Bước 3" title="Bạn cần hỗ trợ về vấn đề gì?">
+    <StepCard eyebrow={t("checkin.needs.step")} title={t("checkin.needs.title")}>
       <div className="space-y-5">
         <div>
-          <label className="mb-2 block font-body text-base text-ink/70">Chủ đề</label>
+          <label className="mb-2 block font-body text-base text-ink/70">
+            {t("checkin.needs.topicLabel")}
+          </label>
           <select
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}
             className="w-full rounded-card border-2 border-line bg-white px-6 py-5 text-xl font-body focus:border-brand-700"
           >
-            <option value="">— Chọn chủ đề —</option>
+            <option value="">{t("checkin.needs.topicPlaceholder")}</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -191,7 +200,9 @@ export function NeedsStep({
           </select>
         </div>
         <div>
-          <label className="mb-2 block font-body text-base text-ink/70">Nhu cầu cụ thể</label>
+          <label className="mb-2 block font-body text-base text-ink/70">
+            {t("checkin.needs.detailLabel")}
+          </label>
           <select
             value={subcategoryId}
             onChange={(e) => setSubcategoryId(e.target.value)}
@@ -200,12 +211,12 @@ export function NeedsStep({
           >
             <option value="">
               {!categoryId
-                ? "— Chọn chủ đề trước —"
+                ? t("checkin.needs.selectTopicFirst")
                 : loadingSub
-                ? "Đang tải..."
+                ? t("checkin.needs.loading")
                 : subcategories.length === 0
-                ? "— Không có mục con —"
-                : "— Chọn nhu cầu cụ thể —"}
+                ? t("checkin.needs.noSubItems")
+                : t("checkin.needs.selectDetail")}
             </option>
             {subcategories.map((s) => (
               <option key={s.id} value={s.id}>
@@ -218,7 +229,7 @@ export function NeedsStep({
           disabled={!canContinue}
           onClick={() => selectedCategory && onContinue(selectedCategory, selectedSubcategory)}
         >
-          TIẾP TỤC
+          {t("checkin.needs.continue")}
         </KioskButton>
       </div>
     </StepCard>
@@ -233,12 +244,13 @@ export function DescriptionStep({
 }: {
   onSubmit: (description: string) => void;
 }) {
+  const { t } = useLanguage();
   const [value, setValue] = useState("");
   return (
     <StepCard
-      eyebrow="Bước 5"
-      title="Mô tả ngắn vấn đề của bạn"
-      subtitle="Không bắt buộc, nhưng giúp nhân viên hỗ trợ nhanh hơn."
+      eyebrow={t("checkin.description.step")}
+      title={t("checkin.description.title")}
+      subtitle={t("checkin.description.subtitle")}
     >
       <div className="space-y-6">
         <textarea
@@ -246,11 +258,11 @@ export function DescriptionStep({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           rows={4}
-          placeholder="Ví dụ: Tôi chưa nhận được tiền đối soát."
+          placeholder={t("checkin.description.placeholder")}
           className="w-full rounded-card border-2 border-line px-6 py-4 text-xl font-body focus:border-brand-700"
         />
         <KioskButton onClick={() => onSubmit(value.trim())}>
-          XÁC NHẬN CHECK-IN
+          {t("checkin.description.submit")}
         </KioskButton>
       </div>
     </StepCard>
@@ -260,17 +272,6 @@ export function DescriptionStep({
 // ---------------------------------------------------------------------
 // Success (Section 11) — the one signature moment: the ticket reveal
 // ---------------------------------------------------------------------
-const TICKET_STATUS_LABELS: Record<string, string> = {
-  WAITING: "Đang chờ được gọi",
-  CALLED: "Đang được mời đến quầy",
-  PROCESSING: "Đang được xử lý",
-  PENDING: "Tạm hoãn — đang chờ thêm thông tin",
-  TRANSFERRED: "Đang được chuyển xử lý",
-  RESOLVED: "Đã xử lý xong",
-  CLOSED: "Đã hoàn tất",
-  CANCELLED: "Đã huỷ",
-  NO_SHOW: "Đã đánh dấu vắng mặt",
-};
 
 export function SuccessStep({
   queueNumber,
@@ -283,6 +284,7 @@ export function SuccessStep({
   ticketCode: string;
   onReset: () => void;
 }) {
+  const { t } = useLanguage();
   const [status, setStatus] = useState<string>("WAITING");
   const [caseId, setCaseId] = useState<string | null>(null);
   const [alreadyRated, setAlreadyRated] = useState(false);
@@ -331,35 +333,38 @@ export function SuccessStep({
 
   const isDone = status === "RESOLVED" || status === "CLOSED";
   const showFeedbackForm = isDone && !alreadyRated && !submitted;
+  const statusLabel = t(`checkin.status.${status}`) || status;
 
   return (
-    <StepCard eyebrow="Check-in thành công" title="Số của bạn">
+    <StepCard eyebrow={t("checkin.success.eyebrow")} title={t("checkin.success.title")}>
       <div className="my-4 rounded-card bg-brand-100 py-10 text-center">
         <span className="font-display text-8xl font-extrabold tracking-wide text-brand-900">
           {queueNumber}
         </span>
       </div>
       <p className="mb-2 text-center font-body text-lg text-ink/80">
-        Bộ phận: {categoryName}
+        {t("checkin.success.department", { name: categoryName })}
       </p>
       <p className="mb-6 text-center font-body text-base font-semibold text-brand-700">
-        {TICKET_STATUS_LABELS[status] ?? status}
+        {statusLabel}
       </p>
 
       {!isDone && (
         <p className="text-center font-body text-xs text-ink/40">
-          Màn hình này sẽ tự cập nhật — bạn có thể yên tâm đợi ở đây, không cần thao tác gì thêm.
+          {t("checkin.success.autoUpdate")}
         </p>
       )}
 
       {isDone && alreadyRated && !submitted && (
-        <p className="text-center font-body text-ink/60">Cảm ơn bạn đã đánh giá dịch vụ!</p>
+        <p className="text-center font-body text-ink/60">
+          {t("checkin.success.alreadyRatedThanks")}
+        </p>
       )}
 
       {showFeedbackForm && (
         <div className="mt-2 border-t border-line pt-6">
           <p className="mb-4 text-center font-body text-lg font-semibold text-ink">
-            Bạn đánh giá chất lượng phục vụ hôm nay như thế nào?
+            {t("checkin.success.rateQuestion")}
           </p>
           <div className="mb-4 flex justify-center gap-2">
             {[1, 2, 3, 4, 5].map((star) => (
@@ -369,7 +374,7 @@ export function SuccessStep({
                 className={`text-4xl transition-transform hover:scale-110 ${
                   star <= rating ? "text-warn" : "text-line"
                 }`}
-                aria-label={`${star} sao`}
+                aria-label={t("checkin.success.starLabel", { n: star })}
               >
                 ★
               </button>
@@ -379,21 +384,21 @@ export function SuccessStep({
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             rows={2}
-            placeholder="Nhận xét thêm (không bắt buộc)"
+            placeholder={t("checkin.success.commentPlaceholder")}
             className="mb-4 w-full rounded-lg border-2 border-line px-4 py-3 font-body text-base focus:border-brand-700"
           />
           {feedbackError && (
             <p className="mb-3 text-center font-body text-sm text-danger">{feedbackError}</p>
           )}
           <KioskButton onClick={handleSubmitFeedback} disabled={submitting || rating === 0}>
-            {submitting ? "Đang gửi..." : "GỬI ĐÁNH GIÁ"}
+            {submitting ? t("checkin.success.sending") : t("checkin.success.submitRating")}
           </KioskButton>
         </div>
       )}
 
       {submitted && (
         <p className="mt-2 text-center font-body text-lg font-semibold text-brand-900">
-          Cảm ơn bạn đã đánh giá!
+          {t("checkin.success.thanksSubmitted")}
         </p>
       )}
 
@@ -401,7 +406,7 @@ export function SuccessStep({
         onClick={onReset}
         className="mt-8 block w-full text-center font-body text-sm text-ink/40 underline underline-offset-4"
       >
-        Check-in cho tài xế khác
+        {t("checkin.success.checkinOther")}
       </button>
     </StepCard>
   );
@@ -414,10 +419,11 @@ export function ErrorStep({
   message: string;
   onRetry: () => void;
 }) {
+  const { t } = useLanguage();
   return (
-    <StepCard title="Có lỗi xảy ra">
+    <StepCard title={t("checkin.error.title")}>
       <p className="mb-8 font-body text-lg text-danger">{message}</p>
-      <KioskButton onClick={onRetry}>THỬ LẠI</KioskButton>
+      <KioskButton onClick={onRetry}>{t("checkin.error.retry")}</KioskButton>
     </StepCard>
   );
 }

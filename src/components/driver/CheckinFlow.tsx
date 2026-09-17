@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { LanguageSwitcher } from "@/components/common/LanguageSwitcher";
 import {
   Branch,
   CheckinResult,
@@ -26,6 +28,7 @@ const KIOSK_BRANCH_CODE =
   process.env.NEXT_PUBLIC_KIOSK_BRANCH_CODE ?? null;
 
 export default function CheckinFlow() {
+  const { t } = useLanguage();
   const [step, setStep] = useState<CheckinStep>("welcome");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -192,9 +195,7 @@ export default function CheckinFlow() {
       .order("display_order");
 
     if (error) {
-      setErrorMessage(
-        "Không thể tải danh sách nhu cầu. Vui lòng thử lại."
-      );
+      setErrorMessage(t("checkin.flow.errors.loadCategoriesFailed"));
       return;
     }
 
@@ -214,9 +215,7 @@ export default function CheckinFlow() {
     }
 
     if (!branch) {
-      setErrorMessage(
-        "Chưa xác định được văn phòng. Vui lòng thử lại."
-      );
+      setErrorMessage(t("checkin.flow.errors.noBranch"));
       setStep("error");
       return;
     }
@@ -282,9 +281,7 @@ export default function CheckinFlow() {
     // --------------------------------------------------------
 
     if (!driver || !branch || !category) {
-      setErrorMessage(
-        "Thiếu thông tin cần thiết, vui lòng thử lại từ đầu."
-      );
+      setErrorMessage(t("checkin.flow.errors.missingInfo"));
 
       setStep("error");
       return;
@@ -334,7 +331,7 @@ export default function CheckinFlow() {
          */
 
         setErrorMessage(
-          getCheckinErrorMessage(error.message)
+          getCheckinErrorMessage(error.message, t)
         );
 
         setLoading(false);
@@ -347,9 +344,7 @@ export default function CheckinFlow() {
       // ------------------------------------------------------
 
       if (!data) {
-        setErrorMessage(
-          "Không nhận được kết quả check-in. Vui lòng thử lại."
-        );
+        setErrorMessage(t("checkin.flow.errors.genericCheckinFailed"));
 
         setLoading(false);
         setStep("error");
@@ -370,9 +365,7 @@ export default function CheckinFlow() {
         err
       );
 
-      setErrorMessage(
-        "Không thể tạo check-in lúc này. Vui lòng thử lại."
-      );
+      setErrorMessage(t("checkin.flow.errors.genericCheckinFailed"));
 
       setLoading(false);
       setStep("error");
@@ -407,37 +400,41 @@ export default function CheckinFlow() {
   if (windowOpen === false && preSubmitStep) {
     return (
       <div className="flex min-h-screen items-center justify-center px-6">
-        <div className="w-full max-w-md rounded-card bg-white p-8 text-center shadow-sm">
+        <div className="w-full max-w-md">
+          <div className="mb-4 flex justify-end">
+            <LanguageSwitcher variant="kiosk" />
+          </div>
+          <div className="rounded-card bg-white p-8 text-center shadow-sm">
           <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-accent-100">
             <span className="font-display text-3xl">🕒</span>
           </div>
 
           <p className="font-display text-2xl font-semibold text-brand-900">
-            Ngoài giờ nhận check-in
+            {t("checkin.flow.outsideHoursTitle")}
           </p>
 
           <p className="mt-3 font-body text-base text-ink/70">
-            Hệ thống chỉ nhận check-in từ{" "}
+            {t("checkin.flow.outsideHoursPrefix")}{" "}
             <b className="text-brand-700">
               {windowInfo?.open ?? "08:25"}
             </b>{" "}
-            đến{" "}
+            {t("checkin.flow.outsideHoursTo")}{" "}
             <b className="text-brand-700">
               {windowInfo?.close ?? "17:45"}
             </b>{" "}
-            (giờ Việt Nam).
+            {t("checkin.flow.outsideHoursTz")}
           </p>
 
           {windowInfo?.now && (
             <p className="mt-2 font-body text-sm text-ink/50">
-              Hiện tại: {windowInfo.now}
+              {t("checkin.flow.currentTime", { time: windowInfo.now })}
             </p>
           )}
 
           <p className="mt-5 font-body text-sm text-ink/50">
-            Vui lòng quay lại trong khung giờ làm việc.
-            Cảm ơn quý tài xế!
+            {t("checkin.flow.comeBack")}
           </p>
+          </div>
         </div>
       </div>
     );
@@ -539,11 +536,11 @@ export default function CheckinFlow() {
             <div className="mx-auto mb-5 h-12 w-12 animate-spin rounded-full border-4 border-brand-100 border-t-brand-700" />
 
             <p className="font-display text-2xl font-semibold text-brand-700">
-              Đang xử lý check-in...
+              {t("checkin.flow.submitting")}
             </p>
 
             <p className="mt-2 font-body text-sm text-ink/50">
-              Vui lòng không bấm lại.
+              {t("checkin.flow.doNotClickAgain")}
             </p>
           </div>
         </div>
@@ -572,10 +569,7 @@ export default function CheckinFlow() {
     case "error":
       return (
         <ErrorStep
-          message={
-            errorMessage ??
-            "Đã có lỗi xảy ra."
-          }
+          message={errorMessage ?? t("common.genericError")}
           onRetry={resetAll}
         />
       );
@@ -594,10 +588,11 @@ export default function CheckinFlow() {
 // ============================================================
 
 function getCheckinErrorMessage(
-  message: string
+  message: string,
+  t: (key: string, vars?: Record<string, string | number>) => string
 ): string {
   if (!message) {
-    return "Không thể tạo check-in lúc này. Vui lòng thử lại.";
+    return t("checkin.flow.errors.genericCheckinFailed");
   }
 
   // ----------------------------------------------------------
@@ -609,12 +604,15 @@ function getCheckinErrorMessage(
       message
         .replace(/^[\s\S]*CHECKIN_CLOSED:\s*/, "")
         .trim() ||
-      "Ngoài giờ nhận check-in. Hệ thống chỉ nhận từ 08:25 đến 17:45 (giờ Việt Nam)."
+      t("checkin.flow.errors.outsideHoursFallback")
     );
   }
 
   // ----------------------------------------------------------
-  // Driver đang có ticket active
+  // Driver đang có ticket active — message này do backend (Postgres)
+  // sinh ra bằng tiếng Việt, giữ nguyên vì không thể dịch động phía
+  // client. Muốn đa ngôn ngữ đầy đủ cần cập nhật thông báo lỗi trong
+  // SQL function (ví dụ trả thêm mã lỗi thay vì text).
   // ----------------------------------------------------------
 
   if (
@@ -637,7 +635,7 @@ function getCheckinErrorMessage(
       "unique constraint"
     )
   ) {
-    return "Tài xế vừa check-in rồi. Vui lòng kiểm tra lại số thứ tự thay vì check-in lần nữa.";
+    return t("checkin.flow.errors.duplicate");
   }
 
   // ----------------------------------------------------------
@@ -652,7 +650,7 @@ function getCheckinErrorMessage(
       "Không có quyền"
     )
   ) {
-    return "Bạn không có quyền thực hiện check-in này.";
+    return t("checkin.flow.errors.permission");
   }
 
   // ----------------------------------------------------------
@@ -667,7 +665,7 @@ function getCheckinErrorMessage(
       "văn phòng"
     )
   ) {
-    return "Không xác định được văn phòng check-in. Vui lòng thử lại hoặc liên hệ nhân viên Green SM.";
+    return t("checkin.flow.errors.branchUnresolved");
   }
 
   // ----------------------------------------------------------

@@ -16,11 +16,13 @@ import {
   SecondaryButton,
   StatusBadge,
 } from "@/components/agent/ui";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { Lang, dict } from "@/lib/i18n/translations";
 
-const HISTORY_LABELS: Record<string, string> = {
-  Created: "Tạo ticket",
-  "Status Changed": "Đổi trạng thái",
-};
+function getHistoryLabel(action: string, lang: Lang): string {
+  const labels = dict[lang].ticket.historyLabels as Record<string, string>;
+  return labels[action] ?? action;
+}
 
 type CounterOption = {
   id: string;
@@ -32,14 +34,16 @@ type CounterOption = {
   default_agent_name?: string | null;
 };
 
-function fmt(dt: string | null) {
+function fmt(dt: string | null, locale: string) {
   if (!dt) return "—";
-  return new Date(dt).toLocaleString("vi-VN");
+  return new Date(dt).toLocaleString(locale);
 }
 
 export default function TicketDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const { t, lang } = useLanguage();
+  const locale = lang === "en" ? "en-US" : "vi-VN";
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [detail, setDetail] = useState<CaseDetail | null>(null);
@@ -326,7 +330,7 @@ export default function TicketDetailPage() {
   const handleResolve = () => {
     if (!resolution.trim()) {
       setErrorMessage(
-        "Vui lòng nhập kết quả xử lý."
+        t("ticket.errors.resolutionRequired")
       );
       return;
     }
@@ -353,7 +357,7 @@ export default function TicketDetailPage() {
   const handleReassign = () => {
     if (!reassignTarget) {
       setErrorMessage(
-        "Chọn agent để reassign trước đã."
+        t("ticket.errors.selectReassignAgent")
       );
       return;
     }
@@ -377,14 +381,14 @@ export default function TicketDetailPage() {
   const handleSetPending = () => {
     if (!pendingReason.trim()) {
       setErrorMessage(
-        "Vui lòng nhập lý do Pending."
+        t("ticket.errors.pendingReasonRequired")
       );
       return;
     }
 
     if (!pendingNextStep.trim()) {
       setErrorMessage(
-        "Vui lòng nhập bước tiếp theo."
+        t("ticket.errors.pendingNextStepRequired")
       );
       return;
     }
@@ -436,7 +440,7 @@ export default function TicketDetailPage() {
 
     if (!targetCounterId) {
       setErrorMessage(
-        "Vui lòng chọn quầy muốn chuyển."
+        t("ticket.errors.selectTargetCounter")
       );
       return;
     }
@@ -450,7 +454,7 @@ export default function TicketDetailPage() {
 
     if (!targetCounter) {
       setErrorMessage(
-        "Không tìm thấy quầy đích."
+        t("ticket.errors.targetCounterNotFound")
       );
       return;
     }
@@ -460,7 +464,7 @@ export default function TicketDetailPage() {
       "CLOSED"
     ) {
       setErrorMessage(
-        "Không thể chuyển vào quầy đang đóng."
+        t("ticket.errors.targetCounterClosed")
       );
       return;
     }
@@ -469,14 +473,17 @@ export default function TicketDetailPage() {
       !targetCounter.default_agent_id
     ) {
       setErrorMessage(
-        "Quầy đích chưa có Agent mặc định."
+        t("ticket.errors.targetCounterNoDefaultAgent")
       );
       return;
     }
 
     const confirmed =
       window.confirm(
-        `Chuyển ticket ${detail.queue_number} sang ${targetCounter.counter_name}?`
+        t("ticket.transfer.confirmPrompt", {
+          number: detail.queue_number,
+          counter: targetCounter.counter_name,
+        })
       );
 
     if (!confirmed) {
@@ -540,7 +547,7 @@ export default function TicketDetailPage() {
   if (loading) {
     return (
       <p className="font-body text-ink/50">
-        Đang tải...
+        {t("ticket.loading")}
       </p>
     );
   }
@@ -554,7 +561,7 @@ export default function TicketDetailPage() {
   if (!detail) {
     return (
       <p className="font-body text-danger">
-        Không tìm thấy ticket này.
+        {t("ticket.notFound")}
       </p>
     );
   }
@@ -607,7 +614,7 @@ export default function TicketDetailPage() {
         }
         className="font-body text-sm text-brand-700 underline underline-offset-2"
       >
-        ← Quay lại Queue
+        {t("ticket.backToQueue")}
       </button>
 
       {/* ======================================================
@@ -648,7 +655,7 @@ export default function TicketDetailPage() {
           ====================================================== */}
 
       {isSupervisorOrAdmin && (
-        <Panel title="Reassign cho Agent khác">
+        <Panel title={t("ticket.reassign.title")}>
           <div className="flex flex-wrap items-center gap-3">
             <select
               value={reassignTarget}
@@ -658,7 +665,7 @@ export default function TicketDetailPage() {
               className="rounded-lg border-2 border-line px-3 py-2 font-body text-sm focus:border-brand-700"
             >
               <option value="">
-                -- Chọn agent --
+                {t("ticket.reassign.selectAgent")}
               </option>
 
               {colleagues.map((agent) => (
@@ -672,12 +679,12 @@ export default function TicketDetailPage() {
               onClick={handleReassign}
               disabled={busy || !reassignTarget}
             >
-              Reassign
+              {t("ticket.reassign.button")}
             </SecondaryButton>
 
             {detail.assigned_agent_id && (
               <span className="font-body text-xs text-ink/40">
-                Đang phụ trách:{" "}
+                {t("ticket.reassign.currentlyAssigned")}{" "}
                 {colleagues.find(
                   (a) => a.id === detail.assigned_agent_id
                 )?.full_name ?? "—"}
@@ -694,7 +701,7 @@ export default function TicketDetailPage() {
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
         {/* DRIVER */}
 
-        <Panel title="Thông tin tài xế">
+        <Panel title={t("ticket.driver.title")}>
           <p className="mb-3 font-body text-base font-semibold text-ink">
             {detail.sap_id ??
               "—"}{" "}
@@ -705,7 +712,7 @@ export default function TicketDetailPage() {
 
           <dl className="space-y-2 font-body text-sm">
             <Row
-              label="Trạng thái"
+              label={t("common.status")}
               value={
                 detail.work_status ??
                 "—"
@@ -713,7 +720,7 @@ export default function TicketDetailPage() {
             />
 
             <Row
-              label="Trạng thái Tài khoản"
+              label={t("ticket.driver.accountStatus")}
               value={
                 detail.account_status ??
                 "—"
@@ -721,7 +728,7 @@ export default function TicketDetailPage() {
             />
 
             <Row
-              label="Lý do khóa"
+              label={t("ticket.driver.lockReason")}
               value={
                 detail.lock_reason ??
                 "—"
@@ -731,7 +738,7 @@ export default function TicketDetailPage() {
 
           <div className="mt-3 space-y-1.5 border-t border-line pt-3 font-body text-sm">
             <p>
-              Link Green Portal -{" "}
+              {t("ticket.driver.greenPortalLink")} -{" "}
               {detail.driver_code ? (
                 <a
                   href={`https://greentaxi.xanhsm.com/app/driver/${detail.driver_code}`}
@@ -747,7 +754,7 @@ export default function TicketDetailPage() {
             </p>
 
             <p>
-              Link Admin Portal -{" "}
+              {t("ticket.driver.adminPortalLink")} -{" "}
               {detail.app_code ? (
                 <a
                   href={`https://admin-customer.xanhsm.com/drivers/${detail.app_code}`}
@@ -766,10 +773,10 @@ export default function TicketDetailPage() {
 
         {/* VISIT */}
 
-        <Panel title="Thông tin Visit">
+        <Panel title={t("ticket.visit.title")}>
           <dl className="space-y-2 font-body text-sm">
             <Row
-              label="Mã ticket"
+              label={t("ticket.visit.ticketCode")}
               value={
                 detail.ticket_code
               }
@@ -790,14 +797,15 @@ export default function TicketDetailPage() {
             />
 
             <Row
-              label="Check-in"
+              label={t("ticket.visit.checkin")}
               value={fmt(
-                detail.checkin_at
+                detail.checkin_at,
+                locale
               )}
             />
 
             <Row
-              label="Số queue"
+              label={t("ticket.visit.queueNumber")}
               value={
                 detail.queue_number
               }
@@ -807,7 +815,7 @@ export default function TicketDetailPage() {
 
         {/* REQUEST */}
 
-        <Panel title="Thông tin yêu cầu">
+        <Panel title={t("ticket.request.title")}>
           <dl className="space-y-2 font-body text-sm">
             <Row
               label="Category"
@@ -834,7 +842,7 @@ export default function TicketDetailPage() {
 
         {/* HISTORY */}
 
-        <Panel title="Lịch sử">
+        <Panel title={t("ticket.historyPanel.title")}>
           <ol className="space-y-3 font-body text-sm">
             {history.map((h) => (
               <li
@@ -843,15 +851,13 @@ export default function TicketDetailPage() {
               >
                 <p className="text-ink/50">
                   {fmt(
-                    h.created_at
+                    h.created_at,
+                    locale
                   )}
                 </p>
 
                 <p className="font-medium text-ink">
-                  {HISTORY_LABELS[
-                    h.action
-                  ] ??
-                    h.action}
+                  {getHistoryLabel(h.action, lang)}
 
                   {h.new_status
                     ? ` → ${h.new_status}`
@@ -886,7 +892,7 @@ export default function TicketDetailPage() {
                 }
                 disabled={busy}
               >
-                BẮT ĐẦU XỬ LÝ
+                {t("ticket.actions.startProcessing")}
               </PrimaryButton>
 
               {detail.status ===
@@ -897,8 +903,7 @@ export default function TicketDetailPage() {
                   }
                   disabled={busy}
                 >
-                  Tài xế không đến
-                  (NO_SHOW)
+                  {t("ticket.actions.noShow")}
                 </SecondaryButton>
               )}
             </div>
@@ -914,29 +919,26 @@ export default function TicketDetailPage() {
           ====================================================== */}
 
       {canTransfer && (
-        <Panel title="Chuyển ticket sang quầy khác">
+        <Panel title={t("ticket.transfer.title")}>
           <div className="space-y-4">
             <div className="rounded-lg bg-orange-50 px-4 py-3 font-body text-sm text-orange-800">
               <p>
-                Ticket sẽ được chuyển
-                về{" "}
-                <b>WAITING</b> tại
-                quầy đích.
+                {t("ticket.transfer.notice1Prefix")}{" "}
+                <b>WAITING</b>{" "}
+                {t("ticket.transfer.notice1Suffix")}
               </p>
 
               <p className="mt-1">
-                Agent quầy đích sẽ
-                <b> tự gọi ticket</b>.
+                {t("ticket.transfer.notice2Prefix")}
+                <b> {t("ticket.transfer.notice2Bold")}</b>.
               </p>
 
               <p className="mt-1 font-semibold">
-                Không gọi ticket
-                tự động sau khi
-                chuyển.
+                {t("ticket.transfer.notice3")}
               </p>
             </div>
 
-            <Field label="Chọn quầy nhận ticket *">
+            <Field label={t("ticket.transfer.selectCounterLabel")}>
               <select
                 value={
                   targetCounterId
@@ -949,7 +951,7 @@ export default function TicketDetailPage() {
                 className="w-full rounded-lg border-2 border-line bg-white px-4 py-3 font-body text-sm focus:border-brand-700"
               >
                 <option value="">
-                  -- Chọn quầy --
+                  {t("ticket.transfer.selectCounterPlaceholder")}
                 </option>
 
                 {counters.map(
@@ -972,7 +974,7 @@ export default function TicketDetailPage() {
                       }
                       {" - "}
                       {counter.default_agent_name ??
-                        "Chưa có Agent"}
+                        t("ticket.transfer.noAgent")}
                       {" - "}
                       {
                         counter.status
@@ -1008,14 +1010,13 @@ export default function TicketDetailPage() {
                       </p>
 
                       <p className="mt-1 text-ink/60">
-                        Agent nhận:{" "}
+                        {t("ticket.transfer.receivingAgent")}{" "}
                         {selected.default_agent_name ??
-                          "Chưa có Agent"}
+                          t("ticket.transfer.noAgent")}
                       </p>
 
                       <p className="text-ink/60">
-                        Trạng thái
-                        quầy:{" "}
+                        {t("ticket.transfer.counterStatus")}{" "}
                         <span className="font-semibold">
                           {
                             selected.status
@@ -1024,9 +1025,7 @@ export default function TicketDetailPage() {
                       </p>
 
                       <p className="mt-1 font-semibold text-orange-700">
-                        Ticket sẽ ở
-                        WAITING sau
-                        khi chuyển.
+                        {t("ticket.transfer.willBeWaiting")}
                       </p>
                     </>
                   );
@@ -1045,8 +1044,8 @@ export default function TicketDetailPage() {
                 }
               >
                 {transferring
-                  ? "ĐANG CHUYỂN..."
-                  : "XÁC NHẬN CHUYỂN"}
+                  ? t("ticket.transfer.confirming")
+                  : t("ticket.transfer.confirm")}
               </PrimaryButton>
 
               <SecondaryButton
@@ -1062,7 +1061,7 @@ export default function TicketDetailPage() {
                   transferring
                 }
               >
-                HỦY
+                {t("ticket.transfer.cancel")}
               </SecondaryButton>
             </div>
           </div>
@@ -1075,10 +1074,10 @@ export default function TicketDetailPage() {
 
       {detail.status ===
         "PENDING" && (
-        <Panel title="Đang tạm hoãn (Pending)">
+        <Panel title={t("ticket.pending.title")}>
           <dl className="mb-4 space-y-2 font-body text-sm">
             <Row
-              label="Lý do"
+              label={t("ticket.pending.reason")}
               value={
                 detail.pending_reason ??
                 "—"
@@ -1086,7 +1085,7 @@ export default function TicketDetailPage() {
             />
 
             <Row
-              label="Bước tiếp theo"
+              label={t("ticket.pending.nextStep")}
               value={
                 detail.pending_next_step ??
                 "—"
@@ -1094,7 +1093,7 @@ export default function TicketDetailPage() {
             />
 
             <Row
-              label="Ngày dự kiến"
+              label={t("ticket.pending.expectedDate")}
               value={
                 detail.pending_expected_at ??
                 "—"
@@ -1109,7 +1108,7 @@ export default function TicketDetailPage() {
               }
               disabled={busy}
             >
-              TIẾP TỤC XỬ LÝ
+              {t("ticket.pending.resume")}
             </PrimaryButton>
           )}
         </Panel>
@@ -1123,9 +1122,9 @@ export default function TicketDetailPage() {
         "PROCESSING" &&
         canAct && (
           <>
-            <Panel title="Hoàn tất xử lý">
+            <Panel title={t("ticket.resolve.title")}>
               <div className="space-y-4">
-                <Field label="Kết quả xử lý">
+                <Field label={t("ticket.resolve.resolutionLabel")}>
                   <textarea
                     rows={3}
                     value={
@@ -1136,12 +1135,12 @@ export default function TicketDetailPage() {
                         e.target.value
                       )
                     }
-                    placeholder="Ví dụ: Đã kiểm tra trạng thái thanh toán và hướng dẫn tài xế."
+                    placeholder={t("ticket.resolve.resolutionPlaceholder")}
                     className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
                   />
                 </Field>
 
-                <Field label="Ghi chú nội bộ">
+                <Field label={t("ticket.resolve.internalNoteLabel")}>
                   <textarea
                     rows={2}
                     value={
@@ -1152,7 +1151,7 @@ export default function TicketDetailPage() {
                         e.target.value
                       )
                     }
-                    placeholder="Ví dụ: Tài xế đã xác nhận hiểu."
+                    placeholder={t("ticket.resolve.internalNotePlaceholder")}
                     className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
                   />
                 </Field>
@@ -1164,7 +1163,7 @@ export default function TicketDetailPage() {
                     }
                     disabled={busy}
                   >
-                    HOÀN TẤT XỬ LÝ
+                    {t("ticket.resolve.submit")}
                   </PrimaryButton>
 
                   <SecondaryButton
@@ -1175,7 +1174,7 @@ export default function TicketDetailPage() {
                     }
                     disabled={busy}
                   >
-                    Đặt Pending
+                    {t("ticket.resolve.setPending")}
                   </SecondaryButton>
                 </div>
               </div>
@@ -1184,9 +1183,9 @@ export default function TicketDetailPage() {
             {/* PENDING FORM */}
 
             {showPending && (
-              <Panel title="Đặt Pending">
+              <Panel title={t("ticket.pendingForm.title")}>
                 <div className="space-y-4">
-                  <Field label="Lý do Pending *">
+                  <Field label={t("ticket.pendingForm.reasonLabel")}>
                     <input
                       value={
                         pendingReason
@@ -1197,12 +1196,12 @@ export default function TicketDetailPage() {
                             .value
                         )
                       }
-                      placeholder="Ví dụ: Đang chờ Finance xác nhận giao dịch."
+                      placeholder={t("ticket.pendingForm.reasonPlaceholder")}
                       className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
                     />
                   </Field>
 
-                  <Field label="Bước tiếp theo *">
+                  <Field label={t("ticket.pendingForm.nextStepLabel")}>
                     <input
                       value={
                         pendingNextStep
@@ -1217,7 +1216,7 @@ export default function TicketDetailPage() {
                     />
                   </Field>
 
-                  <Field label="Ngày dự kiến xử lý (tuỳ chọn)">
+                  <Field label={t("ticket.pendingForm.expectedDateLabel")}>
                     <input
                       type="date"
                       value={
@@ -1239,7 +1238,7 @@ export default function TicketDetailPage() {
                     }
                     disabled={busy}
                   >
-                    XÁC NHẬN PENDING
+                    {t("ticket.pendingForm.confirm")}
                   </PrimaryButton>
                 </div>
               </Panel>
@@ -1253,14 +1252,14 @@ export default function TicketDetailPage() {
 
       {detail.status ===
         "RESOLVED" && (
-        <Panel title="Kết quả xử lý">
+        <Panel title={t("ticket.resolved.title")}>
           <p className="font-body text-sm text-ink/80">
             {detail.resolution}
           </p>
 
           {detail.internal_note && (
             <p className="mt-2 font-body text-sm text-ink/50">
-              Ghi chú nội bộ:{" "}
+              {t("ticket.resolved.internalNote")}{" "}
               {
                 detail.internal_note
               }
@@ -1275,7 +1274,7 @@ export default function TicketDetailPage() {
                 }
                 disabled={busy}
               >
-                ĐÓNG TICKET
+                {t("ticket.resolved.close")}
               </SecondaryButton>
             </div>
           )}
@@ -1292,12 +1291,11 @@ export default function TicketDetailPage() {
           <div className="flex flex-col items-center gap-4 text-center">
             <div>
               <h3 className="text-lg font-semibold text-ink">
-                Đánh giá dịch vụ
+                {t("ticket.feedback.title")}
               </h3>
 
               <p className="mt-1 text-sm text-ink/60">
-                Mời tài xế quét mã QR để
-                đánh giá dịch vụ.
+                {t("ticket.feedback.instructions")}
               </p>
             </div>
 
@@ -1307,12 +1305,12 @@ export default function TicketDetailPage() {
                   detail.ticket_code
                 )}`
               )}`}
-              alt="QR đánh giá dịch vụ"
+              alt={t("ticket.feedback.qrAlt")}
               className="h-64 w-64 rounded-xl border border-gray-200 bg-white p-2"
             />
 
             <p className="text-sm font-medium text-ink">
-              Ticket:{" "}
+              {t("ticket.feedback.ticketLabel")}{" "}
               {
                 detail.ticket_code
               }
@@ -1327,15 +1325,16 @@ export default function TicketDetailPage() {
 
       {detail.status ===
         "CLOSED" && (
-        <Panel title="Kết quả xử lý">
+        <Panel title={t("ticket.resolved.title")}>
           <p className="font-body text-sm text-ink/80">
             {detail.resolution}
           </p>
 
           <p className="mt-2 font-body text-xs text-ink/40">
-            Đã đóng lúc{" "}
+            {t("ticket.closedResult.closedAt")}{" "}
             {fmt(
-              detail.closed_at
+              detail.closed_at,
+              locale
             )}
           </p>
         </Panel>
@@ -1347,11 +1346,9 @@ export default function TicketDetailPage() {
 
       {detail.status ===
         "NO_SHOW" && (
-        <Panel title="Tài xế không đến">
+        <Panel title={t("ticket.noShow.title")}>
           <p className="font-body text-sm text-ink/70">
-            Ticket đã được gọi
-            nhưng tài xế không có
-            mặt tại quầy.
+            {t("ticket.noShow.body")}
           </p>
         </Panel>
       )}

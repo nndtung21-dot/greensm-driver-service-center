@@ -1,5 +1,8 @@
+"use client";
+
 import { ReactNode } from "react";
 import { TicketStatus } from "@/lib/types";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 export function StatCard({
   label,
@@ -26,18 +29,6 @@ export function StatCard({
   );
 }
 
-const STATUS_LABELS: Record<TicketStatus, string> = {
-  WAITING: "Đang chờ",
-  CALLED: "Đã gọi",
-  PROCESSING: "Đang xử lý",
-  PENDING: "Tạm hoãn",
-  TRANSFERRED: "Đã chuyển",
-  RESOLVED: "Đã giải quyết",
-  CLOSED: "Đã đóng",
-  CANCELLED: "Đã huỷ",
-  NO_SHOW: "Vắng mặt",
-};
-
 const STATUS_CLASSES: Record<TicketStatus, string> = {
   WAITING: "bg-amber-50 text-warn border-amber-200",
   CALLED: "bg-brand-100 text-brand-700 border-brand-100",
@@ -51,18 +42,20 @@ const STATUS_CLASSES: Record<TicketStatus, string> = {
 };
 
 export function StatusBadge({ status }: { status: TicketStatus }) {
+  const { t } = useLanguage();
   return (
     <span
       className={`inline-block rounded-full border px-3 py-1 font-body text-xs font-semibold ${STATUS_CLASSES[status]}`}
     >
-      {STATUS_LABELS[status]}
+      {t(`agentStatus.${status}`)}
     </span>
   );
 }
 
 export function SlaBadge({ slaDueAt }: { slaDueAt: string | null }) {
+  const { t } = useLanguage();
   if (!slaDueAt) {
-    return <span className="font-body text-xs text-ink/40">—</span>;
+    return <span className="font-body text-xs text-ink/40">{t("sla.none")}</span>;
   }
   const due = new Date(slaDueAt).getTime();
   const now = Date.now();
@@ -71,18 +64,22 @@ export function SlaBadge({ slaDueAt }: { slaDueAt: string | null }) {
   if (diffMin < 0) {
     return (
       <span className="font-body text-xs font-semibold text-danger">
-        Quá hạn {Math.abs(diffMin)}p
+        {t("sla.overdue", { n: Math.abs(diffMin) })}
       </span>
     );
   }
   if (diffMin <= 10) {
     return (
       <span className="font-body text-xs font-semibold text-warn">
-        Còn {diffMin}p
+        {t("sla.remaining", { n: diffMin })}
       </span>
     );
   }
-  return <span className="font-body text-xs text-ink/60">Còn {diffMin}p</span>;
+  return (
+    <span className="font-body text-xs text-ink/60">
+      {t("sla.remaining", { n: diffMin })}
+    </span>
+  );
 }
 
 export function PrimaryButton({
