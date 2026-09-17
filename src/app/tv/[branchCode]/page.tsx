@@ -1669,10 +1669,18 @@ export default function TvDisplayPage() {
                         }}
                       >
                         <p
-                          className="truncate font-body font-semibold uppercase tracking-wide text-white"
+                          className={
+                            isCounter06
+                              ? "font-body font-semibold uppercase leading-tight tracking-wide text-white"
+                              : "truncate font-body font-semibold uppercase tracking-wide text-white"
+                          }
                           style={{
-                            fontSize:
-                              "0.95vw",
+                            fontSize: isCounter06
+                              ? "0.78vw"
+                              : "0.95vw",
+                            whiteSpace: isCounter06
+                              ? "normal"
+                              : "nowrap",
                           }}
                         >
                           {isCounter06
@@ -1792,13 +1800,15 @@ export default function TvDisplayPage() {
                                   key={
                                     q.ticket_code
                                   }
-                                  className="flex items-baseline justify-between border-b border-line/60 pb-1 last:border-0"
+                                  className="flex items-baseline gap-2 border-b border-line/60 pb-1 last:border-0"
                                 >
                                   <span
-                                    className="font-display font-bold text-brand-900"
+                                    className="flex-shrink-0 font-display font-bold text-brand-900"
                                     style={{
                                       fontSize:
                                         "1.2vw",
+                                      width:
+                                        "3vw",
                                     }}
                                   >
                                     {
@@ -1807,12 +1817,10 @@ export default function TvDisplayPage() {
                                   </span>
 
                                   <span
-                                    className="truncate font-body text-ink/70"
+                                    className="min-w-0 flex-1 truncate font-body text-ink/70"
                                     style={{
                                       fontSize:
                                         "0.95vw",
-                                      maxWidth:
-                                        "60%",
                                     }}
                                   >
                                     {
