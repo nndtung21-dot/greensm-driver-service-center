@@ -1675,9 +1675,9 @@ export default function TvDisplayPage() {
                               "0.95vw",
                           }}
                         >
-                          {
-                            counter.counter_name
-                          }
+                          {isCounter06
+                            ? `${counter.counter_name} (Food&Express)`
+                            : counter.counter_name}
                         </p>
 
                         <p
