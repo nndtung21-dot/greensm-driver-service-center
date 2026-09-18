@@ -260,6 +260,31 @@ export default function AgentQueuePage() {
 
   /*
    * ============================================================
+   * CẢNH BÁO: ticket bị "gọi" (CALLED) quá 5 phút mà không ai
+   * bấm "Bắt đầu xử lý" — agent có thể đã bỏ dở, quầy bị chiếm
+   * dụng vô ích. Không tự động làm gì với dữ liệu, chỉ hiện
+   * pop-up nhắc để agent/supervisor tự xử lý tay.
+   * ============================================================
+   */
+
+  const STALE_CALLED_MINUTES = 5;
+
+  const [tick, setTick] =
+    useState(0);
+
+  const [dismissedStaleIds, setDismissedStaleIds] =
+    useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTick((t) => t + 1);
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  /*
+   * ============================================================
    * LOAD QUEUE
    *
    * CHỈ LOAD TICKET CỦA HÔM NAY.
@@ -609,6 +634,53 @@ export default function AgentQueuePage() {
 
   /*
    * ============================================================
+   * TICKET BỊ "GỌI" QUÁ LÂU KHÔNG XỬ LÝ
+   * (dùng cho pop-up cảnh báo phía dưới)
+   * ============================================================
+   */
+
+  const staleCalledRows =
+    useMemo(() => {
+      void tick; // chỉ để ép re-compute mỗi 15s
+
+      const now = Date.now();
+
+      return rows.filter((row) => {
+        if (row.status !== "CALLED" || !row.called_at) {
+          return false;
+        }
+
+        const calledAt = new Date(
+          row.called_at
+        ).getTime();
+
+        const minutesElapsed =
+          (now - calledAt) / 60000;
+
+        return (
+          minutesElapsed >=
+          STALE_CALLED_MINUTES
+        );
+      });
+    }, [rows, tick]);
+
+  const visibleStaleRows =
+    useMemo(
+      () =>
+        staleCalledRows.filter(
+          (row) =>
+            !dismissedStaleIds.has(
+              row.ticket_id
+            )
+        ),
+      [
+        staleCalledRows,
+        dismissedStaleIds,
+      ]
+    );
+
+  /*
+   * ============================================================
    * STATS
    *
    * Stats KHÔNG bị ảnh hưởng bởi filter trạng thái/chủ đề.
@@ -806,6 +878,101 @@ export default function AgentQueuePage() {
 
   return (
     <div className="space-y-6">
+
+      {/* ======================================================
+          POP-UP: TICKET BỊ GỌI QUÁ 5 PHÚT KHÔNG XỬ LÝ
+          ====================================================== */}
+
+      {visibleStaleRows.length > 0 && (
+        <div
+          className="fixed right-6 top-6 z-50 w-full max-w-sm rounded-2xl border-2 border-orange-300 bg-orange-50 p-4 shadow-lg"
+          role="alert"
+        >
+          <div className="mb-2 flex items-start justify-between gap-3">
+            <p className="font-display text-sm font-bold text-orange-800">
+              ⚠️ {visibleStaleRows.length} ticket đang bị gọi quá {STALE_CALLED_MINUTES} phút chưa xử lý
+            </p>
+
+            <button
+              onClick={() =>
+                setDismissedStaleIds(
+                  (prev) =>
+                    new Set([
+                      ...prev,
+                      ...visibleStaleRows.map(
+                        (row) =>
+                          row.ticket_id
+                      ),
+                    ])
+                )
+              }
+              className="shrink-0 font-body text-xs text-orange-700 underline underline-offset-2"
+            >
+              Đóng tất cả
+            </button>
+          </div>
+
+          <ul className="space-y-2">
+            {visibleStaleRows.map(
+              (row) => (
+                <li
+                  key={row.ticket_id}
+                  className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="font-display text-sm font-bold text-brand-900">
+                      {row.queue_number}{" "}
+                      <span className="font-body font-normal text-ink/60">
+                        —{" "}
+                        {row.counter_code ??
+                          "?"}
+                      </span>
+                    </p>
+
+                    <p className="truncate font-body text-xs text-ink/50">
+                      {row.driver_name} · gọi lúc{" "}
+                      {new Date(
+                        row.called_at as string
+                      ).toLocaleTimeString(
+                        "vi-VN"
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      onClick={() =>
+                        router.push(
+                          `/agent/ticket/${row.case_id}`
+                        )
+                      }
+                      className="rounded-md bg-brand-700 px-2 py-1 font-body text-xs font-semibold text-white"
+                    >
+                      Xem
+                    </button>
+
+                    <button
+                      onClick={() =>
+                        setDismissedStaleIds(
+                          (prev) =>
+                            new Set(
+                              prev
+                            ).add(
+                              row.ticket_id
+                            )
+                        )
+                      }
+                      className="rounded-md border border-line px-2 py-1 font-body text-xs text-ink/60"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                </li>
+              )
+            )}
+          </ul>
+        </div>
+      )}
 
       {/* ======================================================
           HEADER
