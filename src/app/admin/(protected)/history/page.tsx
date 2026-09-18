@@ -101,7 +101,7 @@ export default function AdminDriverHistoryPage() {
   }
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className="space-y-6">
       <div>
         <h1 className="font-display text-2xl font-bold text-brand-900">
           Lịch sử theo SAP ID
@@ -144,7 +144,7 @@ export default function AdminDriverHistoryPage() {
 
       {driver && (
         <Panel title={driver.name}>
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-2 font-body text-sm sm:grid-cols-3">
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 font-body text-sm sm:grid-cols-4 lg:grid-cols-6">
             <Row label="SAP ID" value={driver.sap_id ?? "—"} />
             <Row label="Mã tài xế" value={driver.driver_code ?? "—"} />
             <Row label="App Code" value={driver.app_code ?? "—"} />
@@ -167,7 +167,18 @@ export default function AdminDriverHistoryPage() {
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left font-body text-sm">
+              <table className="w-full table-fixed text-left font-body text-sm">
+                <colgroup>
+                  <col className="w-[11%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[6%]" />
+                  <col className="w-[6%]" />
+                  <col className="w-[20%]" />
+                </colgroup>
                 <thead className="border-b border-line text-xs uppercase tracking-wide text-ink/50">
                   <tr>
                     <th className="whitespace-nowrap px-3 py-2">Check-in</th>
@@ -185,26 +196,39 @@ export default function AdminDriverHistoryPage() {
                   {rows.map((row) => (
                     <tr
                       key={row.ticket_id}
-                      className="border-b border-line last:border-0 align-top"
+                      className="border-b border-line last:border-0"
                     >
                       <td className="whitespace-nowrap px-3 py-2.5 text-ink/60">
                         {fmt(row.check_in)}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-display font-bold text-brand-900">
+                      <td className="truncate px-3 py-2.5 font-display font-bold text-brand-900">
                         {row.ticket_id}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2.5">
+                      <td
+                        className="truncate px-3 py-2.5"
+                        title={row.branch}
+                      >
                         {row.branch}
                       </td>
-                      <td className="px-3 py-2.5">
-                        <p>{row.category}</p>
+                      <td
+                        className="truncate px-3 py-2.5"
+                        title={
+                          row.subcategory
+                            ? `${row.category} — ${row.subcategory}`
+                            : row.category
+                        }
+                      >
+                        <p className="truncate">{row.category}</p>
                         {row.subcategory && (
-                          <p className="text-xs text-ink/50">
+                          <p className="truncate text-xs text-ink/50">
                             {row.subcategory}
                           </p>
                         )}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2.5">
+                      <td
+                        className="truncate px-3 py-2.5"
+                        title={row.agent ?? ""}
+                      >
                         {row.agent ?? "—"}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
@@ -218,7 +242,10 @@ export default function AdminDriverHistoryPage() {
                         {row.handling_time_min ?? "—"}
                         {row.handling_time_min != null && " ph"}
                       </td>
-                      <td className="max-w-xs px-3 py-2.5 text-ink/70">
+                      <td
+                        className="truncate px-3 py-2.5 text-ink/70"
+                        title={row.resolution ?? ""}
+                      >
                         {row.resolution ?? "—"}
                       </td>
                     </tr>
