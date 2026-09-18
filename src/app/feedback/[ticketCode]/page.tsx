@@ -5,10 +5,26 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { FeedbackLookup } from "@/lib/types";
 
+const CRITERIA = [
+  { key: "time", label: "Thời gian hỗ trợ" },
+  { key: "attitude", label: "Thái độ nhân viên hỗ trợ" },
+  {
+    key: "resolution",
+    label: "Vấn đề Đối tác đã được ghi nhận hỗ trợ đầy đủ",
+  },
+] as const;
+
+type CriterionKey = (typeof CRITERIA)[number]["key"];
+type Ratings = Record<CriterionKey, number>;
+
 export default function FeedbackPage() {
   const params = useParams<{ ticketCode: string }>();
   const [lookup, setLookup] = useState<FeedbackLookup | null | "not_found">(null);
-  const [rating, setRating] = useState(0);
+  const [ratings, setRatings] = useState<Ratings>({
+    time: 0,
+    attitude: 0,
+    resolution: 0,
+  });
   const [comment, setComment] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,16 +39,24 @@ export default function FeedbackPage() {
       });
   }, [params.ticketCode]);
 
+  function setRating(key: CriterionKey, value: number) {
+    setRatings((prev) => ({ ...prev, [key]: value }));
+    if (error) setError(null);
+  }
+
   async function handleSubmit() {
-    if (rating === 0) {
-      setError("Vui lòng chọn số sao.");
+    const missing = CRITERIA.some((c) => ratings[c.key] === 0);
+    if (missing) {
+      setError("Vui lòng chọn đủ số sao cho cả 3 mục.");
       return;
     }
     setBusy(true);
     setError(null);
-    const { error } = await supabase.rpc("submit_feedback", {
+    const { error } = await supabase.rpc("submit_feedback_detailed", {
       p_case_id: (lookup as FeedbackLookup).case_id,
-      p_rating: rating,
+      p_rating_time: ratings.time,
+      p_rating_attitude: ratings.attitude,
+      p_rating_resolution: ratings.resolution,
       p_comment: comment.trim() || null,
     });
     setBusy(false);
@@ -74,29 +98,50 @@ export default function FeedbackPage() {
   return (
     <Shell>
       <p className="mb-1 font-body text-sm text-ink/50">{lookup.queue_number}</p>
-      <h1 className="mb-6 font-display text-2xl font-bold text-brand-900">
+      <h1 className="mb-4 font-display text-2xl font-bold text-brand-900">
         Bạn đánh giá chất lượng phục vụ hôm nay như thế nào?
       </h1>
-      <div className="mb-6 flex justify-center gap-2">
-        {[1, 2, 3, 4, 5].map((star) => (
-          <button
-            key={star}
-            onClick={() => setRating(star)}
-            className={`text-5xl transition-transform hover:scale-110 ${
-              star <= rating ? "text-warn" : "text-line"
-            }`}
-            aria-label={`${star} sao`}
-          >
-            ★
-          </button>
+
+      <p className="mb-7 rounded-lg bg-brand-100 px-3.5 py-3 text-left font-body text-xs leading-relaxed text-brand-900">
+        Để cải thiện chất lượng dịch vụ, kính nhờ quý đối tác thực hiện đánh
+        giá khách quan nhất về các hạng mục hỗ trợ (kết quả sẽ được bảo mật,
+        vui lòng không chia sẻ cho nhân viên hỗ trợ).
+      </p>
+
+      <div className="space-y-6 text-left">
+        {CRITERIA.map((criterion) => (
+          <div key={criterion.key}>
+            <p className="mb-2 font-body text-sm font-semibold text-ink">
+              {criterion.label}
+            </p>
+            <div className="flex justify-center gap-2">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  onClick={() =>
+                    setRating(criterion.key, star)
+                  }
+                  className={`text-4xl transition-transform hover:scale-110 ${
+                    star <= ratings[criterion.key]
+                      ? "text-warn"
+                      : "text-line"
+                  }`}
+                  aria-label={`${star} sao — ${criterion.label}`}
+                >
+                  ★
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
+
       <textarea
         value={comment}
         onChange={(e) => setComment(e.target.value)}
         rows={3}
         placeholder="Nhận xét thêm (không bắt buộc)"
-        className="mb-4 w-full rounded-lg border-2 border-line px-4 py-3 font-body text-base focus:border-brand-700"
+        className="mb-4 mt-7 w-full rounded-lg border-2 border-line px-4 py-3 font-body text-base focus:border-brand-700"
       />
       {error && <p className="mb-4 font-body text-sm text-danger">{error}</p>}
       <button
