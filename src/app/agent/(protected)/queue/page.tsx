@@ -267,7 +267,7 @@ export default function AgentQueuePage() {
    * ============================================================
    */
 
-  const STALE_CALLED_MINUTES = 5;
+  const STALE_CALLED_MINUTES = 2;
 
   const [tick, setTick] =
     useState(0);
