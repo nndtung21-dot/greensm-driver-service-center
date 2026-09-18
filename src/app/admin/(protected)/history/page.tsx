@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabase/client";
-import { Panel, PrimaryButton, StatusBadge } from "@/components/agent/ui";
+import { Panel, PrimaryButton, SecondaryButton, StatusBadge } from "@/components/agent/ui";
 import { TicketStatus } from "@/lib/types";
+import { downloadCsv } from "@/lib/csv";
 
 type DriverInfo = {
   id: string;
@@ -44,6 +45,8 @@ function fmt(dt: string | null) {
 
 export default function AdminDriverHistoryPage() {
   const [sapId, setSapId] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [driver, setDriver] = useState<DriverInfo | null>(null);
@@ -84,11 +87,20 @@ export default function AdminDriverHistoryPage() {
 
     setDriver(driverData as DriverInfo);
 
-    const { data: logData, error: logError } = await supabase
+    let logQuery = supabase
       .from("v_report_case_log")
       .select("*")
       .eq("sap_id", trimmed)
       .order("check_in", { ascending: false });
+
+    if (fromDate) {
+      logQuery = logQuery.gte("check_in", `${fromDate}T00:00:00`);
+    }
+    if (toDate) {
+      logQuery = logQuery.lte("check_in", `${toDate}T23:59:59`);
+    }
+
+    const { data: logData, error: logError } = await logQuery;
 
     if (logError) {
       setErrorMessage(logError.message);
@@ -98,6 +110,34 @@ export default function AdminDriverHistoryPage() {
     }
 
     setLoading(false);
+  }
+
+  function handleExport() {
+    if (rows.length === 0) return;
+
+    const csvRows = rows.map((row) => ({
+      "Check-in": fmt(row.check_in),
+      "Ticket": row.ticket_id,
+      "VP": row.branch,
+      "Chủ đề": row.category,
+      "Nhu cầu cụ thể": row.subcategory ?? "",
+      "Agent": row.agent ?? "",
+      "Trạng thái": row.status,
+      "Chờ (phút)": row.waiting_time_min ?? "",
+      "Xử lý (phút)": row.handling_time_min ?? "",
+      "SLA": row.sla_status,
+      "Kết quả": row.resolution ?? "",
+    }));
+
+    const suffix =
+      fromDate || toDate
+        ? `_${fromDate || "start"}_${toDate || "end"}`
+        : "";
+
+    downloadCsv(
+      `lich_su_${driver?.sap_id ?? sapId.trim()}${suffix}.csv`,
+      csvRows
+    );
   }
 
   return (
@@ -112,22 +152,59 @@ export default function AdminDriverHistoryPage() {
       </div>
 
       <Panel>
-        <div className="flex flex-wrap items-center gap-3">
-          <input
-            value={sapId}
-            onChange={(e) => {
-              setSapId(e.target.value);
-              if (errorMessage) setErrorMessage(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleSearch();
-            }}
-            placeholder="Nhập SAP ID..."
-            className="w-64 rounded-lg border-2 border-line px-4 py-2.5 font-body text-sm focus:border-brand-700"
-          />
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="mb-1.5 block font-body text-xs font-semibold text-ink/55">
+              SAP ID
+            </label>
+            <input
+              value={sapId}
+              onChange={(e) => {
+                setSapId(e.target.value);
+                if (errorMessage) setErrorMessage(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSearch();
+              }}
+              placeholder="Nhập SAP ID..."
+              className="w-56 rounded-lg border-2 border-line px-4 py-2.5 font-body text-sm focus:border-brand-700"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block font-body text-xs font-semibold text-ink/55">
+              Từ ngày
+            </label>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="w-40 rounded-lg border-2 border-line px-3 py-2.5 font-body text-sm focus:border-brand-700"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block font-body text-xs font-semibold text-ink/55">
+              Đến ngày
+            </label>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="w-40 rounded-lg border-2 border-line px-3 py-2.5 font-body text-sm focus:border-brand-700"
+            />
+          </div>
+
           <PrimaryButton onClick={handleSearch} disabled={loading}>
             {loading ? "Đang tra cứu..." : "Tra cứu"}
           </PrimaryButton>
+
+          <SecondaryButton
+            onClick={handleExport}
+            disabled={rows.length === 0}
+          >
+            ⬇ Xuất CSV
+          </SecondaryButton>
         </div>
         {errorMessage && (
           <p className="mt-3 font-body text-sm text-danger">{errorMessage}</p>
