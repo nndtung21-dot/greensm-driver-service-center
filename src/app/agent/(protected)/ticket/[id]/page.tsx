@@ -54,6 +54,7 @@ export default function TicketDetailPage() {
 
   const [resolution, setResolution] = useState("");
   const [internalNote, setInternalNote] = useState("");
+  const [hasIncidentReport, setHasIncidentReport] = useState(false);
 
   const [showTransfer, setShowTransfer] = useState(false);
   const [targetCounterId, setTargetCounterId] = useState("");
@@ -337,6 +338,8 @@ export default function TicketDetailPage() {
         resolution.trim(),
       p_internal_note:
         internalNote.trim() || null,
+      p_has_incident_report:
+        hasIncidentReport,
     });
   };
 
@@ -1156,6 +1159,24 @@ export default function TicketDetailPage() {
                     className="w-full rounded-lg border-2 border-line px-4 py-3 font-body text-sm focus:border-brand-700"
                   />
                 </Field>
+
+                <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-line bg-paper px-3.5 py-3">
+                  <input
+                    type="checkbox"
+                    checked={
+                      hasIncidentReport
+                    }
+                    onChange={(e) =>
+                      setHasIncidentReport(
+                        e.target.checked
+                      )
+                    }
+                    className="mt-0.5 h-[18px] w-[18px] shrink-0 accent-brand-700"
+                  />
+                  <span className="font-body text-sm font-semibold text-ink">
+                    Viết bản tường trình
+                  </span>
+                </label>
 
                 <div className="flex flex-wrap gap-3">
                   <PrimaryButton
