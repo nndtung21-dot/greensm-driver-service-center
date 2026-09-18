@@ -10,6 +10,7 @@ import { TicketSearchBox } from "@/components/agent/TicketSearchBox";
 
 const NAV_ITEMS = [
   { href: "/admin/drivers", label: "Danh sách tài xế" },
+  { href: "/admin/history", label: "Lịch sử theo SAP ID" },
   { href: "/admin/agents", label: "Agent ↔ Chủ đề" },
   { href: "/admin/categories", label: "Danh mục dịch vụ" },
   { href: "/admin/branches", label: "Văn phòng & Quầy" },
