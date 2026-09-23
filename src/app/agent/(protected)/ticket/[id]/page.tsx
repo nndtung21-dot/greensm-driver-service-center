@@ -20,6 +20,7 @@ import {
 const HISTORY_LABELS: Record<string, string> = {
   Created: "Tạo ticket",
   "Status Changed": "Đổi trạng thái",
+  "Chuyển quầy": "Chuyển quầy",
 };
 
 type CounterOption = {
@@ -58,6 +59,7 @@ export default function TicketDetailPage() {
 
   const [showTransfer, setShowTransfer] = useState(false);
   const [targetCounterId, setTargetCounterId] = useState("");
+  const [transferReason, setTransferReason] = useState("");
 
   const [showPending, setShowPending] = useState(false);
   const [pendingReason, setPendingReason] = useState("");
@@ -477,6 +479,13 @@ export default function TicketDetailPage() {
       return;
     }
 
+    if (!transferReason.trim()) {
+      setErrorMessage(
+        "Vui lòng nhập lý do chuyển quầy."
+      );
+      return;
+    }
+
     const confirmed =
       window.confirm(
         `Chuyển ticket ${detail.queue_number} sang ${targetCounter.counter_name}?`
@@ -508,6 +517,8 @@ export default function TicketDetailPage() {
             detail.ticket_id,
           p_target_counter_id:
             targetCounterId,
+          p_reason:
+            transferReason.trim(),
         }
       );
 
@@ -522,6 +533,7 @@ export default function TicketDetailPage() {
 
     setShowTransfer(false);
     setTargetCounterId("");
+    setTransferReason("");
 
     await load();
     await loadCounters();
@@ -1037,6 +1049,33 @@ export default function TicketDetailPage() {
               </div>
             )}
 
+            <Field label="Lý do chuyển quầy *">
+              <textarea
+                value={
+                  transferReason
+                }
+                onChange={(e) => {
+                  setTransferReason(
+                    e.target.value
+                  );
+                  if (errorMessage) {
+                    setErrorMessage(
+                      null
+                    );
+                  }
+                }}
+                rows={3}
+                placeholder="Ví dụ: Quầy hiện tại quá tải / Cần chuyên môn khác xử lý..."
+                className={`w-full rounded-lg border-2 px-4 py-3 font-body text-sm focus:border-brand-700 ${
+                  !transferReason.trim() &&
+                  errorMessage ===
+                    "Vui lòng nhập lý do chuyển quầy."
+                    ? "border-danger"
+                    : "border-line"
+                }`}
+              />
+            </Field>
+
             <div className="flex flex-wrap gap-3">
               <PrimaryButton
                 onClick={
@@ -1055,6 +1094,9 @@ export default function TicketDetailPage() {
               <SecondaryButton
                 onClick={() => {
                   setTargetCounterId(
+                    ""
+                  );
+                  setTransferReason(
                     ""
                   );
                   setErrorMessage(
