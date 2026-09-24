@@ -1139,6 +1139,7 @@ export default function SupervisorDashboardPage() {
     setCounterToggleResult,
   ] = useState<{
     counterName: string;
+    mode: "CLOSED" | "AVAILABLE";
     reassignedCount: number;
     unresolvedTicketCodes: string[];
   } | null>(null);
@@ -1940,24 +1941,23 @@ export default function SupervisorDashboardPage() {
       return;
     }
 
-    if (next === "CLOSED") {
-      const result = Array.isArray(
-        data
-      )
-        ? data[0]
-        : data;
+    const result = Array.isArray(
+      data
+    )
+      ? data[0]
+      : data;
 
-      setCounterToggleResult({
-        counterName:
-          counter.counter_name,
-        reassignedCount:
-          result?.reassigned_count ??
-          0,
-        unresolvedTicketCodes:
-          result?.unresolved_ticket_codes ??
-          [],
-      });
-    }
+    setCounterToggleResult({
+      counterName:
+        counter.counter_name,
+      mode: next,
+      reassignedCount:
+        result?.reassigned_count ??
+        0,
+      unresolvedTicketCodes:
+        result?.unresolved_ticket_codes ??
+        [],
+    });
 
     load();
   }
@@ -2394,15 +2394,33 @@ export default function SupervisorDashboardPage() {
         {counterToggleResult && (
           <div className="mt-3 rounded-card border border-brand-100 bg-brand-100/40 px-4 py-3">
             <p className="font-body text-sm font-semibold text-brand-900">
-              ✓ Đã đóng{" "}
-              {
-                counterToggleResult.counterName
-              }
-              . Đã tự động phân lại{" "}
-              {
-                counterToggleResult.reassignedCount
-              }{" "}
-              vé cho agent khác đang có mặt.
+              {counterToggleResult.mode ===
+              "CLOSED" ? (
+                <>
+                  ✓ Đã đóng{" "}
+                  {
+                    counterToggleResult.counterName
+                  }
+                  . Đã tự động phân lại{" "}
+                  {
+                    counterToggleResult.reassignedCount
+                  }{" "}
+                  vé cho agent khác đang có
+                  mặt.
+                </>
+              ) : (
+                <>
+                  ✓ Đã mở lại{" "}
+                  {
+                    counterToggleResult.counterName
+                  }
+                  .{" "}
+                  {counterToggleResult.reassignedCount >
+                  0
+                    ? `Đã cân bằng tải: nhận lại ${counterToggleResult.reassignedCount} vé từ agent khác.`
+                    : "Tải hiện đã cân bằng, không có vé nào cần chuyển lại."}
+                </>
+              )}
             </p>
 
             {counterToggleResult
