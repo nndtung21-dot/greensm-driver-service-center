@@ -1135,6 +1135,22 @@ export default function SupervisorDashboardPage() {
   ] = useState<Counter[]>([]);
 
   const [
+    counterToggleResult,
+    setCounterToggleResult,
+  ] = useState<{
+    counterName: string;
+    reassignedCount: number;
+    unresolvedTicketCodes: string[];
+  } | null>(null);
+
+  const [
+    counterToggleError,
+    setCounterToggleError,
+  ] = useState<string | null>(
+    null
+  );
+
+  const [
     trendMetrics,
     setTrendMetrics,
   ] = useState<{
@@ -1894,14 +1910,54 @@ export default function SupervisorDashboardPage() {
         ? "CLOSED"
         : "AVAILABLE";
 
-    await supabase.rpc(
-      "set_counter_status",
-      {
-        p_counter_id:
-          counter.id,
-        p_status: next,
+    setCounterToggleError(null);
+    setCounterToggleResult(null);
+
+    if (next === "CLOSED") {
+      const confirmed =
+        window.confirm(
+          `Đóng ${counter.counter_name}? Toàn bộ vé đang chờ của agent quầy này sẽ được tự động phân cho agent khác đang có mặt, cùng chủ đề.`
+        );
+      if (!confirmed) {
+        return;
       }
-    );
+    }
+
+    const { data, error } =
+      await supabase.rpc(
+        "set_counter_status",
+        {
+          p_counter_id:
+            counter.id,
+          p_status: next,
+        }
+      );
+
+    if (error) {
+      setCounterToggleError(
+        error.message
+      );
+      return;
+    }
+
+    if (next === "CLOSED") {
+      const result = Array.isArray(
+        data
+      )
+        ? data[0]
+        : data;
+
+      setCounterToggleResult({
+        counterName:
+          counter.counter_name,
+        reassignedCount:
+          result?.reassigned_count ??
+          0,
+        unresolvedTicketCodes:
+          result?.unresolved_ticket_codes ??
+          [],
+      });
+    }
 
     load();
   }
@@ -2328,6 +2384,54 @@ export default function SupervisorDashboardPage() {
             )
           )}
         </div>
+
+        {counterToggleError && (
+          <p className="mt-3 font-body text-sm text-danger">
+            {counterToggleError}
+          </p>
+        )}
+
+        {counterToggleResult && (
+          <div className="mt-3 rounded-card border border-brand-100 bg-brand-100/40 px-4 py-3">
+            <p className="font-body text-sm font-semibold text-brand-900">
+              ✓ Đã đóng{" "}
+              {
+                counterToggleResult.counterName
+              }
+              . Đã tự động phân lại{" "}
+              {
+                counterToggleResult.reassignedCount
+              }{" "}
+              vé cho agent khác đang có mặt.
+            </p>
+
+            {counterToggleResult
+              .unresolvedTicketCodes
+              .length > 0 && (
+              <div className="mt-2 rounded-lg border border-orange-300 bg-orange-50 px-3 py-2">
+                <p className="font-body text-xs font-semibold text-orange-800">
+                  ⚠{" "}
+                  {
+                    counterToggleResult
+                      .unresolvedTicketCodes
+                      .length
+                  }{" "}
+                  vé không tìm được agent thay
+                  thế — cần xử lý tay:
+                </p>
+                <ul className="mt-1 list-disc pl-4 font-body text-xs text-orange-800">
+                  {counterToggleResult.unresolvedTicketCodes.map(
+                    (code) => (
+                      <li key={code}>
+                        {code}
+                      </li>
+                    )
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
     </div>
