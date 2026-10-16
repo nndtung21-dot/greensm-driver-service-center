@@ -1,9 +1,9 @@
-
 "use client";
 
 import {
   useCallback,
   useEffect,
+  useRef,
   useMemo,
   useState,
 } from "react";
@@ -412,6 +412,36 @@ export default function AgentQueuePage() {
 
   /*
    * ============================================================
+   * SCHEDULE REFRESH (debounce realtime)
+   *
+   * Gộp các event realtime dồn dập thành 1 lần refetch (~800ms)
+   * thay vì gọi loadQueue() cho từng event -> giảm egress.
+   * ============================================================
+   */
+
+  const refreshTimer =
+    useRef<ReturnType<
+      typeof setTimeout
+    > | null>(null);
+
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimer.current !== null) {
+      clearTimeout(refreshTimer.current);
+    }
+
+    refreshTimer.current = setTimeout(() => {
+      refreshTimer.current = null;
+
+      if (profile) {
+        void loadMyCounter(profile);
+      }
+
+      void loadQueue();
+    }, 800);
+  }, [loadQueue, loadMyCounter, profile]);
+
+  /*
+   * ============================================================
    * INITIAL LOAD
    * ============================================================
    */
@@ -470,7 +500,7 @@ export default function AgentQueuePage() {
           table: "queue_tickets",
         },
         () => {
-          loadQueue();
+          scheduleRefresh();
         }
       )
 
@@ -482,7 +512,7 @@ export default function AgentQueuePage() {
           table: "service_cases",
         },
         () => {
-          loadQueue();
+          scheduleRefresh();
         }
       )
 
@@ -493,29 +523,24 @@ export default function AgentQueuePage() {
           schema: "public",
           table: "counters",
         },
-        async () => {
-          if (profile) {
-            await loadMyCounter(
-              profile
-            );
-          }
-
-          await loadQueue();
+        () => {
+          scheduleRefresh();
         }
       )
 
       .subscribe();
 
     return () => {
+      if (refreshTimer.current !== null) {
+        clearTimeout(refreshTimer.current);
+        refreshTimer.current = null;
+      }
+
       supabase.removeChannel(
         channel
       );
     };
-  }, [
-    loadQueue,
-    loadMyCounter,
-    profile,
-  ]);
+  }, [scheduleRefresh]);
 
   /*
    * ============================================================
@@ -1505,4 +1530,3 @@ export default function AgentQueuePage() {
     </div>
   );
 }
-
