@@ -1206,7 +1206,7 @@ export default function TvDisplayPage() {
 
             void refresh();
           },
-          80
+          800
         );
     }, [refresh]);
 
@@ -1290,7 +1290,7 @@ export default function TvDisplayPage() {
         () => {
           void refresh();
         },
-        5000
+        30000
       );
 
     return () => {
