@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/auth";
@@ -1838,6 +1837,24 @@ export default function SupervisorDashboardPage() {
      REALTIME
   ======================================================= */
 
+  // Debounce realtime: gộp các event dồn dập thành 1 lần load() (~800ms)
+  // thay vì reload toàn bộ dashboard cho từng event -> giảm egress.
+  const refreshTimer =
+    useRef<ReturnType<
+      typeof setTimeout
+    > | null>(null);
+
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimer.current !== null) {
+      clearTimeout(refreshTimer.current);
+    }
+
+    refreshTimer.current = setTimeout(() => {
+      refreshTimer.current = null;
+      void load();
+    }, 800);
+  }, [load]);
+
   useEffect(() => {
     const channel =
       supabase
@@ -1853,7 +1870,7 @@ export default function SupervisorDashboardPage() {
             table:
               "visits",
           },
-          load
+          scheduleRefresh
         )
 
         .on(
@@ -1864,7 +1881,7 @@ export default function SupervisorDashboardPage() {
             table:
               "queue_tickets",
           },
-          load
+          scheduleRefresh
         )
 
         .on(
@@ -1875,7 +1892,7 @@ export default function SupervisorDashboardPage() {
             table:
               "service_cases",
           },
-          load
+          scheduleRefresh
         )
 
         .on(
@@ -1886,17 +1903,22 @@ export default function SupervisorDashboardPage() {
             table:
               "counters",
           },
-          load
+          scheduleRefresh
         )
 
         .subscribe();
 
     return () => {
+      if (refreshTimer.current !== null) {
+        clearTimeout(refreshTimer.current);
+        refreshTimer.current = null;
+      }
+
       supabase.removeChannel(
         channel
       );
     };
-  }, [load]);
+  }, [scheduleRefresh]);
 
   /* =======================================================
      COUNTER
@@ -2455,4 +2477,3 @@ export default function SupervisorDashboardPage() {
     </div>
   );
 }
-
