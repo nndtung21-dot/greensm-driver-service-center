@@ -1226,53 +1226,21 @@ export default function TvDisplayPage() {
       branchCode
     );
 
+    /*
+     * TV không đăng nhập nên không đọc thẳng bảng qua realtime được nữa
+     * (RLS đã bật). DB gửi tín hiệu "có thay đổi" theo từng văn phòng
+     * (trigger tv_broadcast_change, kênh `tv:<mã văn phòng>`), KHÔNG kèm dữ
+     * liệu. Nhận tín hiệu thì gọi lại các hàm RPC như cũ.
+     */
     const channel =
       supabase
         .channel(
-          `tv-display-${branchCode}`
+          `tv:${branchCode}`
         )
         .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "queue_tickets",
-          },
+          "broadcast",
+          { event: "changed" },
           () => {
-            console.log(
-              "[TV REALTIME] queue_tickets"
-            );
-
-            scheduleRefresh();
-          }
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "service_cases",
-          },
-          () => {
-            console.log(
-              "[TV REALTIME] service_cases"
-            );
-
-            scheduleRefresh();
-          }
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "counters",
-          },
-          () => {
-            console.log(
-              "[TV REALTIME] counters"
-            );
-
             scheduleRefresh();
           }
         )
@@ -1290,7 +1258,7 @@ export default function TvDisplayPage() {
         () => {
           void refresh();
         },
-        30000
+        10000
       );
 
     return () => {

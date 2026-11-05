@@ -59,6 +59,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Vai trò không hợp lệ." }, { status: 400 });
     }
 
+    // Phân quyền theo văn phòng: admin thường chỉ tạo tài khoản trong văn phòng của mình.
+    if (!auth.isSuperAdmin) {
+      if (!auth.branchId || branch_id !== auth.branchId) {
+        return NextResponse.json(
+          { error: "Bạn chỉ được tạo tài khoản thuộc văn phòng của mình." },
+          { status: 403 }
+        );
+      }
+    }
+
     const admin = getSupabaseAdmin();
 
     const { data: created, error: createError } = await admin.auth.admin.createUser({

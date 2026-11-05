@@ -18,6 +18,22 @@ export async function POST(req: NextRequest) {
     }
 
     const admin = getSupabaseAdmin();
+
+    // Phân quyền theo văn phòng: admin thường chỉ xoá người cùng văn phòng, không xoá super admin.
+    if (!auth.isSuperAdmin) {
+      const { data: target } = await admin
+        .from("profiles")
+        .select("branch_id, all_branches")
+        .eq("id", user_id)
+        .maybeSingle();
+      if (!target || target.all_branches === true || !auth.branchId || target.branch_id !== auth.branchId) {
+        return NextResponse.json(
+          { error: "Bạn chỉ được xoá tài khoản thuộc văn phòng của mình." },
+          { status: 403 }
+        );
+      }
+    }
+
     // profiles.id có ON DELETE CASCADE tới auth.users nên xoá auth user sẽ tự
     // xoá luôn dòng profile tương ứng.
     const { error } = await admin.auth.admin.deleteUser(user_id);
