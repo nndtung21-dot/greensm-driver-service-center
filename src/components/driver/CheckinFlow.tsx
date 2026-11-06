@@ -25,12 +25,23 @@ import {
 const KIOSK_BRANCH_CODE =
   process.env.NEXT_PUBLIC_KIOSK_BRANCH_CODE ?? null;
 
-export default function CheckinFlow() {
+/*
+ * branchCode: mã văn phòng lấy từ link riêng /checkin/<mã> (vd /checkin/HCM01).
+ * Có branchCode thì kiosk gắn cứng văn phòng đó, không hiện ô chọn văn phòng.
+ * Không có (link chung /checkin) thì giữ cách cũ: NEXT_PUBLIC_KIOSK_BRANCH_CODE,
+ * hoặc cho chọn khi có nhiều văn phòng.
+ */
+export default function CheckinFlow({
+  branchCode,
+}: {
+  branchCode?: string;
+} = {}) {
   const [step, setStep] = useState<CheckinStep>("welcome");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [branch, setBranch] = useState<Branch | null>(null);
+  const [branchNotFound, setBranchNotFound] = useState(false);
   const [branchOptions, setBranchOptions] = useState<Branch[]>([]);
 
   const [driver, setDriver] =
@@ -108,16 +119,25 @@ export default function CheckinFlow() {
 
   useEffect(() => {
     async function resolveBranch() {
-      if (KIOSK_BRANCH_CODE) {
+      const boundCode =
+        (branchCode ?? KIOSK_BRANCH_CODE)?.trim().toUpperCase() || null;
+
+      if (boundCode) {
         const { data } = await supabase
           .from("branches")
           .select("id, branch_code, branch_name")
-          .eq("branch_code", KIOSK_BRANCH_CODE)
+          .eq("branch_code", boundCode)
           .eq("status", "ACTIVE")
           .maybeSingle();
 
         if (data) {
           setBranch(data);
+          return;
+        }
+
+        // Link riêng nhưng sai mã / văn phòng chưa mở: báo lỗi, KHÔNG cho chọn văn phòng khác
+        if (branchCode) {
+          setBranchNotFound(true);
           return;
         }
       }
@@ -135,7 +155,7 @@ export default function CheckinFlow() {
     }
 
     resolveBranch();
-  }, []);
+  }, [branchCode]);
 
   // ==========================================================
   // RESET
@@ -403,6 +423,15 @@ export default function CheckinFlow() {
     step === "not_found" ||
     step === "needs" ||
     step === "description";
+
+  if (branchNotFound) {
+    return (
+      <ErrorStep
+        message={`Không tìm thấy văn phòng "${branchCode}". Vui lòng liên hệ nhân viên Green SM.`}
+        onRetry={() => window.location.reload()}
+      />
+    );
+  }
 
   if (windowOpen === false && preSubmitStep) {
     return (
