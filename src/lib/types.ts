@@ -36,6 +36,8 @@ export type CheckinStep =
   | "welcome"
   | "identify"
   | "not_found"
+  | "helpcenter_ask"
+  | "helpcenter_code"
   | "needs"
   | "description"
   | "submitting"
@@ -87,6 +89,12 @@ export type AgentQueueRow = {
   sla_due_at: string | null;
   resolved_at: string | null;
   closed_at: string | null;
+  // Ưu tiên Help Center (0043)
+  priority?: number | null;
+  helpcenter_code?: string | null;
+  helpcenter_verified?: boolean | null;
+  transferred_at?: string | null;
+  checkin_at?: string | null;
 };
 
 export type CaseHistoryEntry = {
@@ -133,6 +141,11 @@ export type CaseDetail = {
   driver_type: string | null;
   category_name: string;
   subcategory_name: string | null;
+  // Mã yêu cầu trên Trung tâm hỗ trợ (0043)
+  helpcenter_code?: string | null;
+  helpcenter_verified?: boolean | null;
+  helpcenter_verified_at?: string | null;
+  helpcenter_verified_by_name?: string | null;
 };
 
 export type Department = { id: string; name: string };

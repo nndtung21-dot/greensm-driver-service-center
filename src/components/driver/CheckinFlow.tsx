@@ -15,6 +15,8 @@ import {
   DescriptionStep,
   DriverFoundStep,
   ErrorStep,
+  HelpCenterAskStep,
+  HelpCenterCodeStep,
   IdentifyStep,
   NeedsStep,
   NotFoundStep,
@@ -42,6 +44,8 @@ export default function CheckinFlow({
 
   const [branch, setBranch] = useState<Branch | null>(null);
   const [branchNotFound, setBranchNotFound] = useState(false);
+  // Mã yêu cầu trên Trung tâm hỗ trợ (null = không có mã, không ưu tiên)
+  const [helpCenterCode, setHelpCenterCode] = useState<string | null>(null);
   const [branchOptions, setBranchOptions] = useState<Branch[]>([]);
 
   const [driver, setDriver] =
@@ -167,6 +171,7 @@ export default function CheckinFlow({
     setDriver(null);
     setCategory(null);
     setSubcategory(null);
+    setHelpCenterCode(null);
     setResult(null);
     setErrorMessage(null);
   }
@@ -247,7 +252,7 @@ export default function CheckinFlow({
     await loadCategories();
 
     setLoading(false);
-    setStep("needs");
+    setStep("helpcenter_ask");
   }
 
   // ==========================================================
@@ -328,6 +333,7 @@ export default function CheckinFlow({
             subcategory?.id ?? null,
           p_description:
             description.trim() || null,
+          p_helpcenter_code: helpCenterCode,
         })
         .maybeSingle();
 
@@ -421,6 +427,8 @@ export default function CheckinFlow({
     step === "welcome" ||
     step === "identify" ||
     step === "not_found" ||
+    step === "helpcenter_ask" ||
+    step === "helpcenter_code" ||
     step === "needs" ||
     step === "description";
 
@@ -533,6 +541,31 @@ export default function CheckinFlow({
     // NEEDS
     // --------------------------------------------------------
 
+    case "helpcenter_ask":
+      return (
+        <HelpCenterAskStep
+          onHasCode={() => setStep("helpcenter_code")}
+          onNoCode={() => {
+            setHelpCenterCode(null);
+            setStep("needs");
+          }}
+        />
+      );
+
+    case "helpcenter_code":
+      return (
+        <HelpCenterCodeStep
+          onSubmit={(code) => {
+            setHelpCenterCode(code);
+            setStep("needs");
+          }}
+          onSkip={() => {
+            setHelpCenterCode(null);
+            setStep("needs");
+          }}
+        />
+      );
+
     case "needs":
       return (
         <NeedsStep
@@ -590,6 +623,7 @@ export default function CheckinFlow({
             category?.name ?? ""
           }
           ticketCode={result.ticket_code}
+          helpCenterCode={helpCenterCode}
           onReset={resetAll}
         />
       ) : null;

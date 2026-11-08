@@ -116,7 +116,7 @@ export function BranchStep({
   onSelect: (b: Branch) => void;
 }) {
   return (
-    <StepCard eyebrow="Bước 2" title="Chọn văn phòng">
+    <StepCard eyebrow="Văn phòng" title="Chọn văn phòng">
       <div className="space-y-4">
         {branches.map((b) => (
           <KioskButton
@@ -135,6 +135,102 @@ export function BranchStep({
 // ---------------------------------------------------------------------
 // Category / Subcategory (Section 8-9) — loaded from DB, never hardcoded
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// Trung tâm hỗ trợ (Help Center): tài xế đã gửi yêu cầu trên app chưa?
+// Có mã thì được ưu tiên gọi trước (không đối chiếu với Help Center,
+// agent xác minh khi tài xế đến quầy).
+// ---------------------------------------------------------------------
+export function HelpCenterAskStep({
+  onHasCode,
+  onNoCode,
+}: {
+  onHasCode: () => void;
+  onNoCode: () => void;
+}) {
+  return (
+    <StepCard
+      eyebrow="Bước 2"
+      title="Bạn đã gửi yêu cầu trên Trung tâm hỗ trợ chưa?"
+      subtitle="Tài xế đã gửi yêu cầu trên app được ưu tiên gọi trước."
+    >
+      <div className="space-y-4">
+        <KioskButton onClick={onHasCode}>ĐÃ CÓ MÃ YÊU CẦU</KioskButton>
+        <KioskButton variant="secondary" onClick={onNoCode}>
+          CHƯA CÓ
+        </KioskButton>
+      </div>
+    </StepCard>
+  );
+}
+
+// Mã yêu cầu Help Center có dạng mã hồ sơ Salesforce: bắt đầu bằng 500,
+// dài 18 (hoặc 15) ký tự. Chỉ nhắc nhẹ, không chặn tài xế bấm tiếp.
+function helpCenterCodeLooksOff(code: string) {
+  return (
+    code.length > 0 &&
+    (!code.startsWith("500") || (code.length !== 18 && code.length !== 15))
+  );
+}
+
+export function HelpCenterCodeStep({
+  onSubmit,
+  onSkip,
+}: {
+  onSubmit: (code: string) => void;
+  onSkip: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const code = value.replace(/\s+/g, "");
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (code) onSubmit(code);
+  }
+
+  return (
+    <StepCard eyebrow="Bước 2" title="Nhập mã yêu cầu hỗ trợ">
+      <div className="mb-6 rounded-card bg-brand-100 px-5 py-4 font-body text-base text-brand-900">
+        <p className="font-semibold">Cách lấy mã</p>
+        <p>
+          App tài xế › Trung tâm hỗ trợ › Yêu cầu hỗ trợ của tôi. Mở yêu cầu,
+          bấm biểu tượng sao chép cạnh “Mã yêu cầu” rồi dán vào ô dưới đây.
+        </p>
+      </div>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <input
+          autoFocus
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Ví dụ: 500Pn000020tCVrIAM"
+          aria-label="Mã yêu cầu"
+          autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          className="w-full rounded-card border-2 border-line px-6 py-5 text-xl font-body focus:border-brand-700"
+        />
+        {helpCenterCodeLooksOff(code) && (
+          <p className="rounded-card bg-amber-50 px-4 py-3 font-body text-sm text-warn">
+            Mã có vẻ chưa đúng: mã thường bắt đầu bằng 500 và có 18 ký tự. Bạn
+            kiểm tra lại, hoặc vẫn có thể bấm Tiếp tục.
+          </p>
+        )}
+        <KioskButton type="submit" disabled={!code}>
+          TIẾP TỤC
+        </KioskButton>
+      </form>
+      <button
+        type="button"
+        onClick={onSkip}
+        className="mt-6 block w-full text-center font-body text-sm text-ink/50 underline underline-offset-4"
+      >
+        Không tìm thấy mã? Tiếp tục không có mã
+      </button>
+    </StepCard>
+  );
+}
+
 export function NeedsStep({
   categories,
   fetchSubcategories,
@@ -236,7 +332,7 @@ export function DescriptionStep({
   const [value, setValue] = useState("");
   return (
     <StepCard
-      eyebrow="Bước 5"
+      eyebrow="Bước 4"
       title="Mô tả ngắn vấn đề của bạn"
       subtitle="Không bắt buộc, nhưng giúp nhân viên hỗ trợ nhanh hơn."
     >
@@ -276,11 +372,13 @@ export function SuccessStep({
   queueNumber,
   categoryName,
   ticketCode,
+  helpCenterCode,
   onReset,
 }: {
   queueNumber: string;
   categoryName: string;
   ticketCode: string;
+  helpCenterCode?: string | null;
   onReset: () => void;
 }) {
   const [status, setStatus] = useState<string>("WAITING");
@@ -340,8 +438,17 @@ export function SuccessStep({
         </span>
       </div>
       <p className="mb-2 text-center font-body text-lg text-ink/80">
-        Bộ phận: {categoryName}
+        Chủ đề: {categoryName}
       </p>
+      {helpCenterCode ? (
+        <p className="mb-4 rounded-card bg-amber-50 px-4 py-3 text-center font-body text-base text-ink">
+          <span className="font-semibold text-warn">Bạn được ưu tiên</span> vì đã gửi yêu cầu trên Trung tâm hỗ trợ (mã {helpCenterCode}). Nhân viên sẽ đối chiếu mã khi bạn đến quầy.
+        </p>
+      ) : !isDone ? (
+        <p className="mb-4 text-center font-body text-sm text-ink/60">
+          Lần sau, bạn có thể gửi yêu cầu trên Trung tâm hỗ trợ trước khi đến để được ưu tiên.
+        </p>
+      ) : null}
       <p className="mb-6 text-center font-body text-base font-semibold text-brand-700">
         {TICKET_STATUS_LABELS[status] ?? status}
       </p>

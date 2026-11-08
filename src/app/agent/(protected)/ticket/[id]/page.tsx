@@ -845,6 +845,72 @@ export default function TicketDetailPage() {
               {detail.description}
             </p>
           )}
+
+          {detail.helpcenter_code && (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 font-body text-sm">
+              <p className="font-semibold text-warn">
+                Ưu tiên: có mã yêu cầu trên Trung tâm hỗ trợ
+              </p>
+              <p className="mt-1 break-all font-display text-base font-bold text-ink">
+                {detail.helpcenter_code}
+              </p>
+              <p className="mt-1 text-ink/70">
+                {detail.helpcenter_verified === true
+                  ? "Đã xác minh: mã đúng"
+                  : detail.helpcenter_verified === false
+                  ? "Đã xác minh: mã không hợp lệ"
+                  : "Chưa xác minh. Đối chiếu mã trên Help Center khi tài xế đến quầy."}
+                {detail.helpcenter_verified_by_name
+                  ? ` (${detail.helpcenter_verified_by_name})`
+                  : ""}
+              </p>
+              {canAct && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {detail.helpcenter_verified == null ? (
+                    <>
+                      <PrimaryButton
+                        onClick={() =>
+                          runRpc("verify_helpcenter_code", {
+                            p_case_id: detail.case_id,
+                            p_valid: true,
+                          })
+                        }
+                        disabled={busy}
+                        className="px-3 py-1.5 text-xs"
+                      >
+                        Mã đúng
+                      </PrimaryButton>
+                      <SecondaryButton
+                        onClick={() =>
+                          runRpc("verify_helpcenter_code", {
+                            p_case_id: detail.case_id,
+                            p_valid: false,
+                          })
+                        }
+                        disabled={busy}
+                        className="px-3 py-1.5 text-xs"
+                      >
+                        Mã không hợp lệ
+                      </SecondaryButton>
+                    </>
+                  ) : (
+                    <SecondaryButton
+                      onClick={() =>
+                        runRpc("verify_helpcenter_code", {
+                          p_case_id: detail.case_id,
+                          p_valid: null,
+                        })
+                      }
+                      disabled={busy}
+                      className="px-3 py-1.5 text-xs"
+                    >
+                      Đổi lại
+                    </SecondaryButton>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </Panel>
 
         {/* HISTORY */}
