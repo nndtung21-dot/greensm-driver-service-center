@@ -226,17 +226,19 @@ export const DRIVER_UPLOAD_HEADER_MAP: Record<string, string> = {
   "Loại tài xế": "driver_type",
 };
 
+// Chỉ Mã tài xế và Họ & tên là bắt buộc. Các cột khác chỉ có mặt khi file có
+// cột đó: cột không có trong file sẽ KHÔNG được gửi lên, nên dữ liệu cũ giữ nguyên.
 export type DriverUploadRow = {
   driver_code: string;
-  sap_id: string | null;
-  app_code: string | null;
   name: string;
-  work_status: string | null;
-  account_status: string | null;
-  lock_reason: string | null;
-  vehicle_model: string | null;
-  license_plate: string | null;
-  assignment_status: string | null;
-  assigned_at: string | null;
-  driver_type: string | null;
+  sap_id?: string | null;
+  app_code?: string | null;
+  work_status?: string | null;
+  account_status?: string | null;
+  lock_reason?: string | null;
+  vehicle_model?: string | null;
+  license_plate?: string | null;
+  assignment_status?: string | null;
+  assigned_at?: string | null;
+  driver_type?: string | null;
 };
