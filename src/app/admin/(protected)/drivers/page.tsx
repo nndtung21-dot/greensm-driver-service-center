@@ -51,66 +51,99 @@ function parseVnDateTime(
   return iso.toISOString();
 }
 
+// Ký tự ẩn hay dính khi copy từ Excel/web: NBSP, zero-width, BOM, tab
+const HIDDEN_CHARS = /[\u00A0\u200B\u200C\u200D\uFEFF\t]/g;
+
+// Các cột là mã: không bao giờ có khoảng trắng
+const CODE_COLUMNS = new Set(["driver_code", "sap_id", "app_code"]);
+
+const REQUIRED_HEADERS = ["Mã tài xế", "Họ & tên"];
+
+/** Chữ: bỏ ký tự ẩn, chuẩn Unicode NFC (tiếng Việt có dấu), gộp khoảng trắng. */
+function cleanText(raw: string): string {
+  return raw
+    .replace(HIDDEN_CHARS, " ")
+    .normalize("NFC")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Mã (tài xế, SAP, APP): bỏ ký tự ẩn và mọi khoảng trắng. */
+function cleanCode(raw: string): string {
+  return raw
+    .replace(HIDDEN_CHARS, "")
+    .normalize("NFC")
+    .replace(/\s+/g, "");
+}
+
+/** Tên: như cleanText; nếu viết thường toàn bộ thì viết hoa chữ cái đầu mỗi từ. */
+function cleanName(raw: string): string {
+  const s = cleanText(raw);
+  if (
+    s &&
+    s === s.toLocaleLowerCase("vi") &&
+    s !== s.toLocaleUpperCase("vi")
+  ) {
+    return s
+      .split(" ")
+      .map(
+        (w) =>
+          w.charAt(0).toLocaleUpperCase("vi") +
+          w.slice(1)
+      )
+      .join(" ");
+  }
+  return s;
+}
+
+/**
+ * Đổi 1 dòng CSV thành dòng gửi lên DB.
+ * CHỈ lấy những cột có trong file: cột không có trong file không được đưa vào
+ * object, nên khi upsert, dữ liệu cũ của cột đó được giữ nguyên (trước đây
+ * cột thiếu bị gán null và xoá trắng dữ liệu cũ).
+ * Trả về số giá trị đã được tự làm sạch để báo cho người dùng.
+ */
 function mapRow(
   raw: Record<string, string>
-): DriverUploadRow | null {
-  const mapped: Record<string, string> = {};
+): { row: DriverUploadRow; cleaned: number } | null {
+  const out: Record<string, string | null> = {};
+  let cleaned = 0;
 
-  for (const [
-    viHeader,
-    dbCol,
-  ] of Object.entries(
+  for (const [viHeader, dbCol] of Object.entries(
     DRIVER_UPLOAD_HEADER_MAP
   )) {
-    mapped[dbCol] =
-      raw[viHeader] ?? "";
+    if (!(viHeader in raw)) continue;
+
+    const value = raw[viHeader] ?? "";
+    let next: string | null;
+
+    if (CODE_COLUMNS.has(dbCol)) {
+      next = cleanCode(value) || null;
+    } else if (dbCol === "name") {
+      next = cleanName(value) || null;
+    } else if (dbCol === "assigned_at") {
+      next = parseVnDateTime(cleanText(value));
+    } else {
+      next = cleanText(value) || null;
+    }
+
+    if (
+      dbCol !== "assigned_at" &&
+      (next ?? "") !== value.trim()
+    ) {
+      cleaned++;
+    }
+
+    out[dbCol] = next;
   }
 
-  if (
-    !mapped.driver_code ||
-    !mapped.name
-  ) {
+  if (!out.driver_code || !out.name) {
     return null;
   }
 
   return {
-    driver_code:
-      mapped.driver_code.trim(),
-
-    sap_id:
-      mapped.sap_id?.trim() || null,
-
-    app_code:
-      mapped.app_code?.trim() || null,
-
-    name:
-      mapped.name.trim(),
-
-    work_status:
-      mapped.work_status?.trim() || null,
-
-    account_status:
-      mapped.account_status?.trim() || null,
-
-    lock_reason:
-      mapped.lock_reason?.trim() || null,
-
-    vehicle_model:
-      mapped.vehicle_model?.trim() || null,
-
-    license_plate:
-      mapped.license_plate?.trim() || null,
-
-    assignment_status:
-      mapped.assignment_status?.trim() || null,
-
-    assigned_at:
-      parseVnDateTime(
-        mapped.assigned_at ?? ""
-      ),
-
-    driver_type:
-      mapped.driver_type?.trim() || null,
+    row: out as DriverUploadRow,
+    cleaned,
   };
 }
 
@@ -155,6 +188,10 @@ export default function AdminDriversPage() {
     setErrorMessage,
   ] = useState<string | null>(null);
 
+  // Số giá trị đã tự làm sạch, và các cột có trong file (chỉ các cột này được cập nhật)
+  const [cleanedCount, setCleanedCount] = useState(0);
+  const [fileColumns, setFileColumns] = useState<string[]>([]);
+
   // ==========================================================
   // READ CSV
   // ==========================================================
@@ -178,8 +215,31 @@ export default function AdminDriversPage() {
       const rawRows =
         parseCsv(text);
 
-      const mapped =
+      // File phải có cột Mã tài xế và Họ & tên
+      const headers = rawRows.length > 0 ? Object.keys(rawRows[0]) : [];
+      const missing = REQUIRED_HEADERS.filter((h) => !headers.includes(h));
+      if (missing.length > 0) {
+        setRows([]);
+        setFileColumns([]);
+        setCleanedCount(0);
+        setInvalidCount(0);
+        setErrorMessage(
+          `File thiếu cột bắt buộc: ${missing.join(", ")}.`
+        );
+        return;
+      }
+      setFileColumns(
+        Object.keys(DRIVER_UPLOAD_HEADER_MAP).filter((h) => headers.includes(h))
+      );
+
+      const mappedWithInfo =
         rawRows.map(mapRow);
+
+      setCleanedCount(
+        mappedWithInfo.reduce((sum, m) => sum + (m?.cleaned ?? 0), 0)
+      );
+
+      const mapped = mappedWithInfo.map((m) => m?.row ?? null);
 
       const valid =
         mapped.filter(
@@ -517,7 +577,9 @@ export default function AdminDriversPage() {
           Hệ thống sẽ tự thêm tài xế mới
           và cập nhật thông tin tài xế đã có
           dựa theo Mã tài xế — không xoá
-          dữ liệu cũ.
+          dữ liệu cũ. Chỉ các cột có trong
+          file được cập nhật; cột không có
+          trong file giữ nguyên dữ liệu cũ.
         </p>
       </div>
 
@@ -547,13 +609,13 @@ export default function AdminDriversPage() {
 
       <Panel title="Tải file lên">
         <p className="mb-3 font-body text-xs text-ink/50">
-          File CSV cần có đúng các cột
-          (theo thứ tự bất kỳ):
-          Mã tài xế, Mã SAP, Mã APP,
-          Họ &amp; tên, Trạng thái,
-          Trạng thái tài khoản, Lý do khóa,
-          Dòng xe, Biển số, Trạng thái gán,
-          Thời gian gán, Loại tài xế.
+          Bắt buộc có cột Mã tài xế và
+          Họ &amp; tên. Có thể có thêm (theo
+          thứ tự bất kỳ): Mã SAP, Mã APP,
+          Trạng thái, Trạng thái tài khoản,
+          Lý do khóa, Dòng xe, Biển số,
+          Trạng thái gán, Thời gian gán,
+          Loại tài xế.
         </p>
 
         <input
@@ -590,6 +652,24 @@ export default function AdminDriversPage() {
               )}{" "}
               dòng hợp lệ
             </p>
+
+            {fileColumns.length > 0 && (
+              <p className="font-body text-xs text-ink/50">
+                Sẽ cập nhật các cột:{" "}
+                <span className="font-semibold text-ink">
+                  {fileColumns.join(", ")}
+                </span>
+                . Các cột khác giữ nguyên.
+              </p>
+            )}
+
+            {cleanedCount > 0 && (
+              <p className="font-body text-xs text-ink/50">
+                Đã tự làm sạch{" "}
+                {cleanedCount.toLocaleString("vi-VN")}{" "}
+                giá trị (khoảng trắng thừa, dấu tiếng Việt, ký tự ẩn, tên viết thường).
+              </p>
+            )}
 
             {invalidCount >
               0 && (
