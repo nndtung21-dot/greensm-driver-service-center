@@ -37,7 +37,30 @@ type AgentQueueRow = {
   queue_number: string;
   driver_name: string;
   created_at: string;
+  // Ưu tiên (0043): TV chỉ dùng để xếp thứ tự, KHÔNG hiện nhãn
+  priority?: number | null;
+  transferred_at?: string | null;
+  checkin_at?: string | null;
 };
+
+// Cùng thứ tự với "Gọi tiếp theo": vé chuyển quầy về, rồi vé có mã
+// Trung tâm hỗ trợ, rồi vé thường; trong mỗi nhóm check-in sớm trước.
+function compareTvQueue(a: AgentQueueRow, b: AgentQueueRow) {
+  const ta = a.transferred_at ? 0 : 1;
+  const tb = b.transferred_at ? 0 : 1;
+  if (ta !== tb) return ta - tb;
+  if (a.transferred_at && b.transferred_at) {
+    const d = new Date(b.transferred_at).getTime() - new Date(a.transferred_at).getTime();
+    if (d !== 0) return d;
+  }
+  const pa = a.priority ?? 0;
+  const pb = b.priority ?? 0;
+  if (pa !== pb) return pb - pa;
+  const ca = new Date(a.checkin_at ?? a.created_at).getTime();
+  const cb = new Date(b.checkin_at ?? b.created_at).getTime();
+  if (ca !== cb) return ca - cb;
+  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+}
 
 type SpeechJob = {
   id: string;
@@ -977,15 +1000,7 @@ export default function TvDisplayPage() {
             (data ?? []) as AgentQueueRow[]
           )
             .slice()
-            .sort(
-              (a, b) =>
-                new Date(
-                  a.created_at
-                ).getTime() -
-                new Date(
-                  b.created_at
-                ).getTime()
-            );
+            .sort(compareTvQueue);
 
         setAgentQueue(result);
 
