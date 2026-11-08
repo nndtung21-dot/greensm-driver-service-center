@@ -190,6 +190,11 @@ export default function AdminDriversPage() {
 
   // Số giá trị đã tự làm sạch, và các cột có trong file (chỉ các cột này được cập nhật)
   const [cleanedCount, setCleanedCount] = useState(0);
+
+  // Mã SAP đã chuyển từ mã tài xế cũ (trong DB) sang mã tài xế trong file
+  const [movedSaps, setMovedSaps] = useState<
+    { sap: string; from: string; fromName: string; to: string }[]
+  >([]);
   const [fileColumns, setFileColumns] = useState<string[]>([]);
 
   // ==========================================================
@@ -398,6 +403,22 @@ export default function AdminDriversPage() {
        * ======================================================
        */
 
+      // Một Mã SAP chỉ được thuộc về một mã tài xế trong cùng file
+      const sapOwner = new Map<string, string>();
+      for (const row of uniqueRows) {
+        if (!row.sap_id) continue;
+        const prev = sapOwner.get(row.sap_id);
+        if (prev && prev !== row.driver_code) {
+          throw new Error(
+            `Trùng SAP ID "${row.sap_id}" trong file: ${prev} và ${row.driver_code}. Chưa ghi dòng nào, sửa file rồi tải lại.`
+          );
+        }
+        sapOwner.set(row.sap_id, row.driver_code);
+      }
+
+      const moved: { sap: string; from: string; fromName: string; to: string }[] = [];
+      setMovedSaps([]);
+
       const CHUNK = 300;
 
       const totalChunks =
@@ -474,6 +495,65 @@ export default function AdminDriversPage() {
 
         /*
          * ====================================================
+         * SAP ĐÃ CHUYỂN SANG MÃ TÀI XẾ MỚI
+         *
+         * File là danh sách mới nhất từ hệ thống nguồn. Nếu một
+         * Mã SAP trong file đang thuộc về MÃ TÀI XẾ KHÁC trong DB
+         * (vd tài xế đăng ký lại, được cấp mã mới), gỡ SAP khỏi mã
+         * cũ trước khi ghi, nếu không sẽ lỗi drivers_sap_id_key.
+         * Mã cũ giữ nguyên tên, Mã APP, biển số và lịch sử vé.
+         * ====================================================
+         */
+
+        const chunkSaps = chunk
+          .map((r) => r.sap_id)
+          .filter((s): s is string => !!s);
+
+        if (chunkSaps.length > 0) {
+          const { data: holders, error: holderError } = await supabase
+            .from("drivers")
+            .select("driver_code, sap_id, name")
+            .in("sap_id", chunkSaps);
+
+          if (holderError) {
+            throw new Error(
+              `Lỗi kiểm tra Mã SAP ở dòng ${i + 1}-${Math.min(i + chunk.length, uniqueRows.length)}: ${holderError.message}`
+            );
+          }
+
+          const conflicts = (holders ?? []).filter(
+            (h) => h.sap_id && sapOwner.get(h.sap_id) !== h.driver_code
+          );
+
+          if (conflicts.length > 0) {
+            const { error: releaseError } = await supabase
+              .from("drivers")
+              .update({ sap_id: null })
+              .in(
+                "driver_code",
+                conflicts.map((c) => c.driver_code)
+              );
+
+            if (releaseError) {
+              throw new Error(
+                `Lỗi chuyển Mã SAP sang mã tài xế mới ở dòng ${i + 1}-${Math.min(i + chunk.length, uniqueRows.length)}: ${releaseError.message}`
+              );
+            }
+
+            for (const c of conflicts) {
+              moved.push({
+                sap: c.sap_id as string,
+                from: c.driver_code,
+                fromName: c.name ?? "",
+                to: sapOwner.get(c.sap_id as string) ?? "",
+              });
+            }
+            setMovedSaps([...moved]);
+          }
+        }
+
+        /*
+         * ====================================================
          * UPSERT
          * ====================================================
          */
@@ -529,6 +609,10 @@ export default function AdminDriversPage() {
         `Đã cập nhật ${uploaded.toLocaleString(
           "vi-VN"
         )} tài xế thành công.`;
+
+      if (moved.length > 0) {
+        message += ` Đã chuyển ${moved.length.toLocaleString("vi-VN")} Mã SAP sang mã tài xế mới (xem danh sách bên dưới).`;
+      }
 
       if (
         duplicateCount > 0
@@ -601,6 +685,39 @@ export default function AdminDriversPage() {
         <p className="rounded-lg bg-brand-100 px-4 py-2 font-body text-sm text-brand-900">
           {result}
         </p>
+      )}
+
+      {movedSaps.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 font-body text-sm">
+          <p className="font-semibold text-warn">
+            {movedSaps.length.toLocaleString("vi-VN")} Mã SAP đã chuyển từ mã tài xế cũ sang mã tài xế trong file
+          </p>
+          <p className="mb-2 text-xs text-ink/60">
+            Mã cũ được bỏ Mã SAP, vẫn giữ tên, Mã APP, biển số và lịch sử vé.
+          </p>
+          <div className="max-h-64 overflow-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="text-ink/50">
+                <tr>
+                  <th className="py-1 pr-3">Mã SAP</th>
+                  <th className="py-1 pr-3">Mã tài xế cũ</th>
+                  <th className="py-1 pr-3">Tên trên mã cũ</th>
+                  <th className="py-1">Mã tài xế mới</th>
+                </tr>
+              </thead>
+              <tbody>
+                {movedSaps.map((m) => (
+                  <tr key={m.sap + m.from} className="border-t border-amber-200">
+                    <td className="py-1 pr-3">{m.sap}</td>
+                    <td className="py-1 pr-3">{m.from}</td>
+                    <td className="py-1 pr-3">{m.fromName}</td>
+                    <td className="py-1">{m.to}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       {/* ======================================================
