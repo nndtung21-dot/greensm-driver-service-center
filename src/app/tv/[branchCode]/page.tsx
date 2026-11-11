@@ -43,19 +43,8 @@ type AgentQueueRow = {
   checkin_at?: string | null;
 };
 
-// Cùng thứ tự với "Gọi tiếp theo": vé chuyển quầy về, rồi vé có mã
-// Trung tâm hỗ trợ, rồi vé thường; trong mỗi nhóm check-in sớm trước.
+// Cùng thứ tự với "Gọi tiếp theo" (0046): ai check-in trước đứng trước.
 function compareTvQueue(a: AgentQueueRow, b: AgentQueueRow) {
-  const ta = a.transferred_at ? 0 : 1;
-  const tb = b.transferred_at ? 0 : 1;
-  if (ta !== tb) return ta - tb;
-  if (a.transferred_at && b.transferred_at) {
-    const d = new Date(b.transferred_at).getTime() - new Date(a.transferred_at).getTime();
-    if (d !== 0) return d;
-  }
-  const pa = a.priority ?? 0;
-  const pb = b.priority ?? 0;
-  if (pa !== pb) return pb - pa;
   const ca = new Date(a.checkin_at ?? a.created_at).getTime();
   const cb = new Date(b.checkin_at ?? b.created_at).getTime();
   if (ca !== cb) return ca - cb;

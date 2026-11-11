@@ -35,23 +35,10 @@ type QueueRow = AgentQueueRow & {
 };
 
 /*
- * Thứ tự gọi giống "Gọi tiếp theo" (call_next_ticket):
- *   1. vé chuyển quầy về (mới chuyển gần nhất trước)
- *   2. vé có mã Trung tâm hỗ trợ (priority = 1)
- *   3. vé thường
- * Trong mỗi nhóm: check-in sớm trước.
+ * Thứ tự gọi giống "Gọi tiếp theo" (call_next_ticket, 0046):
+ * ai check-in trước được gọi trước. Vé chuyển quầy giữ giờ check-in gốc.
  */
 function compareWaiting(a: QueueRow, b: QueueRow) {
-  const ta = a.transferred_at ? 0 : 1;
-  const tb = b.transferred_at ? 0 : 1;
-  if (ta !== tb) return ta - tb;
-  if (a.transferred_at && b.transferred_at) {
-    const d = new Date(b.transferred_at).getTime() - new Date(a.transferred_at).getTime();
-    if (d !== 0) return d;
-  }
-  const pa = a.priority ?? 0;
-  const pb = b.priority ?? 0;
-  if (pa !== pb) return pb - pa;
   const ca = new Date(a.checkin_at ?? a.created_at).getTime();
   const cb = new Date(b.checkin_at ?? b.created_at).getTime();
   if (ca !== cb) return ca - cb;
