@@ -68,6 +68,9 @@ function cleanText(raw: string): string {
     .trim();
 }
 
+// Mã bị Excel đổi sang dạng số khoa học, vd 3.5355E+17 (mất luôn các chữ số cuối)
+const SCIENTIFIC_CODE = /^\d+(?:[.,]\d+)?E\+?\d+$/i;
+
 /** Mã (tài xế, SAP, APP): bỏ ký tự ẩn và mọi khoảng trắng. */
 function cleanCode(raw: string): string {
   return raw
@@ -141,6 +144,14 @@ function mapRow(
     return null;
   }
 
+  // Mã tài xế / Mã SAP đã bị Excel làm hỏng: bỏ dòng, không ghi mã sai vào DB
+  if (
+    SCIENTIFIC_CODE.test(out.driver_code) ||
+    (out.sap_id && SCIENTIFIC_CODE.test(out.sap_id))
+  ) {
+    return null;
+  }
+
   return {
     row: out as DriverUploadRow,
     cleaned,
@@ -190,6 +201,8 @@ export default function AdminDriversPage() {
 
   // Số giá trị đã tự làm sạch, và các cột có trong file (chỉ các cột này được cập nhật)
   const [cleanedCount, setCleanedCount] = useState(0);
+  // Số dòng có mã bị Excel đổi sang dạng 3.5E+17 (đã bỏ qua)
+  const [excelBrokenCount, setExcelBrokenCount] = useState(0);
 
   // Mã SAP đã chuyển từ mã tài xế cũ (trong DB) sang mã tài xế trong file
   const [movedSaps, setMovedSaps] = useState<
@@ -242,6 +255,14 @@ export default function AdminDriversPage() {
 
       setCleanedCount(
         mappedWithInfo.reduce((sum, m) => sum + (m?.cleaned ?? 0), 0)
+      );
+
+      setExcelBrokenCount(
+        rawRows.filter(
+          (r) =>
+            SCIENTIFIC_CODE.test((r["Mã tài xế"] ?? "").replace(/\s+/g, "")) ||
+            SCIENTIFIC_CODE.test((r["Mã SAP"] ?? "").replace(/\s+/g, ""))
+        ).length
       );
 
       const mapped = mappedWithInfo.map((m) => m?.row ?? null);
@@ -419,180 +440,73 @@ export default function AdminDriversPage() {
       const moved: { sap: string; from: string; fromName: string; to: string }[] = [];
       setMovedSaps([]);
 
-      const CHUNK = 300;
+      /*
+       * ======================================================
+       * GHI QUA HÀM admin_import_drivers (0045)
+       *
+       * Hàm trên DB so sánh từng dòng với dữ liệu hiện có và CHỈ
+       * ghi dòng thật sự thay đổi (trước đây upsert ghi lại mọi
+       * dòng, làm cạn Disk IO và đứng hệ thống 11/11). Hàm cũng tự
+       * chuyển Mã SAP đã đổi sang mã tài xế mới.
+       * ======================================================
+       */
 
-      const totalChunks =
-        Math.ceil(
-          uniqueRows.length /
-            CHUNK
-        );
+      const CHUNK = 1000;
+
+      // Các cột có trong file (mọi dòng có cùng bộ cột)
+      const columns = Object.keys(uniqueRows[0] ?? {}).filter(
+        (k) => k !== "driver_code" && k !== "name"
+      );
 
       let uploaded = 0;
+      let inserted = 0;
+      let updated = 0;
+      let unchanged = 0;
 
       for (
         let i = 0;
-        i <
-        uniqueRows.length;
+        i < uniqueRows.length;
         i += CHUNK
       ) {
-        const chunk =
-          uniqueRows.slice(
-            i,
-            i + CHUNK
-          );
+        const chunk = uniqueRows.slice(i, i + CHUNK);
 
-        /*
-         * ====================================================
-         * CHECK DUPLICATE SAP ID
-         *
-         * DB hiện tại có:
-         *
-         * drivers_driver_code_key
-         * drivers_sap_id_key
-         *
-         * Vì vậy nếu 2 driver khác nhau dùng cùng SAP ID,
-         * PostgreSQL sẽ reject.
-         *
-         * Check ngay trong chunk trước.
-         * ====================================================
-         */
-
-        const sapMap =
-          new Map<
-            string,
-            string
-          >();
-
-        for (const row of chunk) {
-          if (!row.sap_id) {
-            continue;
+        const { data, error } = await supabase.rpc(
+          "admin_import_drivers",
+          {
+            p_rows: chunk,
+            p_columns: columns,
           }
-
-          const sap =
-            row.sap_id
-              .trim()
-              .toUpperCase();
-
-          const existing =
-            sapMap.get(sap);
-
-          if (
-            existing &&
-            existing !==
-              row.driver_code
-          ) {
-            throw new Error(
-              `Trùng SAP ID "${row.sap_id}" trong file: ` +
-                `${existing} và ${row.driver_code}.`
-            );
-          }
-
-          sapMap.set(
-            sap,
-            row.driver_code
-          );
-        }
-
-        /*
-         * ====================================================
-         * SAP ĐÃ CHUYỂN SANG MÃ TÀI XẾ MỚI
-         *
-         * File là danh sách mới nhất từ hệ thống nguồn. Nếu một
-         * Mã SAP trong file đang thuộc về MÃ TÀI XẾ KHÁC trong DB
-         * (vd tài xế đăng ký lại, được cấp mã mới), gỡ SAP khỏi mã
-         * cũ trước khi ghi, nếu không sẽ lỗi drivers_sap_id_key.
-         * Mã cũ giữ nguyên tên, Mã APP, biển số và lịch sử vé.
-         * ====================================================
-         */
-
-        const chunkSaps = chunk
-          .map((r) => r.sap_id)
-          .filter((s): s is string => !!s);
-
-        if (chunkSaps.length > 0) {
-          const { data: holders, error: holderError } = await supabase
-            .from("drivers")
-            .select("driver_code, sap_id, name")
-            .in("sap_id", chunkSaps);
-
-          if (holderError) {
-            throw new Error(
-              `Lỗi kiểm tra Mã SAP ở dòng ${i + 1}-${Math.min(i + chunk.length, uniqueRows.length)}: ${holderError.message}`
-            );
-          }
-
-          const conflicts = (holders ?? []).filter(
-            (h) => h.sap_id && sapOwner.get(h.sap_id) !== h.driver_code
-          );
-
-          if (conflicts.length > 0) {
-            const { error: releaseError } = await supabase
-              .from("drivers")
-              .update({ sap_id: null })
-              .in(
-                "driver_code",
-                conflicts.map((c) => c.driver_code)
-              );
-
-            if (releaseError) {
-              throw new Error(
-                `Lỗi chuyển Mã SAP sang mã tài xế mới ở dòng ${i + 1}-${Math.min(i + chunk.length, uniqueRows.length)}: ${releaseError.message}`
-              );
-            }
-
-            for (const c of conflicts) {
-              moved.push({
-                sap: c.sap_id as string,
-                from: c.driver_code,
-                fromName: c.name ?? "",
-                to: sapOwner.get(c.sap_id as string) ?? "",
-              });
-            }
-            setMovedSaps([...moved]);
-          }
-        }
-
-        /*
-         * ====================================================
-         * UPSERT
-         * ====================================================
-         */
-
-        const {
-          error,
-        } = await supabase
-          .from("drivers")
-          .upsert(
-            chunk,
-            {
-              onConflict:
-                "driver_code",
-            }
-          );
+        );
 
         if (error) {
           throw new Error(
-            `Lỗi ở dòng ${
-              i + 1
-            }-${
-              Math.min(
-                i +
-                  chunk.length,
-                uniqueRows.length
-              )
-            }: ${error.message}`
+            `Lỗi ở dòng ${i + 1}-${Math.min(i + chunk.length, uniqueRows.length)}: ${error.message}` +
+              (uploaded > 0
+                ? ` (${uploaded.toLocaleString("vi-VN")} dòng trước đó đã nạp xong; nạp lại cả file là được, dòng đã nạp sẽ được bỏ qua).`
+                : "")
           );
         }
 
-        uploaded +=
-          chunk.length;
+        const r = (data ?? {}) as {
+          inserted?: number;
+          updated?: number;
+          unchanged?: number;
+          moved?: { sap: string; from: string; fromName: string; to: string }[];
+        };
+
+        inserted += r.inserted ?? 0;
+        updated += r.updated ?? 0;
+        unchanged += r.unchanged ?? 0;
+
+        if (r.moved && r.moved.length > 0) {
+          moved.push(...r.moved);
+          setMovedSaps([...moved]);
+        }
+
+        uploaded += chunk.length;
 
         setProgress(
-          Math.round(
-            (uploaded /
-              uniqueRows.length) *
-              100
-          )
+          Math.round((uploaded / uniqueRows.length) * 100)
         );
       }
 
@@ -606,9 +520,10 @@ export default function AdminDriversPage() {
       setProgress(100);
 
       let message =
-        `Đã cập nhật ${uploaded.toLocaleString(
-          "vi-VN"
-        )} tài xế thành công.`;
+        `Đã xử lý ${uploaded.toLocaleString("vi-VN")} tài xế: ` +
+        `thêm mới ${inserted.toLocaleString("vi-VN")}, ` +
+        `cập nhật ${updated.toLocaleString("vi-VN")}, ` +
+        `không đổi ${unchanged.toLocaleString("vi-VN")} (bỏ qua, không ghi lại).`;
 
       if (moved.length > 0) {
         message += ` Đã chuyển ${moved.length.toLocaleString("vi-VN")} Mã SAP sang mã tài xế mới (xem danh sách bên dưới).`;
@@ -777,6 +692,15 @@ export default function AdminDriversPage() {
                   {fileColumns.join(", ")}
                 </span>
                 . Các cột khác giữ nguyên.
+              </p>
+            )}
+
+            {excelBrokenCount > 0 && (
+              <p className="rounded-md bg-amber-50 px-3 py-2 font-body text-xs text-warn">
+                Đã bỏ qua{" "}
+                {excelBrokenCount.toLocaleString("vi-VN")}{" "}
+                dòng có Mã tài xế hoặc Mã SAP bị Excel đổi sang dạng 3.5E+17 (đã mất số).
+                Hãy xuất lại file trực tiếp từ hệ thống, không mở rồi lưu lại bằng Excel.
               </p>
             )}
 
